@@ -635,6 +635,7 @@ function renderLastReview(rec, containerId, cardId) {
     html += `<div class="aspect-cell">${KPI_ASPECTS[k].label}<br><span class="num">${avg[k]}</span></div>`;
   });
   html += `</div>`;
+  html += radarFromRecord(rec);  // 六大面向雷達圖
 
   html += `<h4 style="margin:12px 0 6px;color:var(--blue)">上次身體狀態</h4>`;
   html += `<div class="review-row"><span class="review-label">體重</span><span class="review-value">${rec.weightKg || '--'} kg</span></div>`;
@@ -796,6 +797,59 @@ function renderSelfVsCoach(rec) {
   if (rec.coachComment) html += `<div class="hint-box">📣 教練評語：${escapeHtml(rec.coachComment)}</div>`;
   if (bigGap.length) html += `<div class="hint-box warn">💬 「${bigGap.join('、')}」你和教練看法差距較大，值得一起討論。<br><span style="color:var(--text-soft)">這裡是讓你說明想法，不是改分數，最終由教練綜合判斷。</span></div>`;
   return html;
+}
+
+/* ---- 六大面向雷達圖（純 SVG 手繪，不需任何圖表庫） ---- */
+// selfAvg / coachAvg 皆為 { physical:.., technical:.., ... }；coachAvg 可省略
+function radarChartSVG(selfAvg, coachAvg) {
+  const size = 260, cx = size / 2, cy = size / 2, R = 88, MAX = 5;
+  const labels = ['體能', '技術', '專注', '自律', '情緒', '戰術'];
+  const keys = ASPECT_ORDER;
+
+  // 第 i 軸、距中心 radius 的座標（從正上方開始，順時針每 60°）
+  function polar(i, radius) {
+    const ang = (-90 + i * 60) * Math.PI / 180;
+    return [cx + radius * Math.cos(ang), cy + radius * Math.sin(ang)];
+  }
+  function valuePoints(obj) {
+    return keys.map((k, i) => {
+      const v = Math.max(0, Math.min(MAX, parseFloat(obj[k]) || 0));
+      const [x, y] = polar(i, R * v / MAX);
+      return `${round1(x)},${round1(y)}`;
+    }).join(' ');
+  }
+
+  // 背景同心多邊形（1~5 圈）
+  let grid = '';
+  for (let ring = 1; ring <= MAX; ring++) {
+    const pts = keys.map((k, i) => { const [x, y] = polar(i, R * ring / MAX); return `${round1(x)},${round1(y)}`; }).join(' ');
+    grid += `<polygon points="${pts}" fill="none" stroke="#2c3442" stroke-width="1"/>`;
+  }
+  // 軸線 + 標籤
+  let axes = '', labelSvg = '';
+  for (let i = 0; i < 6; i++) {
+    const [x, y] = polar(i, R);
+    axes += `<line x1="${cx}" y1="${cy}" x2="${round1(x)}" y2="${round1(y)}" stroke="#2c3442" stroke-width="1"/>`;
+    const [lx, ly] = polar(i, R + 20);
+    labelSvg += `<text x="${round1(lx)}" y="${round1(ly)}" fill="#aab2c0" font-size="13" text-anchor="middle" dominant-baseline="middle">${labels[i]}</text>`;
+  }
+  // 自評多邊形（金）
+  let poly = `<polygon points="${valuePoints(selfAvg)}" fill="rgba(245,197,24,0.25)" stroke="#f5c518" stroke-width="2.5"/>`;
+  // 教練多邊形（藍虛線）
+  let legend = `<span class="radar-leg"><i style="background:#f5c518"></i>自評</span>`;
+  if (coachAvg) {
+    poly += `<polygon points="${valuePoints(coachAvg)}" fill="rgba(46,125,209,0.18)" stroke="#2e7dd1" stroke-width="2.5" stroke-dasharray="5 3"/>`;
+    legend += `<span class="radar-leg"><i style="background:#2e7dd1"></i>教練評</span>`;
+  }
+
+  return `<div class="radar-wrap"><svg viewBox="0 0 ${size} ${size}" class="radar">${grid}${axes}${poly}${labelSvg}</svg><div class="radar-legend">${legend}</div></div>`;
+}
+
+// 從紀錄畫雷達圖（自動判斷有無教練評）
+function radarFromRecord(rec) {
+  const selfAvg = aspectAvgFromRecord(rec);
+  const coachAvg = hasCoachReview(rec) ? coachAspectAvgFromRecord(rec) : null;
+  return radarChartSVG(selfAvg, coachAvg);
 }
 
 // 簡單 HTML 跳脫，避免使用者輸入破壞版面
@@ -1000,6 +1054,9 @@ function renderCompareCard(rec, last) {
     html += `<div class="aspect-cell">${a.label}<br><span class="tag ${cls}">${sign}${a.diff}</span></div>`;
   });
   html += `</div>`;
+
+  // 今日六大面向雷達圖
+  html += radarChartSVG(rec._aspectAvg);
 
   if (bestUp.diff > 0) html += `<div class="hint-box good">📈 進步最多：${bestUp.label} +${bestUp.diff}</div>`;
   if (worstDown.diff < 0) html += `<div class="hint-box warn">📉 需要注意：${worstDown.label} ${worstDown.diff}</div>`;
@@ -1461,6 +1518,9 @@ function renderCoachReviewBlock(rec) {
   let html = `<div class="review-card" data-rid="${rec.recordId}">`;
   html += `<div class="review-row"><span class="review-label">${dateSlash(rec.date)}</span><span class="review-value">${rec.status}　${rec.totalScore}/30</span></div>`;
 
+  // 六大面向雷達圖（自評＋教練評疊圖）
+  html += radarFromRecord(rec);
+
   // 計算透明化
   html += explainStatusFromRecord(rec);
   // 自評 vs 教練評（已評過才顯示）
@@ -1562,6 +1622,7 @@ function renderLastReviewInto(rec, box) {
   html += `<div class="aspect-grid" style="margin-top:10px">`;
   ASPECT_ORDER.forEach(k => html += `<div class="aspect-cell">${KPI_ASPECTS[k].label}<br><span class="num">${avg[k]}</span></div>`);
   html += `</div>`;
+  html += radarFromRecord(rec);  // 六大面向雷達圖
   html += `<div class="review-row"><span class="review-label">體重</span><span class="review-value">${rec.weightKg || '--'} kg</span></div>`;
   html += `<div class="review-row"><span class="review-label">BMI</span><span class="review-value">${rec.bmi || '--'}</span></div>`;
   html += `<div class="review-row"><span class="review-label">飲食風險</span><span class="review-value">${rec.nutritionRisks || '無'}</span></div>`;

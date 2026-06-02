@@ -319,6 +319,13 @@ textarea.text-input { resize: vertical; }
 
 .review-card { background: #0f141c; border: 1px solid var(--border); border-radius: 12px; padding: 14px 14px; margin-bottom: 12px; }
 
+/* 六大面向雷達圖 */
+.radar-wrap { text-align: center; margin: 12px 0; }
+.radar { width: 100%; max-width: 280px; height: auto; }
+.radar-legend { display: flex; justify-content: center; gap: 16px; margin-top: 4px; }
+.radar-leg { font-size: 0.85rem; color: var(--text-soft); display: inline-flex; align-items: center; gap: 6px; }
+.radar-leg i { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
+
 /* ===================== 頁尾 ===================== */
 .app-footer { text-align: center; padding: 24px 16px; color: var(--text-soft); font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 20px; }
 .footer-note { margin-top: 6px; font-size: 0.8rem; color: #6b7585; }
