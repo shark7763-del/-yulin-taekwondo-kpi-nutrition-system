@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>育林國中跆拳道隊｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===================== 頁首 ===================== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1 class="app-title">🥋 育林國中跆拳道隊</h1>
+      <h2 class="app-subtitle">選手 KPI＋身體狀態＋AI 飲食建議系統</h2>
+      <p class="app-slogan">昨天發現問題，今天帶著目標訓練，明天看見進步。</p>
+    </div>
+  </header>
+
+  <!-- ===================== 分頁導覽 ===================== -->
+  <nav class="tab-nav" id="tabNav">
+    <button class="tab-btn active" data-tab="student">📝 學生填寫</button>
+    <button class="tab-btn" data-tab="lastperf">📌 上次表現</button>
+    <button class="tab-btn" data-tab="coach">📊 教練後台</button>
+    <button class="tab-btn" data-tab="settings">⚙️ 系統設定</button>
+  </nav>
+
+  <main class="app-main">
+
+    <!-- ========================================================= -->
+    <!-- 分頁一：學生填寫                                          -->
+    <!-- ========================================================= -->
+    <section class="tab-panel active" id="tab-student">
+
+      <!-- 上次表現回顧（學生選姓名後自動帶出） -->
+      <div class="card" id="lastReviewCard" style="display:none;">
+        <h3 class="card-title">📌 上次表現回顧</h3>
+        <div id="lastReviewContent"></div>
+      </div>
+
+      <!-- 今天我要改善 -->
+      <div class="card" id="improveCard" style="display:none;">
+        <h3 class="card-title">🎯 今天我要改善</h3>
+        <div id="improveOptions" class="improve-options"></div>
+        <label class="field-label">今天我最想做到的一件事：</label>
+        <input type="text" id="mainGoalToday" class="text-input" placeholder="例如：把距離控制做好" />
+      </div>
+
+      <form id="studentForm" class="card">
+        <h3 class="card-title">📝 學生填寫</h3>
+
+        <!-- 基本資料 -->
+        <fieldset class="form-section">
+          <legend>基本資料</legend>
+
+          <label class="field-label">日期</label>
+          <input type="date" id="date" class="text-input" />
+
+          <label class="field-label">選手姓名 <span class="req">*</span></label>
+          <select id="name" class="text-input"></select>
+
+          <label class="field-label">年級／班級 <span class="req">*</span></label>
+          <input type="text" id="gradeClass" class="text-input" placeholder="例如：八年三班" />
+
+          <label class="field-label">組別 <span class="req">*</span></label>
+          <select id="group" class="text-input"></select>
+
+          <label class="field-label">今日訓練主題 <span class="req">*</span></label>
+          <input type="text" id="trainingTopic" class="text-input" placeholder="例如：旋踢距離控制" />
+
+          <label class="field-label">今日身體狀態</label>
+          <select id="bodyStatus" class="text-input">
+            <option value="很好">很好</option>
+            <option value="普通" selected>普通</option>
+            <option value="疲勞">疲勞</option>
+            <option value="不舒服">不舒服</option>
+            <option value="受傷中">受傷中</option>
+          </select>
+        </fieldset>
+
+        <!-- 身體數據 -->
+        <fieldset class="form-section">
+          <legend>身體數據</legend>
+
+          <label class="field-label">身高 (cm) <span class="req">*</span></label>
+          <input type="number" id="heightCm" class="text-input" step="0.1" placeholder="例如：165" />
+
+          <label class="field-label">今日體重 (kg) <span class="req">*</span></label>
+          <input type="number" id="weightKg" class="text-input" step="0.1" placeholder="例如：55" />
+
+          <label class="field-label">目標體重 (kg)</label>
+          <input type="number" id="targetWeightKg" class="text-input" step="0.1" placeholder="例如：53" />
+
+          <div class="calc-box">
+            <div class="calc-item">BMI：<span id="bmiDisplay">--</span></div>
+            <div class="calc-item">距離目標：<span id="weightGapDisplay">--</span></div>
+          </div>
+        </fieldset>
+
+        <!-- 飲食紀錄 -->
+        <fieldset class="form-section">
+          <legend>飲食紀錄 🍱</legend>
+
+          <label class="field-label">今日早餐 <span class="req">*</span></label>
+          <input type="text" id="breakfast" class="text-input" placeholder="例如：蛋餅、豆漿" />
+
+          <label class="field-label">今日午餐 <span class="req">*</span></label>
+          <input type="text" id="lunch" class="text-input" placeholder="例如：雞腿便當、青菜" />
+
+          <label class="field-label">今日晚餐 <span class="req">*</span></label>
+          <input type="text" id="dinner" class="text-input" placeholder="例如：魚、飯、花椰菜" />
+
+          <label class="field-label">今日點心／飲料</label>
+          <input type="text" id="snacksDrinks" class="text-input" placeholder="例如：奶茶、餅乾" />
+
+          <label class="field-label">今日水量 <span class="req">*</span></label>
+          <select id="waterIntake" class="text-input"></select>
+
+          <label class="field-label">今日是否有宵夜</label>
+          <select id="lateNightSnack" class="text-input"></select>
+
+          <label class="field-label">今日訓練強度 <span class="req">*</span></label>
+          <select id="trainingIntensity" class="text-input"></select>
+        </fieldset>
+
+        <!-- KPI 紀錄 -->
+        <fieldset class="form-section">
+          <legend>KPI 六大面向 📈</legend>
+          <div id="kpiContainer"></div>
+        </fieldset>
+
+        <!-- 文字紀錄 -->
+        <fieldset class="form-section">
+          <legend>今日心得與目標</legend>
+
+          <label class="field-label">今日心得 <span class="req">*</span></label>
+          <textarea id="reflection" class="text-input" rows="2" placeholder="今天訓練的感受..."></textarea>
+
+          <label class="field-label">明日目標 <span class="req">*</span></label>
+          <textarea id="tomorrowGoal" class="text-input" rows="2" placeholder="明天我要做到..."></textarea>
+
+          <label class="field-label">隊友鼓勵</label>
+          <textarea id="encouragementToTeammate" class="text-input" rows="2" placeholder="想對隊友說的話..."></textarea>
+        </fieldset>
+
+        <!-- 送出按鈕 -->
+        <div class="btn-group">
+          <button type="button" id="btnSubmit" class="btn btn-primary">🚀 正式送出到 Google Sheet</button>
+          <button type="button" id="btnLocalSubmit" class="btn btn-secondary">💾 本機測試送出</button>
+          <button type="button" id="btnClear" class="btn btn-ghost">🧹 一鍵清空表單</button>
+        </div>
+      </form>
+
+      <!-- 送出後：今日 vs 上次 -->
+      <div class="card" id="compareCard" style="display:none;">
+        <h3 class="card-title">📈 今日 vs 上次</h3>
+        <div id="compareContent"></div>
+      </div>
+
+      <!-- 送出後：飲食回饋卡 -->
+      <div class="card" id="nutritionCard" style="display:none;">
+        <h3 class="card-title">🍱 今日飲食回饋</h3>
+        <div id="nutritionContent"></div>
+      </div>
+
+      <!-- 送出後：LINE 回覆四版本 -->
+      <div class="card" id="lineCard" style="display:none;">
+        <h3 class="card-title">📱 LINE 回覆文字（一鍵複製）</h3>
+
+        <div class="line-block">
+          <div class="line-block-head">
+            <span>🥋 選手版</span>
+            <button type="button" class="btn-copy" data-target="lineStudent">📋 複製</button>
+          </div>
+          <pre id="lineStudent" class="line-text"></pre>
+        </div>
+
+        <div class="line-block">
+          <div class="line-block-head">
+            <span>👨‍👩‍👧 家長版</span>
+            <button type="button" class="btn-copy" data-target="lineParent">📋 複製</button>
+          </div>
+          <pre id="lineParent" class="line-text"></pre>
+        </div>
+
+        <div class="line-block">
+          <div class="line-block-head">
+            <span>📊 教練版</span>
+            <button type="button" class="btn-copy" data-target="lineCoach">📋 複製</button>
+          </div>
+          <pre id="lineCoach" class="line-text"></pre>
+        </div>
+
+        <div class="line-block">
+          <div class="line-block-head">
+            <span>🍱 純飲食建議版</span>
+            <button type="button" class="btn-copy" data-target="lineNutrition">📋 複製</button>
+          </div>
+          <pre id="lineNutrition" class="line-text"></pre>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- 分頁二：上次表現                                          -->
+    <!-- ========================================================= -->
+    <section class="tab-panel" id="tab-lastperf">
+      <div class="card">
+        <h3 class="card-title">📌 上次表現查詢</h3>
+        <label class="field-label">選擇選手</label>
+        <select id="lastPerfName" class="text-input"></select>
+        <button type="button" id="btnLoadLastPerf" class="btn btn-primary">🔍 查詢上次表現</button>
+      </div>
+      <div class="card" id="lastPerfResultCard" style="display:none;">
+        <div id="lastPerfResult"></div>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- 分頁三：教練後台                                          -->
+    <!-- ========================================================= -->
+    <section class="tab-panel" id="tab-coach">
+
+      <div class="card">
+        <h3 class="card-title">📊 教練後台</h3>
+        <div class="coach-controls">
+          <label class="field-label">日期篩選</label>
+          <input type="date" id="coachDate" class="text-input" />
+          <label class="field-label">狀態篩選</label>
+          <select id="coachStatusFilter" class="text-input">
+            <option value="all">全部</option>
+            <option value="🔴 紅燈">🔴 紅燈</option>
+            <option value="🟡 黃燈">🟡 黃燈</option>
+            <option value="🟢 綠燈">🟢 綠燈</option>
+          </select>
+          <button type="button" id="btnRefreshCoach" class="btn btn-primary">🔄 重新整理資料</button>
+        </div>
+      </div>
+
+      <!-- 今日總覽 -->
+      <div class="card">
+        <h3 class="card-title">📅 今日總覽</h3>
+        <div id="coachOverview" class="overview-grid"></div>
+      </div>
+
+      <!-- 狀態名單 -->
+      <div class="card">
+        <h3 class="card-title">🚦 狀態名單</h3>
+        <div id="coachStatusLists"></div>
+      </div>
+
+      <!-- 訓練分析 -->
+      <div class="card">
+        <h3 class="card-title">🔍 訓練分析</h3>
+        <div id="coachAnalysis"></div>
+      </div>
+
+      <!-- 飲食管理 -->
+      <div class="card">
+        <h3 class="card-title">🍱 飲食管理</h3>
+        <div id="coachNutrition"></div>
+      </div>
+
+      <!-- 建議晤談名單 -->
+      <div class="card">
+        <h3 class="card-title">💬 建議晤談名單</h3>
+        <div id="coachInterview"></div>
+      </div>
+
+      <!-- 個人查詢 -->
+      <div class="card">
+        <h3 class="card-title">👤 個人查詢（最近 7 筆）</h3>
+        <label class="field-label">選擇選手</label>
+        <select id="coachPersonName" class="text-input"></select>
+        <button type="button" id="btnLoadPerson" class="btn btn-primary">🔍 查詢</button>
+        <div id="coachPersonResult"></div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- 分頁四：系統設定                                          -->
+    <!-- ========================================================= -->
+    <section class="tab-panel" id="tab-settings">
+
+      <div class="card">
+        <h3 class="card-title">⚙️ Google Sheet 設定</h3>
+        <label class="field-label">Google Apps Script Web App URL</label>
+        <input type="text" id="webAppUrl" class="text-input" placeholder="https://script.google.com/macros/s/XXXX/exec" />
+        <div class="btn-group">
+          <button type="button" id="btnSaveUrl" class="btn btn-primary">💾 儲存設定</button>
+          <button type="button" id="btnTestConn" class="btn btn-secondary">🔌 測試連線</button>
+          <button type="button" id="btnClearUrl" class="btn btn-ghost">🗑️ 清除設定</button>
+        </div>
+        <div id="connStatus" class="conn-status"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">👥 選手名單管理</h3>
+        <div class="btn-group">
+          <input type="text" id="newPlayerName" class="text-input" placeholder="輸入選手姓名" style="flex:1;" />
+          <button type="button" id="btnAddPlayer" class="btn btn-primary">➕ 新增</button>
+        </div>
+        <ul id="playerList" class="player-list"></ul>
+        <div class="btn-group">
+          <button type="button" id="btnResetPlayers" class="btn btn-secondary">♻️ 恢復預設名單</button>
+          <button type="button" id="btnExportPlayers" class="btn btn-ghost">📤 匯出 JSON</button>
+          <button type="button" id="btnImportPlayers" class="btn btn-ghost">📥 匯入 JSON</button>
+        </div>
+        <textarea id="importExportBox" class="text-input" rows="4" placeholder="匯出的 JSON 會顯示在這裡；貼上 JSON 後按「匯入 JSON」"></textarea>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ===================== 通知 Toast ===================== -->
+  <div id="toast" class="toast"></div>
+
+  <footer class="app-footer">
+    <p>育林國中跆拳道隊 © KPI＋身體狀態＋AI 飲食建議系統</p>
+    <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

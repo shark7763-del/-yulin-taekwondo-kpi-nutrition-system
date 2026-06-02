@@ -1,0 +1,21 @@
+# ===== 作業系統 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 編輯器 =====
+.vscode/
+.idea/
+*.swp
+*~
+
+# ===== 日誌 / 暫存 =====
+*.log
+*.tmp
+.cache/
+
+# ===== 本專案不需要版控的東西 =====
+# 純前端專案，無 build 產物。
+# 若日後加入個人測試資料匯出，可放這裡：
+local-test-data.json
+secrets.txt
