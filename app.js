@@ -21,6 +21,19 @@
 'use strict';
 
 /* ============================================================
+   0. 全域設定（要給「所有學生手機」共用，請填這裡）
+   ------------------------------------------------------------
+   把你的 Google Apps Script Web App URL（/exec 結尾）貼進
+   WEB_APP_URL，存檔 push 到 GitHub 後，所有人打開連結都會
+   自動連線、自動拿到雲端共用名單，學生手機不用再自己設定。
+
+   留空字串 '' 時，系統會改用「系統設定」存在各裝置的網址（舊行為）。
+   ============================================================ */
+const CONFIG = {
+  WEB_APP_URL: ''  // ← 例如 'https://script.google.com/macros/s/AKfyc.../exec'
+};
+
+/* ============================================================
    1. 常數設定
    ============================================================ */
 
@@ -186,7 +199,8 @@ function getPlayers() {
   return DEFAULT_PLAYERS.slice();
 }
 function savePlayers(arr) { localStorage.setItem(LS_KEYS.players, JSON.stringify(arr)); }
-function getWebAppUrl() { return localStorage.getItem(LS_KEYS.webAppUrl) || ''; }
+// 內建 CONFIG.WEB_APP_URL 優先（給所有裝置共用）；否則用各裝置自存的網址
+function getWebAppUrl() { return (CONFIG.WEB_APP_URL || '').trim() || localStorage.getItem(LS_KEYS.webAppUrl) || ''; }
 function saveWebAppUrl(url) { localStorage.setItem(LS_KEYS.webAppUrl, url); }
 
 function getLocalRecords() {
@@ -276,6 +290,30 @@ function refreshNameSelects() {
     fillSelect(el, players, '請選擇選手');
     if (players.indexOf(prev) !== -1) el.value = prev;
   });
+}
+
+/* ---- 名單雲端同步（全裝置共用）---- */
+
+// 從 Google Sheet 拉名單（學生手機開連結時自動取得最新名單）
+async function loadRosterFromServer() {
+  if (!getWebAppUrl()) return;
+  try {
+    const res = await postToWebApp({ action: 'getRoster' });
+    if (res && res.ok && Array.isArray(res.data) && res.data.length) {
+      savePlayers(res.data);     // 更新本機快取
+      refreshNameSelects();
+      renderPlayerList();
+    }
+  } catch (e) { /* 安靜失敗，沿用本機名單 */ }
+}
+
+// 把目前名單推到 Google Sheet（教練改名單後呼叫）
+async function pushRosterToServer() {
+  if (!getWebAppUrl()) return false;
+  try {
+    const res = await postToWebApp({ action: 'setRoster', players: getPlayers(), adminKey: getLineAdminKey() });
+    return !!(res && res.ok);
+  } catch (e) { return false; }
 }
 
 // 建立 KPI 拉桿 UI
@@ -1595,7 +1633,7 @@ function renderPlayerList() {
       savePlayers(arr);
       renderPlayerList();
       refreshNameSelects();
-      toast('已刪除');
+      syncRosterAndToast('已刪除');
     });
   });
   // 綁定修改（切換成輸入框）
@@ -1611,7 +1649,7 @@ function renderPlayerList() {
       li.querySelector('.save').addEventListener('click', () => {
         const newName = li.querySelector('.p-edit').value.trim();
         if (newName) { arr[idx] = newName; savePlayers(arr); }
-        renderPlayerList(); refreshNameSelects(); toast('已修改');
+        renderPlayerList(); refreshNameSelects(); syncRosterAndToast('已修改');
       });
       li.querySelector('.cancel').addEventListener('click', renderPlayerList);
     });
@@ -1660,12 +1698,14 @@ function setupSettingsHandlers() {
     if (arr.indexOf(name) !== -1) { toast('名單已有此選手'); return; }
     arr.push(name); savePlayers(arr);
     $id('newPlayerName').value = '';
-    renderPlayerList(); refreshNameSelects(); toast('已新增');
+    renderPlayerList(); refreshNameSelects();
+    syncRosterAndToast('已新增');
   });
 
   $id('btnResetPlayers').addEventListener('click', () => {
     savePlayers(DEFAULT_PLAYERS.slice());
-    renderPlayerList(); refreshNameSelects(); toast('已恢復預設名單');
+    renderPlayerList(); refreshNameSelects();
+    syncRosterAndToast('已恢復預設名單');
   });
 
   $id('btnExportPlayers').addEventListener('click', () => {
@@ -1678,12 +1718,33 @@ function setupSettingsHandlers() {
       const arr = JSON.parse($id('importExportBox').value);
       if (!Array.isArray(arr) || !arr.length) throw new Error('格式錯誤');
       savePlayers(arr.map(String));
-      renderPlayerList(); refreshNameSelects(); toast('已匯入名單');
+      renderPlayerList(); refreshNameSelects();
+      syncRosterAndToast('已匯入名單');
     } catch (e) { toast('匯入失敗：請確認是 JSON 陣列格式'); }
+  });
+
+  // 手動同步名單到雲端
+  const syncBtn = $id('btnSyncRoster');
+  if (syncBtn) syncBtn.addEventListener('click', async () => {
+    if (!getWebAppUrl()) { toast('未設定 Web App URL，無法同步'); return; }
+    syncBtn.disabled = true; syncBtn.textContent = '同步中...';
+    const ok = await pushRosterToServer();
+    syncBtn.disabled = false; syncBtn.textContent = '☁️ 同步名單到雲端';
+    toast(ok ? '✅ 名單已同步，所有裝置都會更新' : '⚠️ 同步失敗（檢查 URL 或管理密碼）');
   });
 
   // ---- LINE 推播設定 ----
   setupLineHandlers();
+}
+
+// 改完名單後：本機已存，若有雲端則一併推上去
+async function syncRosterAndToast(msg) {
+  if (getWebAppUrl()) {
+    const ok = await pushRosterToServer();
+    toast(ok ? msg + '（已同步雲端）' : msg + '（雲端同步失敗，僅存本機）');
+  } else {
+    toast(msg);
+  }
 }
 
 /* ============================================================
@@ -1886,6 +1947,9 @@ function init() {
   // 系統設定
   setupSettingsHandlers();
   renderPlayerList();
+
+  // 從雲端拉共用名單（學生手機開連結也會自動拿到最新名單）
+  loadRosterFromServer();
 
   // 初次載入教練後台資料
   refreshCoach();

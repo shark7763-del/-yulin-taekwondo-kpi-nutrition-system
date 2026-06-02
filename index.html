@@ -342,10 +342,12 @@
         </div>
         <ul id="playerList" class="player-list"></ul>
         <div class="btn-group">
+          <button type="button" id="btnSyncRoster" class="btn btn-primary">☁️ 同步名單到雲端</button>
           <button type="button" id="btnResetPlayers" class="btn btn-secondary">♻️ 恢復預設名單</button>
           <button type="button" id="btnExportPlayers" class="btn btn-ghost">📤 匯出 JSON</button>
           <button type="button" id="btnImportPlayers" class="btn btn-ghost">📥 匯入 JSON</button>
         </div>
+        <p class="review-label" style="margin-top:8px">名單會自動同步到 Google Sheet 的 <code>roster</code> 工作表，所有裝置（含學生手機）開連結都會看到最新名單。</p>
         <textarea id="importExportBox" class="text-input" rows="4" placeholder="匯出的 JSON 會顯示在這裡；貼上 JSON 後按「匯入 JSON」"></textarea>
       </div>
 

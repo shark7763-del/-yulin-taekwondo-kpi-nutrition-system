@@ -25,6 +25,8 @@
 
 // 資料表名稱（可自行修改）
 var SHEET_NAME = 'records';
+// 選手名單工作表（全裝置共用名單）
+var ROSTER_SHEET = 'roster';
 
 // Sheet 欄位順序（必須與前端 record 物件對應）
 var HEADERS = [
@@ -101,6 +103,11 @@ function handleAction(action, data) {
       return jsonOut({ ok: true, data: getAllRecords() });
     case 'updateRecord':
       return jsonOut(updateRecord(data.recordId, data.fields || {}));
+    // ---- 選手名單（全裝置共用）----
+    case 'getRoster':
+      return jsonOut({ ok: true, data: getRoster() });
+    case 'setRoster':
+      return jsonOut(setRoster(data.players || [], data));
     // ---- LINE 推播相關 ----
     case 'getLineStatus':
       return jsonOut({ ok: true, data: getLineStatus() });
@@ -262,6 +269,48 @@ function updateRecord(recordId, fields) {
     if (c !== -1) sheet.getRange(rowNum, c + 1).setValue(fields[key]);
   });
   return { ok: true, recordId: recordId };
+}
+
+/* ============================================================
+   選手名單（全裝置共用，存在 roster 工作表 A 欄）
+   ============================================================ */
+
+function getRosterSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(ROSTER_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(ROSTER_SHEET);
+    sh.getRange(1, 1).setValue('name');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+// 讀名單（回傳字串陣列）
+function getRoster() {
+  var sh = getRosterSheet();
+  var last = sh.getLastRow();
+  if (last < 2) return [];
+  var vals = sh.getRange(2, 1, last - 1, 1).getValues();
+  var out = [];
+  for (var i = 0; i < vals.length; i++) {
+    var n = String(vals[i][0]).trim();
+    if (n) out.push(n);
+  }
+  return out;
+}
+
+// 覆寫整份名單（教練端用；可用 ADMIN_KEY 保護）
+function setRoster(players, data) {
+  if (!checkAdminKey(data)) return { ok: false, error: '管理密碼錯誤，無法修改名單。' };
+  if (!Array.isArray(players)) return { ok: false, error: 'players 必須是陣列' };
+  var sh = getRosterSheet();
+  var last = sh.getLastRow();
+  if (last > 1) sh.getRange(2, 1, last - 1, 1).clearContent(); // 清掉舊名單
+  if (players.length) {
+    sh.getRange(2, 1, players.length, 1).setValues(players.map(function (n) { return [String(n)]; }));
+  }
+  return { ok: true, count: players.length };
 }
 
 // 依日期取得所有紀錄
