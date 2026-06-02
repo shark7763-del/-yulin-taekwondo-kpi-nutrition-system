@@ -297,6 +297,44 @@
       </div>
 
       <div class="card">
+        <h3 class="card-title">📱 LINE 自動推播設定</h3>
+        <p class="review-label" style="margin-bottom:10px">學生送出紀錄後，系統會自動把訊息推到指定的 LINE 群組或個人。設定步驟詳見 README「E. LINE 自動推播」。</p>
+
+        <label class="field-label">管理密碼（若後端有設 ADMIN_KEY）</label>
+        <input type="password" id="lineAdminKey" class="text-input" placeholder="沒設定可留空" />
+
+        <label class="field-label">Channel access token</label>
+        <input type="password" id="lineToken" class="text-input" placeholder="貼上 LINE Messaging API 的長期 token" />
+
+        <label class="field-label">推播目標 ID（群組 / 個人）</label>
+        <div class="btn-group" style="margin-top:0">
+          <input type="text" id="lineTargetId" class="text-input" placeholder="Uxxxx 或 Cxxxx" style="flex:1;" />
+          <button type="button" id="btnGetGroupId" class="btn btn-ghost">📡 自動帶入捕獲 ID</button>
+        </div>
+
+        <label class="field-label">推播版本（可多選，逗號分隔）</label>
+        <select id="lineVersions" class="text-input">
+          <option value="coach">教練版</option>
+          <option value="parent">家長版</option>
+          <option value="student">選手版</option>
+          <option value="nutrition">純飲食版</option>
+          <option value="coach,parent">教練版＋家長版</option>
+          <option value="coach,parent,nutrition">教練＋家長＋飲食</option>
+        </select>
+
+        <label class="field-label" style="display:flex;align-items:center;gap:8px;margin-top:14px">
+          <input type="checkbox" id="lineEnabled" style="width:18px;height:18px;" /> 啟用自動推播
+        </label>
+
+        <div class="btn-group">
+          <button type="button" id="btnSaveLine" class="btn btn-primary">💾 儲存推播設定</button>
+          <button type="button" id="btnTestLine" class="btn btn-secondary">🔔 測試推播一則</button>
+          <button type="button" id="btnRefreshLine" class="btn btn-ghost">🔄 讀取目前狀態</button>
+        </div>
+        <div id="lineStatus" class="conn-status"></div>
+      </div>
+
+      <div class="card">
         <h3 class="card-title">👥 選手名單管理</h3>
         <div class="btn-group">
           <input type="text" id="newPlayerName" class="text-input" placeholder="輸入選手姓名" style="flex:1;" />

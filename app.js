@@ -1470,6 +1470,108 @@ function setupSettingsHandlers() {
       renderPlayerList(); refreshNameSelects(); toast('已匯入名單');
     } catch (e) { toast('匯入失敗：請確認是 JSON 陣列格式'); }
   });
+
+  // ---- LINE 推播設定 ----
+  setupLineHandlers();
+}
+
+/* ============================================================
+   LINE 推播設定（前端）
+   ============================================================ */
+
+// 管理密碼存在 localStorage，方便重複操作（token 不存前端，只在送出時打字）
+function getLineAdminKey() { return localStorage.getItem('yulin_line_adminkey') || ''; }
+function saveLineAdminKey(k) { localStorage.setItem('yulin_line_adminkey', k); }
+
+function showLineStatus(type, msg) {
+  const el = $id('lineStatus');
+  el.className = 'conn-status ' + type;
+  el.textContent = msg;
+}
+
+function setupLineHandlers() {
+  // 還原管理密碼
+  $id('lineAdminKey').value = getLineAdminKey();
+
+  // 儲存推播設定
+  $id('btnSaveLine').addEventListener('click', async () => {
+    if (!getWebAppUrl()) { showLineStatus('fail', '請先在上方設定並儲存 Web App URL。'); return; }
+    const adminKey = $id('lineAdminKey').value.trim();
+    saveLineAdminKey(adminKey);
+    const body = {
+      action: 'setLineConfig',
+      adminKey: adminKey,
+      targetId: $id('lineTargetId').value.trim(),
+      versions: $id('lineVersions').value,
+      enabled: $id('lineEnabled').checked
+    };
+    const tk = $id('lineToken').value.trim();
+    if (tk) body.token = tk; // 有填才更新 token，避免覆蓋成空
+    showLineStatus('info', '儲存中...');
+    try {
+      const res = await postToWebApp(body);
+      if (res && res.ok) {
+        showLineStatus('ok', '已儲存推播設定。' + (res.data && res.data.enabled ? '（已啟用）' : '（未啟用）'));
+        $id('lineToken').value = ''; // 清掉畫面上的 token
+        applyLineStatus(res.data);
+      } else {
+        showLineStatus('fail', '儲存失敗：' + (res && res.error ? res.error : '未知錯誤'));
+      }
+    } catch (e) { showLineStatus('fail', '儲存失敗，請確認 Web App URL 與部署。'); }
+  });
+
+  // 測試推播
+  $id('btnTestLine').addEventListener('click', async () => {
+    if (!getWebAppUrl()) { showLineStatus('fail', '請先設定 Web App URL。'); return; }
+    showLineStatus('info', '推播測試中...');
+    try {
+      const res = await postToWebApp({ action: 'lineTest', adminKey: $id('lineAdminKey').value.trim() });
+      if (res && res.ok) showLineStatus('ok', '✅ 已送出測試訊息，請到 LINE 確認。');
+      else showLineStatus('fail', '推播失敗：' + (res && res.error ? res.error : '請確認 token 與目標 ID'));
+    } catch (e) { showLineStatus('fail', '推播失敗，請檢查設定。'); }
+  });
+
+  // 自動帶入 Webhook 捕獲的群組 ID
+  $id('btnGetGroupId').addEventListener('click', async () => {
+    if (!getWebAppUrl()) { showLineStatus('fail', '請先設定 Web App URL。'); return; }
+    showLineStatus('info', '讀取捕獲 ID...');
+    try {
+      const res = await postToWebApp({ action: 'getLineLastSource' });
+      if (res && res.ok && res.data && res.data.lastSourceId) {
+        $id('lineTargetId').value = res.data.lastSourceId;
+        showLineStatus('ok', `已帶入（${res.data.lastSourceType || '來源'}）ID，記得按「儲存推播設定」。`);
+      } else {
+        showLineStatus('fail', '尚未捕獲到 ID。請把官方帳號加入群組後，在群組發一句話再試。');
+      }
+    } catch (e) { showLineStatus('fail', '讀取失敗。'); }
+  });
+
+  // 讀取目前狀態
+  $id('btnRefreshLine').addEventListener('click', loadLineStatus);
+
+  // 啟動時若已設定 URL，自動帶出目前 LINE 狀態
+  if (getWebAppUrl()) loadLineStatus();
+}
+
+async function loadLineStatus() {
+  if (!getWebAppUrl()) { showLineStatus('info', '尚未設定 Web App URL，無法讀取 LINE 狀態。'); return; }
+  try {
+    const res = await postToWebApp({ action: 'getLineStatus' });
+    if (res && res.ok) applyLineStatus(res.data);
+  } catch (e) { /* 安靜失敗 */ }
+}
+
+function applyLineStatus(s) {
+  if (!s) return;
+  $id('lineEnabled').checked = !!s.enabled;
+  if (s.targetId) $id('lineTargetId').value = s.targetId;
+  if (s.versions) $id('lineVersions').value = s.versions;
+  const parts = [];
+  parts.push(s.enabled ? '推播已啟用' : '推播未啟用');
+  parts.push(s.hasToken ? `Token：${s.tokenMasked}` : 'Token：未設定');
+  parts.push(s.targetId ? `目標：${s.targetId}` : '目標：未設定');
+  if (s.adminKeyRequired) parts.push('需管理密碼');
+  showLineStatus(s.hasToken && s.targetId && s.enabled ? 'ok' : 'info', parts.join('｜'));
 }
 
 function showConn(type, msg) {

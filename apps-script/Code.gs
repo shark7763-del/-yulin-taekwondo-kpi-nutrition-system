@@ -55,11 +55,16 @@ function doGet(e) {
 }
 
 // POST：前端主要呼叫入口（body 為 JSON 字串）
+// 同時兼任 LINE Webhook 端點：LINE 推來的事件 body 會有 events 陣列。
 function doPost(e) {
   try {
     var body = {};
     if (e && e.postData && e.postData.contents) {
       body = JSON.parse(e.postData.contents);
+    }
+    // 偵測 LINE Webhook 事件（用來自動捕獲群組／個人 ID）
+    if (body && body.events) {
+      return handleLineWebhook(body);
     }
     var action = body.action || 'ping';
     return handleAction(action, body);
@@ -85,6 +90,15 @@ function handleAction(action, data) {
       return jsonOut({ ok: true, data: getRecordsByDate(data.date) });
     case 'getAllRecords':
       return jsonOut({ ok: true, data: getAllRecords() });
+    // ---- LINE 推播相關 ----
+    case 'getLineStatus':
+      return jsonOut({ ok: true, data: getLineStatus() });
+    case 'setLineConfig':
+      return jsonOut(setLineConfigFromRequest(data));
+    case 'lineTest':
+      return jsonOut(lineTest(data));
+    case 'getLineLastSource':
+      return jsonOut({ ok: true, data: { lastSourceId: getProp('LINE_LAST_SOURCE_ID') || '', lastSourceType: getProp('LINE_LAST_SOURCE_TYPE') || '' } });
     default:
       return jsonOut({ ok: false, error: '未知的 action：' + action });
   }
@@ -157,7 +171,12 @@ function addRecord(payload) {
     row[0] = new Date().toISOString();
   }
   sheet.appendRow(row);
-  return { ok: true, message: '已新增紀錄', name: payload.name, date: payload.date };
+
+  // 自動推播到 LINE（若已啟用設定）
+  var pushResult = null;
+  try { pushResult = pushRecordToLine(payload); } catch (e) { pushResult = { ok: false, error: String(e) }; }
+
+  return { ok: true, message: '已新增紀錄', name: payload.name, date: payload.date, line: pushResult };
 }
 
 // 讀取全部紀錄為物件陣列
@@ -217,4 +236,161 @@ function formatDateCell(v) {
     return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
   }
   return String(v);
+}
+
+/* ============================================================
+   LINE 推播（LINE Messaging API）
+   ------------------------------------------------------------
+   設定存在 Script Properties，不寫死在程式碼：
+     LINE_TOKEN        ：Channel access token（長期）
+     LINE_TARGET_ID    ：要推播的群組 / 個人 / 聊天室 ID
+     LINE_PUSH_VERSIONS：推播哪些版本，逗號分隔。可用：
+                         coach,parent,student,nutrition（預設 coach）
+     LINE_ENABLED      ：'true' / 'false'
+     ADMIN_KEY         ：（選填）管理密碼；設定後，改設定/測試需附帶相同 key
+     LINE_LAST_SOURCE_ID / LINE_LAST_SOURCE_TYPE：Webhook 自動捕獲的最後來源
+
+   兩種設定方式：
+   (A) 在編輯器執行 setLineConfig() 一次（安全、推薦）— 見下方函式註解。
+   (B) 從前端「系統設定」填表呼叫 action=setLineConfig（方便，建議搭配 ADMIN_KEY）。
+   ============================================================ */
+
+// 版本對應到 payload 的欄位
+var LINE_VERSION_FIELD = {
+  coach: 'coachLineText',
+  parent: 'parentLineText',
+  student: 'studentLineText',
+  nutrition: 'nutritionLineText'
+};
+
+// --- Script Properties 小工具 ---
+function getProp(key) { return PropertiesService.getScriptProperties().getProperty(key); }
+function setProp(key, val) { PropertiesService.getScriptProperties().setProperty(key, val == null ? '' : String(val)); }
+
+/*
+   在「Apps Script 編輯器」手動執行一次即可完成安全設定。
+   使用前：把下面三個值改成你自己的，函式下拉選 setLineConfig，按執行。
+   （這是方式 A，token 不會經過公開網址。）
+*/
+function setLineConfig() {
+  setProp('LINE_TOKEN', '在這裡貼上你的 Channel access token');
+  setProp('LINE_TARGET_ID', '在這裡貼上群組或個人 ID（可先用 getLineLastSourceId 取得）');
+  setProp('LINE_PUSH_VERSIONS', 'coach');     // 例如 'coach' 或 'coach,parent'
+  setProp('LINE_ENABLED', 'true');
+  // setProp('ADMIN_KEY', '自訂一組管理密碼');  // 需要保護前端設定時再打開
+  return 'LINE 設定完成，可執行 lineTestFromEditor() 測試。';
+}
+
+// 在編輯器直接測試推播
+function lineTestFromEditor() {
+  return pushToLine('✅ 育林跆拳道系統｜LINE 測試訊息，看到這則代表推播設定成功。');
+}
+
+// 在編輯器查看 Webhook 最近捕獲的來源 ID（把 bot 加進群組並發一句話後執行）
+function getLineLastSourceId() {
+  var id = getProp('LINE_LAST_SOURCE_ID') || '（尚未捕獲，請把官方帳號加入群組後在群組發一句話）';
+  var type = getProp('LINE_LAST_SOURCE_TYPE') || '';
+  Logger.log('最近來源類型：' + type + '，ID：' + id);
+  return { type: type, id: id };
+}
+
+// 核心：推一段文字到設定好的目標
+function pushToLine(text) {
+  var token = getProp('LINE_TOKEN');
+  var target = getProp('LINE_TARGET_ID');
+  if (!token) return { ok: false, error: '尚未設定 LINE_TOKEN' };
+  if (!target) return { ok: false, error: '尚未設定 LINE_TARGET_ID' };
+
+  var url = 'https://api.line.me/v2/bot/message/push';
+  var payload = {
+    to: target,
+    messages: [{ type: 'text', text: String(text).slice(0, 4900) }] // LINE 單則上限 5000 字
+  };
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + token },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  if (code === 200) return { ok: true };
+  return { ok: false, error: 'LINE API ' + code + '：' + res.getContentText() };
+}
+
+// 送出紀錄後，依設定推播選定版本
+function pushRecordToLine(payload) {
+  if (getProp('LINE_ENABLED') !== 'true') return { ok: false, skipped: '未啟用推播' };
+  var versions = (getProp('LINE_PUSH_VERSIONS') || 'coach').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  var results = [];
+  for (var i = 0; i < versions.length; i++) {
+    var field = LINE_VERSION_FIELD[versions[i]];
+    var text = field ? payload[field] : '';
+    if (text) results.push(pushToLine(text));
+  }
+  if (!results.length) return { ok: false, skipped: '無可推播的版本內容' };
+  // 只要有一則成功就算成功
+  var anyOk = results.some(function (r) { return r.ok; });
+  return { ok: anyOk, details: results };
+}
+
+// 驗證管理密碼（若有設定 ADMIN_KEY）
+function checkAdminKey(data) {
+  var key = getProp('ADMIN_KEY');
+  if (!key) return true; // 未設定密碼則不檢查
+  return data && data.adminKey === key;
+}
+
+// 回傳目前 LINE 設定狀態（token 遮罩，不外洩）
+function getLineStatus() {
+  var token = getProp('LINE_TOKEN') || '';
+  return {
+    enabled: getProp('LINE_ENABLED') === 'true',
+    hasToken: !!token,
+    tokenMasked: token ? (token.slice(0, 4) + '••••' + token.slice(-4)) : '',
+    targetId: getProp('LINE_TARGET_ID') || '',
+    versions: getProp('LINE_PUSH_VERSIONS') || 'coach',
+    adminKeyRequired: !!getProp('ADMIN_KEY'),
+    lastSourceId: getProp('LINE_LAST_SOURCE_ID') || '',
+    lastSourceType: getProp('LINE_LAST_SOURCE_TYPE') || ''
+  };
+}
+
+// 從前端請求設定 LINE（方式 B）
+function setLineConfigFromRequest(data) {
+  if (!checkAdminKey(data)) return { ok: false, error: '管理密碼錯誤，無法修改設定。' };
+  if (typeof data.token === 'string' && data.token) setProp('LINE_TOKEN', data.token);
+  if (typeof data.targetId === 'string') setProp('LINE_TARGET_ID', data.targetId);
+  if (typeof data.versions === 'string' && data.versions) setProp('LINE_PUSH_VERSIONS', data.versions);
+  if (typeof data.enabled !== 'undefined') setProp('LINE_ENABLED', data.enabled ? 'true' : 'false');
+  if (typeof data.adminKey === 'string' && typeof data.newAdminKey === 'string') setProp('ADMIN_KEY', data.newAdminKey);
+  return { ok: true, data: getLineStatus() };
+}
+
+// 前端按「測試推播」
+function lineTest(data) {
+  if (!checkAdminKey(data)) return { ok: false, error: '管理密碼錯誤。' };
+  return pushToLine('✅ 育林跆拳道系統｜LINE 測試訊息，看到這則代表推播設定成功。');
+}
+
+/*
+   LINE Webhook：當官方帳號收到訊息（例如被加進群組後有人發言），
+   LINE 會 POST events 到本 Web App。我們把來源 ID 記起來，
+   方便教練到「系統設定」或編輯器讀取群組 ID。
+*/
+function handleLineWebhook(body) {
+  try {
+    var events = body.events || [];
+    for (var i = 0; i < events.length; i++) {
+      var src = events[i].source || {};
+      var id = src.groupId || src.roomId || src.userId || '';
+      var type = src.type || '';
+      if (id) {
+        setProp('LINE_LAST_SOURCE_ID', id);
+        setProp('LINE_LAST_SOURCE_TYPE', type);
+      }
+    }
+  } catch (e) { /* 忽略，Webhook 一律回 200 */ }
+  // LINE 要求 Webhook 回 200
+  return ContentService.createTextOutput('OK');
 }

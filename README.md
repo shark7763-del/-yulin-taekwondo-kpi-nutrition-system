@@ -124,6 +124,70 @@ yulin-taekwondo-kpi-nutrition-system/
 
 ---
 
+### E. LINE 自動推播（選用）
+
+讓學生送出紀錄後，系統自動把訊息推到**教練的 LINE 群組**。用的是官方 **LINE Messaging API**（免費方案每月有一定推播額度），由 `Code.gs` 後端呼叫，**不需要額外伺服器**。
+
+> 註：舊的 LINE Notify 已於 2025 年停止服務，因此本系統改用 Messaging API。
+
+#### 步驟 1：建立 LINE 官方帳號與 Messaging API 頻道
+
+1. 到 [LINE Developers Console](https://developers.line.biz/console/) 用 LINE 帳號登入。
+2. 建立一個 **Provider**（隨意命名，例如「育林跆拳道」）。
+3. 在該 Provider 下 **Create a new channel → Messaging API**，填基本資料建立。
+4. 進入頻道 → **Messaging API** 分頁：
+   - 找到 **Channel access token (long-lived)**，按 **Issue** 產生並複製（這就是 `token`）。
+   - 把 **Auto-reply messages / Greeting** 視需要關閉（非必要）。
+
+#### 步驟 2：取得要推播的「群組 ID」
+
+群組 ID 無法用看的，要靠機器人捕獲。本系統的 Web App URL 已內建 Webhook：
+
+1. 在頻道 **Messaging API** 分頁，找到 **Webhook URL**，貼上你的 **Apps Script Web App URL**（就是 `/exec` 那個），並把 **Use webhook** 打開。
+2. 用手機掃該頻道的 **QR code**，把這個官方帳號**加進你的教練 LINE 群組**。
+3. 在群組裡**隨便發一句話**（例如「test」）。
+4. 回到系統 **⚙️ 系統設定 → 📱 LINE 自動推播設定**，按 **📡 自動帶入捕獲 ID**，群組 ID 就會自動填入。
+   - （或在 Apps Script 編輯器執行 `getLineLastSourceId()`，從 Logger 看 ID。）
+
+#### 步驟 3：填入設定並啟用
+
+在 **📱 LINE 自動推播設定** 區：
+
+1. 貼上 **Channel access token**。
+2. 確認 **推播目標 ID**（步驟 2 帶入的群組 ID）。
+3. 選 **推播版本**（建議「教練版」，或「教練版＋家長版」）。
+4. 勾選 **啟用自動推播**。
+5. 按 **💾 儲存推播設定**，再按 **🔔 測試推播一則** → LINE 群組應收到測試訊息。
+
+完成後，學生每次「正式送出」就會自動推播到群組 🎉
+
+#### （進階）更安全的設定方式
+
+token 屬於敏感資訊。若不想經過公開網址，可改在 **Apps Script 編輯器** 設定：
+
+1. 打開 `Code.gs`，找到 `setLineConfig()`，把裡面三個值改成你的 token、群組 ID、版本。
+2. 函式下拉選 `setLineConfig` → 執行（授權一次）。
+3. 執行 `lineTestFromEditor()` 測試。
+
+#### （建議）加管理密碼，避免別人亂改設定
+
+因為 Web App 是「任何人可存取」，任何知道網址的人理論上可呼叫設定。若要保護：
+
+- 在編輯器執行一次：`PropertiesService.getScriptProperties().setProperty('ADMIN_KEY','你的密碼')`
+- 之後從前端儲存／測試推播時，要在「管理密碼」欄填入相同密碼才會生效。
+
+#### LINE 推播常見問題
+
+| 狀況 | 解法 |
+| --- | --- |
+| 測試推播失敗 401 | token 錯或過期，重新 Issue 一個 long-lived token。 |
+| 測試推播失敗 400 | 目標 ID 格式錯（群組是 `C...`、個人是 `U...`）。 |
+| 抓不到群組 ID | Webhook URL 沒填或沒開 Use webhook；或機器人還沒被加進群組／群組沒人發言。 |
+| 學生送出群組沒收到 | 「啟用自動推播」沒勾；或當月免費推播額度用完。 |
+| 改了 Code.gs 沒生效 | Apps Script 要重新部署新版本。 |
+
+---
+
 ## 🧑‍🎓 使用教學
 
 ### 學生填寫
