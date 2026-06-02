@@ -16,8 +16,10 @@
 ## 一行 tab 分隔表頭（複製這一整行）
 
 ```
-timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	targetWeightKg	bmi	weightGap	breakfast	lunch	dinner	snacksDrinks	waterIntake	lateNightSnack	trainingIntensity	physicalAvg	technicalAvg	focusAvg	disciplineAvg	emotionAvg	tacticalAvg	totalScore	averageScore	status	lowItems	improveTargets	mainGoalToday	reflection	tomorrowGoal	encouragementToTeammate	nutritionRisks	nutritionAdviceStudent	nutritionAdviceParent	nutritionAdviceCoach	studentLineText	parentLineText	coachLineText	nutritionLineText	rawScoresJson	rawNutritionJson
+timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	targetWeightKg	bmi	weightGap	breakfast	lunch	dinner	snacksDrinks	waterIntake	lateNightSnack	trainingIntensity	physicalAvg	technicalAvg	focusAvg	disciplineAvg	emotionAvg	tacticalAvg	totalScore	averageScore	status	lowItems	improveTargets	mainGoalToday	reflection	tomorrowGoal	encouragementToTeammate	nutritionRisks	nutritionAdviceStudent	nutritionAdviceParent	nutritionAdviceCoach	studentLineText	parentLineText	coachLineText	nutritionLineText	rawScoresJson	rawNutritionJson	recordId	coachPhysicalAvg	coachTechnicalAvg	coachFocusAvg	coachDisciplineAvg	coachEmotionAvg	coachTacticalAvg	coachTotalScore	coachAverageScore	coachStatus	coachComment	studentResponse	coachReply	reviewUpdatedAt
 ```
+
+> 💡 後面 14 個欄位（`recordId` 起）是「交叉辯論／教練複評」功能用的，**不用手動補**——只要在 Apps Script 編輯器重新執行一次 `setupSheet()`，系統會自動把工作表補到最新欄位。
 
 ---
 
@@ -69,5 +71,12 @@ timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	
 | nutritionLineText | 純飲食建議 LINE 文字 |
 | rawScoresJson | 全部細項分數（JSON，供重新計算最低項） |
 | rawNutritionJson | 飲食分析原始結果（JSON） |
+| recordId | 每筆唯一 ID（供教練複評、選手回應定位更新） |
+| coachPhysicalAvg ~ coachTacticalAvg | 教練複評：六大面向分數 |
+| coachTotalScore / coachAverageScore / coachStatus | 教練複評：總分／平均／燈號 |
+| coachComment | 教練評語 |
+| studentResponse | 選手對這筆的看法（交叉辯論） |
+| coachReply | 教練回覆選手 |
+| reviewUpdatedAt | 複評／回應最後更新時間 |
 
-共 **44 欄**（A 到 AR）。
+共 **58 欄**（A 到 BF）。前 44 欄為原始紀錄，後 14 欄為交叉辯論功能。

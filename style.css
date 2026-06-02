@@ -267,6 +267,18 @@ textarea.text-input { resize: vertical; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* ===================== 交叉辯論：透明化 / 評分卡 ===================== */
+.explain { background: #0f141c; border: 1px solid var(--border); border-radius: 10px; margin: 10px 0; padding: 0 12px; }
+.explain summary { cursor: pointer; padding: 10px 0; font-weight: 700; color: var(--blue); list-style: none; }
+.explain summary::-webkit-details-marker { display: none; }
+.explain summary::before { content: '▶ '; font-size: 0.8rem; }
+.explain[open] summary::before { content: '▼ '; }
+.explain-body { padding: 4px 0 12px; }
+.explain-line { padding: 3px 0; border-bottom: 1px dashed var(--border); font-size: 0.9rem; }
+.explain-line:last-child { border-bottom: none; }
+
+.review-card { background: #0f141c; border: 1px solid var(--border); border-radius: 12px; padding: 14px 14px; margin-bottom: 12px; }
+
 /* ===================== 頁尾 ===================== */
 .app-footer { text-align: center; padding: 24px 16px; color: var(--text-soft); font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 20px; }
 .footer-note { margin-top: 6px; font-size: 0.8rem; color: #6b7585; }

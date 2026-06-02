@@ -36,7 +36,16 @@ var HEADERS = [
   'reflection', 'tomorrowGoal', 'encouragementToTeammate',
   'nutritionRisks', 'nutritionAdviceStudent', 'nutritionAdviceParent', 'nutritionAdviceCoach',
   'studentLineText', 'parentLineText', 'coachLineText', 'nutritionLineText',
-  'rawScoresJson', 'rawNutritionJson'
+  'rawScoresJson', 'rawNutritionJson',
+  // ===== 交叉辯論／教練複評 相關（新增，皆在最後，不影響舊資料） =====
+  'recordId',                                                   // 每筆唯一 ID，供更新定位
+  'coachPhysicalAvg', 'coachTechnicalAvg', 'coachFocusAvg',     // 教練複評：六大面向
+  'coachDisciplineAvg', 'coachEmotionAvg', 'coachTacticalAvg',
+  'coachTotalScore', 'coachAverageScore', 'coachStatus',        // 教練複評：總分/平均/燈號
+  'coachComment',                                               // 教練評語
+  'studentResponse',                                            // 選手對這筆的看法
+  'coachReply',                                                 // 教練回覆選手
+  'reviewUpdatedAt'                                             // 最後更新時間
 ];
 
 /* ============================================================
@@ -90,6 +99,8 @@ function handleAction(action, data) {
       return jsonOut({ ok: true, data: getRecordsByDate(data.date) });
     case 'getAllRecords':
       return jsonOut({ ok: true, data: getAllRecords() });
+    case 'updateRecord':
+      return jsonOut(updateRecord(data.recordId, data.fields || {}));
     // ---- LINE 推播相關 ----
     case 'getLineStatus':
       return jsonOut({ ok: true, data: getLineStatus() });
@@ -129,15 +140,32 @@ function getSheet() {
     sheet.appendRow(HEADERS);
     sheet.setFrozenRows(1);
   }
+  ensureSchema(sheet); // 自動把欄位補到最新版（新增 recordId、教練複評等欄位）
   return sheet;
 }
 
-// 自動建立表頭（可在編輯器手動執行一次）
+/*
+   確保工作表欄位數量與表頭符合最新 HEADERS。
+   新增欄位都在最後，所以舊資料位置不變，只是右邊多出空白欄。
+*/
+function ensureSchema(sheet) {
+  var need = HEADERS.length;
+  // 欄位數不夠先擴充
+  if (sheet.getMaxColumns() < need) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), need - sheet.getMaxColumns());
+  }
+  // 表頭不完整或順序不對就重寫第一列
+  if (sheet.getLastColumn() < need || sheet.getRange(1, 1).getValue() !== HEADERS[0]) {
+    sheet.getRange(1, 1, 1, need).setValues([HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+}
+
+// 自動建立／更新表頭（可在編輯器手動執行一次）
 function setupSheet() {
   var sheet = getSheet();
-  sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
-  sheet.setFrozenRows(1);
-  return 'setupSheet 完成，表頭已建立。';
+  ensureSchema(sheet);
+  return 'setupSheet 完成，表頭已建立／更新為最新版（含 recordId、教練複評欄位）。';
 }
 
 // 今天日期字串 yyyy-MM-dd
@@ -209,6 +237,31 @@ function getRecentRecordsByName(name, limit) {
   var mine = all.filter(function (r) { return String(r.name) === String(name); });
   mine.sort(byTimestampDesc);
   return mine.slice(0, limit || 7);
+}
+
+// 依 recordId 更新某筆紀錄的指定欄位（供教練複評、選手回應、教練回覆使用）
+function updateRecord(recordId, fields) {
+  if (!recordId) return { ok: false, error: '缺少 recordId' };
+  var sheet = getSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { ok: false, error: '尚無資料' };
+
+  var idCol = HEADERS.indexOf('recordId') + 1;
+  var ids = sheet.getRange(2, idCol, lastRow - 1, 1).getValues();
+  var rowNum = -1;
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(recordId)) { rowNum = i + 2; break; }
+  }
+  if (rowNum === -1) return { ok: false, error: '找不到該筆紀錄（可能是舊資料沒有 recordId）' };
+
+  // 自動補上更新時間
+  fields.reviewUpdatedAt = new Date().toISOString();
+
+  Object.keys(fields).forEach(function (key) {
+    var c = HEADERS.indexOf(key);
+    if (c !== -1) sheet.getRange(rowNum, c + 1).setValue(fields[key]);
+  });
+  return { ok: true, recordId: recordId };
 }
 
 // 依日期取得所有紀錄

@@ -89,10 +89,16 @@ const KPI_ASPECTS = {
 // 面向順序（影響顯示與計算）
 const ASPECT_ORDER = ['physical', 'technical', 'focus', 'discipline', 'emotion', 'tactical'];
 
-// 對應到 Sheet 欄位的平均欄位名
+// 對應到 Sheet 欄位的平均欄位名（選手自評）
 const ASPECT_AVG_FIELD = {
   physical: 'physicalAvg', technical: 'technicalAvg', focus: 'focusAvg',
   discipline: 'disciplineAvg', emotion: 'emotionAvg', tactical: 'tacticalAvg'
+};
+
+// 教練複評對應的 Sheet 欄位名
+const COACH_ASPECT_FIELD = {
+  physical: 'coachPhysicalAvg', technical: 'coachTechnicalAvg', focus: 'coachFocusAvg',
+  discipline: 'coachDisciplineAvg', emotion: 'coachEmotionAvg', tactical: 'coachTacticalAvg'
 };
 
 // 飲食關鍵字
@@ -678,6 +684,90 @@ async function fetchLastRecord(name) {
 }
 
 /* ============================================================
+   9.5 交叉辯論：更新紀錄 / 計算透明化 / 自評vs教練評
+   ============================================================ */
+
+// 更新某筆紀錄欄位（正式優先，本機同步；無 URL 則只更新本機）
+async function updateRecordRemote(recordId, fields) {
+  const url = getWebAppUrl();
+  if (url) {
+    try {
+      const res = await postToWebApp({ action: 'updateRecord', recordId: recordId, fields: fields });
+      if (res && res.ok) { updateLocalRecordFields(recordId, fields); return true; }
+    } catch (e) { /* 落回本機 */ }
+  }
+  return updateLocalRecordFields(recordId, fields);
+}
+function updateLocalRecordFields(recordId, fields) {
+  const arr = getLocalRecords();
+  const r = arr.find(x => String(x.recordId) === String(recordId));
+  if (r) { Object.assign(r, fields); localStorage.setItem(LS_KEYS.localRecords, JSON.stringify(arr)); return true; }
+  return false;
+}
+
+// 是否已有教練複評
+function hasCoachReview(rec) {
+  return rec && rec.coachAverageScore !== undefined && rec.coachAverageScore !== null && String(rec.coachAverageScore) !== '';
+}
+
+// 從紀錄取教練六大面向
+function coachAspectAvgFromRecord(rec) {
+  const out = {};
+  ASPECT_ORDER.forEach(k => out[k] = parseFloat(rec[COACH_ASPECT_FIELD[k]]) || 0);
+  return out;
+}
+
+/* ---- 計算透明化：為什麼是這個燈號（native <details>，免額外 JS） ---- */
+function explainStatusFromRecord(rec) {
+  let scores = {};
+  try { scores = JSON.parse(rec.rawScoresJson || '{}'); } catch (e) { /* */ }
+  const avg = aspectAvgFromRecord(rec);
+  const lowAspects = ASPECT_ORDER.filter(k => avg[k] < 3).map(k => `${KPI_ASPECTS[k].label}（${avg[k]}）`);
+  const low = findLowItems(scores);
+
+  let inner = '';
+  inner += `<div class="explain-line">平均 <b>${rec.averageScore}</b> ＝ 總分 <b>${rec.totalScore}</b> ÷ 6</div>`;
+  inner += `<div class="explain-line">門檻：平均 ≥ 4.0 🟢　≥ 3.0 🟡　&lt; 3.0 🔴</div>`;
+  if (lowAspects.length) inner += `<div class="explain-line">拉低的面向：${lowAspects.join('、')}</div>`;
+  if (low.length) inner += `<div class="explain-line">最低細項：${low.map(l => `${l.item} ${l.score}分`).join('、')}</div>`;
+  inner += `<div class="explain-line" style="color:var(--text-soft)">每一面向＝該面向 5 個細項平均；六面向平均加總＝總分（滿分 30）。</div>`;
+
+  return `<details class="explain"><summary>🔎 為什麼是「${rec.status}」？</summary><div class="explain-body">${inner}</div></details>`;
+}
+
+/* ---- 自評 vs 教練評對照 ---- */
+function renderSelfVsCoach(rec) {
+  if (!hasCoachReview(rec)) return '';
+  const self = aspectAvgFromRecord(rec);
+  const coach = coachAspectAvgFromRecord(rec);
+
+  let html = `<h4 style="margin:12px 0 6px;color:var(--blue)">⚖️ 自評 vs 教練評</h4>`;
+  html += `<div class="table-scroll"><table class="record-table"><thead><tr><th>面向</th><th>自評</th><th>教練</th><th>差距</th></tr></thead><tbody>`;
+  let bigGap = [];
+  ASPECT_ORDER.forEach(k => {
+    const s = self[k], c = coach[k];
+    const gap = round1(c - s);
+    let cls = 'tag-yellow';
+    if (gap > 0) cls = 'tag-green'; else if (gap < 0) cls = 'tag-red';
+    const flag = Math.abs(gap) >= 1 ? ' 💬' : '';
+    if (Math.abs(gap) >= 1) bigGap.push(KPI_ASPECTS[k].label);
+    html += `<tr><td>${KPI_ASPECTS[k].label}</td><td>${s}</td><td>${c}</td><td><span class="tag ${cls}">${gap > 0 ? '+' : ''}${gap}${flag}</span></td></tr>`;
+  });
+  html += `</tbody></table></div>`;
+  html += `<div class="review-row"><span class="review-label">教練總分</span><span class="review-value">${rec.coachTotalScore} / 30（${rec.coachStatus || '-'}）</span></div>`;
+  if (rec.coachComment) html += `<div class="hint-box">📣 教練評語：${escapeHtml(rec.coachComment)}</div>`;
+  if (bigGap.length) html += `<div class="hint-box warn">💬 「${bigGap.join('、')}」你和教練看法差距較大，值得一起討論。<br><span style="color:var(--text-soft)">這裡是讓你說明想法，不是改分數，最終由教練綜合判斷。</span></div>`;
+  return html;
+}
+
+// 簡單 HTML 跳脫，避免使用者輸入破壞版面
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* ============================================================
    10. 送出流程
    ============================================================ */
 
@@ -731,6 +821,7 @@ function buildRecord() {
   const mainGoalToday = $id('mainGoalToday').value;
 
   const rec = {
+    recordId: 'r' + Date.now() + '_' + Math.floor(Math.random() * 100000),
     timestamp: new Date().toISOString(),
     date: $id('date').value || todayStr(),
     name: $id('name').value,
@@ -1311,7 +1402,96 @@ async function loadPersonRecords() {
   });
   html += '</tbody></table></div>';
 
+  // ---- 評分與對話（交叉辯論）：每筆一張卡 ----
+  html += '<h4 style="margin-top:16px">✍️ 評分與對話</h4>';
+  recs.forEach(r => html += renderCoachReviewBlock(r));
+
   box.innerHTML = html;
+
+  // 綁定每張卡的事件
+  recs.forEach(r => wireCoachReviewBlock(r));
+}
+
+// 教練評分／回覆卡片
+function renderCoachReviewBlock(rec) {
+  if (!rec.recordId) {
+    return `<div class="card" style="margin-bottom:10px"><b>${dateSlash(rec.date)}</b>　<span class="review-label">舊紀錄，無法評分／回覆</span></div>`;
+  }
+  const self = aspectAvgFromRecord(rec);
+  const coach = hasCoachReview(rec) ? coachAspectAvgFromRecord(rec) : null;
+
+  let html = `<div class="review-card" data-rid="${rec.recordId}">`;
+  html += `<div class="review-row"><span class="review-label">${dateSlash(rec.date)}</span><span class="review-value">${rec.status}　${rec.totalScore}/30</span></div>`;
+
+  // 計算透明化
+  html += explainStatusFromRecord(rec);
+  // 自評 vs 教練評（已評過才顯示）
+  html += renderSelfVsCoach(rec);
+
+  // 選手的看法
+  if (rec.studentResponse) html += `<div class="hint-box">💬 選手的看法：${escapeHtml(rec.studentResponse)}</div>`;
+
+  // 教練評分表單
+  html += `<details class="explain"${coach ? '' : ' open'}><summary>✍️ ${coach ? '修改' : '填寫'}教練評分</summary><div class="explain-body">`;
+  ASPECT_ORDER.forEach(k => {
+    const def = coach ? coach[k] : Math.round(self[k]);
+    html += `<div class="kpi-item" style="border:none;padding:6px 0">
+      <div class="kpi-item-row"><span class="kpi-item-name">${KPI_ASPECTS[k].label}<span style="color:var(--text-soft)">（自評 ${self[k]}）</span></span>
+      <span class="kpi-item-score" id="crvlbl-${rec.recordId}-${k}">${def}</span></div>
+      <input type="range" min="1" max="5" step="0.5" value="${def}" class="kpi-slider coach-review-slider"
+             data-rid="${rec.recordId}" data-aspect="${k}" id="crv-${rec.recordId}-${k}" />
+    </div>`;
+  });
+  html += `<label class="field-label">教練評語</label>
+    <textarea class="text-input" id="crvcomment-${rec.recordId}" rows="2" placeholder="給這位選手的話…">${escapeHtml(rec.coachComment || '')}</textarea>
+    <button type="button" class="btn btn-primary" data-save-review="${rec.recordId}" style="margin-top:8px">💾 儲存教練評分</button>`;
+  html += `</div></details>`;
+
+  // 回覆選手
+  html += `<label class="field-label">💬 回覆選手</label>
+    <textarea class="text-input" id="creply-${rec.recordId}" rows="2" placeholder="回應選手的看法…">${escapeHtml(rec.coachReply || '')}</textarea>
+    <button type="button" class="btn btn-secondary" data-send-reply="${rec.recordId}" style="margin-top:8px">📨 送出回覆</button>`;
+
+  html += `</div>`;
+  return html;
+}
+
+// 綁定教練評分卡事件
+function wireCoachReviewBlock(rec) {
+  if (!rec.recordId) return;
+  // 拉桿即時更新數字
+  ASPECT_ORDER.forEach(k => {
+    const s = $id(`crv-${rec.recordId}-${k}`);
+    if (s) s.addEventListener('input', () => { $id(`crvlbl-${rec.recordId}-${k}`).textContent = s.value; });
+  });
+  // 儲存評分
+  const saveBtn = document.querySelector(`[data-save-review="${rec.recordId}"]`);
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const fields = {};
+    let total = 0;
+    ASPECT_ORDER.forEach(k => {
+      const v = parseFloat($id(`crv-${rec.recordId}-${k}`).value) || 0;
+      fields[COACH_ASPECT_FIELD[k]] = v; total += v;
+    });
+    fields.coachTotalScore = round2(total);
+    fields.coachAverageScore = round2(total / 6);
+    fields.coachStatus = judgeStatus(total / 6);
+    fields.coachComment = $id(`crvcomment-${rec.recordId}`).value.trim();
+    saveBtn.disabled = true; saveBtn.textContent = '儲存中...';
+    const ok = await updateRecordRemote(rec.recordId, fields);
+    saveBtn.disabled = false; saveBtn.textContent = '💾 儲存教練評分';
+    toast(ok ? '✅ 已儲存教練評分' : '⚠️ 儲存失敗');
+    if (ok) loadPersonRecords(); // 重新整理以顯示對照
+  });
+  // 送出回覆
+  const replyBtn = document.querySelector(`[data-send-reply="${rec.recordId}"]`);
+  if (replyBtn) replyBtn.addEventListener('click', async () => {
+    const text = $id(`creply-${rec.recordId}`).value.trim();
+    replyBtn.disabled = true; replyBtn.textContent = '送出中...';
+    const ok = await updateRecordRemote(rec.recordId, { coachReply: text });
+    replyBtn.disabled = false; replyBtn.textContent = '📨 送出回覆';
+    toast(ok ? '✅ 已送出回覆，選手在「上次表現」看得到' : '⚠️ 送出失敗');
+  });
 }
 
 /* ============================================================
@@ -1353,9 +1533,40 @@ function renderLastReviewInto(rec, box) {
     html += `</div>`;
   }
   html += `<div class="hint-box">📣 ${buildRemindText(lowItems)}</div>`;
-  if (rec.reflection) html += `<div class="hint-box">📝 上次心得：${rec.reflection}</div>`;
-  if (rec.tomorrowGoal) html += `<div class="hint-box good">🎯 上次明日目標：${rec.tomorrowGoal}</div>`;
+
+  // 計算透明化
+  html += explainStatusFromRecord(rec);
+
+  // 自評 vs 教練評
+  html += renderSelfVsCoach(rec);
+
+  if (rec.reflection) html += `<div class="hint-box">📝 上次心得：${escapeHtml(rec.reflection)}</div>`;
+  if (rec.tomorrowGoal) html += `<div class="hint-box good">🎯 上次明日目標：${escapeHtml(rec.tomorrowGoal)}</div>`;
+
+  // 選手回應欄（交叉辯論）
+  if (rec.recordId) {
+    if (rec.coachReply) html += `<div class="hint-box good">💬 教練回覆你：${escapeHtml(rec.coachReply)}</div>`;
+    html += `<h4 style="margin:14px 0 6px;color:var(--blue)">💬 我對這筆的看法</h4>`;
+    html += `<textarea id="studentResponseBox" class="text-input" rows="2" placeholder="例如：核心穩定我覺得不只 2 分，因為今天…">${escapeHtml(rec.studentResponse || '')}</textarea>`;
+    html += `<button type="button" id="btnSendStudentResponse" class="btn btn-secondary" style="margin-top:8px">📨 送出我的看法</button>`;
+    html += `<div style="color:var(--text-soft);font-size:0.82rem;margin-top:6px">這裡是讓你說明想法，幫助教練了解你，不是用來改分數。</div>`;
+  } else {
+    html += `<div class="hint-box" style="color:var(--text-soft)">這是較早的紀錄，無法回應（新版紀錄才支援交叉辯論）。</div>`;
+  }
+
   box.innerHTML = html;
+
+  // 綁定送出看法
+  const btn = $id('btnSendStudentResponse');
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      const text = $id('studentResponseBox').value.trim();
+      btn.disabled = true; btn.textContent = '送出中...';
+      const ok = await updateRecordRemote(rec.recordId, { studentResponse: text });
+      btn.disabled = false; btn.textContent = '📨 送出我的看法';
+      toast(ok ? '✅ 已送出你的看法，教練會看到' : '⚠️ 送出失敗，請稍後再試');
+    });
+  }
 }
 
 /* ============================================================
