@@ -8,12 +8,33 @@
 </head>
 <body>
 
+  <!-- ===================== 登入／選身分 ===================== -->
+  <div id="loginOverlay" class="login-overlay">
+    <div class="login-card">
+      <h1 class="login-title">🥋 育林國中跆拳道隊</h1>
+      <p class="login-sub">選手 KPI＋身體狀態＋AI 飲食建議系統</p>
+
+      <div id="loginStep1">
+        <p class="login-hint">請選擇你的身分</p>
+        <div class="login-roles">
+          <button class="login-role-btn" data-role="student">🥋 我是選手</button>
+          <button class="login-role-btn" data-role="parent">👨‍👩‍👧 我是家長</button>
+          <button class="login-role-btn" data-role="coach">📊 我是教練</button>
+        </div>
+      </div>
+
+      <div id="loginStep2" style="display:none;"></div>
+    </div>
+  </div>
+
   <!-- ===================== 頁首 ===================== -->
   <header class="app-header">
+    <button type="button" id="btnSwitchRole" class="btn-switch-role" style="display:none;">🔄 切換身分</button>
     <div class="header-inner">
       <h1 class="app-title">🥋 育林國中跆拳道隊</h1>
       <h2 class="app-subtitle">選手 KPI＋身體狀態＋AI 飲食建議系統</h2>
       <p class="app-slogan">昨天發現問題，今天帶著目標訓練，明天看見進步。</p>
+      <p id="roleBadge" class="role-badge" style="display:none;"></p>
     </div>
   </header>
 
@@ -206,7 +227,7 @@
     <!-- 分頁二：上次表現                                          -->
     <!-- ========================================================= -->
     <section class="tab-panel" id="tab-lastperf">
-      <div class="card">
+      <div class="card" id="lastPerfQueryCard">
         <h3 class="card-title">📌 上次表現查詢</h3>
         <label class="field-label">選擇選手</label>
         <select id="lastPerfName" class="text-input"></select>
@@ -294,6 +315,15 @@
           <button type="button" id="btnClearUrl" class="btn btn-ghost">🗑️ 清除設定</button>
         </div>
         <div id="connStatus" class="conn-status"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">🔑 教練密碼設定</h3>
+        <p class="review-label">設定後，選「📊 我是教練」要輸入此密碼才能進入後台與設定。選手、家長不受影響。</p>
+        <label class="field-label">新教練密碼</label>
+        <input type="password" id="newCoachPwd" class="text-input" placeholder="輸入新的教練密碼" />
+        <button type="button" id="btnSetCoachPwd" class="btn btn-primary" style="margin-top:10px">💾 設定教練密碼</button>
+        <div id="coachPwdStatus" class="conn-status"></div>
       </div>
 
       <div class="card">

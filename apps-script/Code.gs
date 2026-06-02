@@ -117,6 +117,8 @@ function handleAction(action, data) {
       return jsonOut(lineTest(data));
     case 'getLineLastSource':
       return jsonOut({ ok: true, data: { lastSourceId: getProp('LINE_LAST_SOURCE_ID') || '', lastSourceType: getProp('LINE_LAST_SOURCE_TYPE') || '' } });
+    case 'verifyAdmin':
+      return jsonOut(verifyAdmin(data));
     default:
       return jsonOut({ ok: false, error: '未知的 action：' + action });
   }
@@ -434,6 +436,13 @@ function pushRecordToLine(payload) {
   // 只要有一則成功就算成功
   var anyOk = results.some(function (r) { return r.ok; });
   return { ok: anyOk, details: results };
+}
+
+// 教練登入驗證：回傳是否通過，以及後端是否已設密碼
+function verifyAdmin(data) {
+  var key = getProp('ADMIN_KEY');
+  if (!key) return { ok: true, keySet: false }; // 尚未設密碼 → 放行（提醒去設定）
+  return { ok: (data && data.adminKey === key), keySet: true };
 }
 
 // 驗證管理密碼（若有設定 ADMIN_KEY）

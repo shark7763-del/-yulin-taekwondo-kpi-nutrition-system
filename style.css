@@ -267,6 +267,46 @@ textarea.text-input { resize: vertical; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* ===================== 登入／選身分 ===================== */
+.login-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: linear-gradient(160deg, #0b0e13 0%, #141b28 60%, #1e2740 100%);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.login-overlay.hidden { display: none; }
+.login-card {
+  width: 100%; max-width: 420px;
+  background: linear-gradient(160deg, var(--bg-card), var(--bg-card-2));
+  border: 1px solid var(--border); border-top: 4px solid var(--gold);
+  border-radius: 18px; box-shadow: var(--shadow);
+  padding: 28px 22px; text-align: center;
+}
+.login-title { color: var(--gold); font-size: 1.5rem; }
+.login-sub { color: var(--text-soft); font-size: 0.95rem; margin: 6px 0 18px; }
+.login-hint { color: var(--text-main); font-weight: 600; margin-bottom: 14px; }
+.login-roles { display: flex; flex-direction: column; gap: 12px; }
+.login-role-btn {
+  padding: 18px; border: 1px solid var(--border); border-radius: 14px;
+  background: #0f141c; color: var(--text-main); font-size: 1.1rem; font-weight: 700; cursor: pointer;
+  transition: all 0.15s;
+}
+.login-role-btn:hover { border-color: var(--gold); background: rgba(245,197,24,0.08); transform: translateY(-2px); }
+.login-step2-actions { display: flex; gap: 10px; margin-top: 14px; }
+.login-back { background: transparent; border: 1px solid var(--border); color: var(--text-soft); border-radius: 12px; padding: 14px; flex: 1; cursor: pointer; font-weight: 700; }
+
+.btn-switch-role {
+  position: absolute; top: 12px; right: 12px;
+  background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: var(--text-soft);
+  border-radius: 10px; padding: 8px 12px; font-size: 0.85rem; font-weight: 700; cursor: pointer;
+}
+.btn-switch-role:hover { color: var(--gold); border-color: var(--gold); }
+.role-badge {
+  display: inline-block; margin-top: 8px; padding: 4px 14px;
+  background: rgba(245,197,24,0.12); border: 1px solid var(--gold);
+  border-radius: 20px; font-size: 0.85rem; font-weight: 700; color: var(--gold);
+}
+
 /* ===================== 交叉辯論：透明化 / 評分卡 ===================== */
 .explain { background: #0f141c; border: 1px solid var(--border); border-radius: 10px; margin: 10px 0; padding: 0 12px; }
 .explain summary { cursor: pointer; padding: 10px 0; font-weight: 700; color: var(--blue); list-style: none; }

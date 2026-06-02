@@ -1723,6 +1723,27 @@ function setupSettingsHandlers() {
     } catch (e) { toast('匯入失敗：請確認是 JSON 陣列格式'); }
   });
 
+  // 設定教練密碼（= 後端 ADMIN_KEY）
+  const setPwdBtn = $id('btnSetCoachPwd');
+  if (setPwdBtn) setPwdBtn.addEventListener('click', async () => {
+    const np = $id('newCoachPwd').value.trim();
+    const st = $id('coachPwdStatus');
+    if (!np) { st.className = 'conn-status fail'; st.textContent = '請輸入新密碼。'; return; }
+    if (!getWebAppUrl()) { st.className = 'conn-status fail'; st.textContent = '尚未設定 Web App URL。'; return; }
+    st.className = 'conn-status info'; st.textContent = '設定中...';
+    try {
+      // adminKey 用目前已知的密碼（第一次設定時後端尚無密碼，會放行）
+      const res = await postToWebApp({ action: 'setLineConfig', adminKey: getLineAdminKey(), newAdminKey: np });
+      if (res && res.ok) {
+        saveLineAdminKey(np); // 記住，之後改設定/同步名單才不會被擋
+        $id('newCoachPwd').value = '';
+        st.className = 'conn-status ok'; st.textContent = '✅ 教練密碼已設定。';
+      } else {
+        st.className = 'conn-status fail'; st.textContent = '設定失敗：' + ((res && res.error) || '請確認舊密碼');
+      }
+    } catch (e) { st.className = 'conn-status fail'; st.textContent = '設定失敗，請檢查連線。'; }
+  });
+
   // 手動同步名單到雲端
   const syncBtn = $id('btnSyncRoster');
   if (syncBtn) syncBtn.addEventListener('click', async () => {
@@ -1882,6 +1903,163 @@ function switchTab(tabName) {
 }
 
 /* ============================================================
+   15.5 角色登入（選手／家長／教練）
+   ------------------------------------------------------------
+   純前端「軟性」分流：擋一般使用者亂逛，非真正帳號安全。
+   教練密碼用後端 ADMIN_KEY 驗證；選手／家長選身分即可。
+   ============================================================ */
+
+const ROLE_KEY = 'yulin_role';
+
+function getRole() {
+  try { return JSON.parse(localStorage.getItem(ROLE_KEY)); } catch (e) { return null; }
+}
+function setRole(role, name) { localStorage.setItem(ROLE_KEY, JSON.stringify({ role: role, name: name || '' })); }
+function clearRole() { localStorage.removeItem(ROLE_KEY); }
+
+// 各角色可看的分頁與預設分頁
+const ROLE_TABS = {
+  student: { allowed: ['student', 'lastperf'], default: 'student' },
+  parent: { allowed: ['lastperf'], default: 'lastperf' },
+  coach: { allowed: ['student', 'lastperf', 'coach', 'settings'], default: 'coach' }
+};
+const ROLE_LABEL = { student: '🥋 選手', parent: '👨‍👩‍👧 家長', coach: '📊 教練' };
+
+// 顯示登入畫面
+function showLoginOverlay() {
+  const ov = $id('loginOverlay');
+  ov.classList.remove('hidden');
+  $id('loginStep1').style.display = 'block';
+  $id('loginStep2').style.display = 'none';
+  $id('loginStep2').innerHTML = '';
+}
+
+// 進入第二步（選名字 / 輸密碼）
+function loginStep2(role) {
+  const s1 = $id('loginStep1'), s2 = $id('loginStep2');
+  s1.style.display = 'none';
+  s2.style.display = 'block';
+
+  if (role === 'coach') {
+    s2.innerHTML = `
+      <p class="login-hint">請輸入教練密碼</p>
+      <input type="password" id="loginCoachPwd" class="text-input" placeholder="教練密碼" />
+      <div class="login-step2-actions">
+        <button class="login-back" id="loginBack">返回</button>
+        <button class="btn btn-primary" id="loginCoachGo" style="flex:1">進入</button>
+      </div>
+      <p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none;margin-top:10px"></p>`;
+    $id('loginBack').addEventListener('click', showLoginOverlay);
+    $id('loginCoachGo').addEventListener('click', () => coachLogin());
+    $id('loginCoachPwd').addEventListener('keydown', e => { if (e.key === 'Enter') coachLogin(); });
+  } else {
+    // 選手 / 家長：選名字
+    const who = role === 'student' ? '選手' : '孩子';
+    const players = getPlayers();
+    let opts = players.map(p => `<option value="${p}">${p}</option>`).join('');
+    s2.innerHTML = `
+      <p class="login-hint">請選擇${who}姓名</p>
+      <select id="loginName" class="text-input"><option value="" disabled selected>請選擇${who}</option>${opts}</select>
+      <div class="login-step2-actions">
+        <button class="login-back" id="loginBack">返回</button>
+        <button class="btn btn-primary" id="loginNameGo" style="flex:1">進入</button>
+      </div>`;
+    $id('loginBack').addEventListener('click', showLoginOverlay);
+    $id('loginNameGo').addEventListener('click', () => {
+      const name = $id('loginName').value;
+      if (!name) { toast('請選擇姓名'); return; }
+      finishLogin(role, name);
+    });
+  }
+}
+
+// 教練登入：用後端 ADMIN_KEY 驗證
+async function coachLogin() {
+  const pwd = $id('loginCoachPwd').value;
+  const errEl = $id('loginErr');
+  const go = $id('loginCoachGo');
+  go.disabled = true; go.textContent = '驗證中...';
+  let result = { ok: false, keySet: true };
+  if (getWebAppUrl()) {
+    try {
+      const res = await postToWebApp({ action: 'verifyAdmin', adminKey: pwd });
+      if (res && res.ok !== undefined) result = res;
+    } catch (e) { /* 連線失敗，往下判斷 */ }
+  }
+  go.disabled = false; go.textContent = '進入';
+
+  if (result.ok) {
+    if (result.keySet === false) toast('尚未設定教練密碼，建議到系統設定設一組');
+    // 記住教練密碼供名單同步等使用
+    if (pwd) saveLineAdminKey(pwd);
+    finishLogin('coach', '');
+  } else {
+    errEl.style.display = 'block';
+    errEl.textContent = '密碼錯誤，請再試一次。';
+  }
+}
+
+// 完成登入
+function finishLogin(role, name) {
+  setRole(role, name);
+  $id('loginOverlay').classList.add('hidden');
+  applyRole();
+}
+
+// 套用角色權限
+function applyRole() {
+  const r = getRole();
+  if (!r) { showLoginOverlay(); return; }
+  const conf = ROLE_TABS[r.role] || ROLE_TABS.student;
+
+  // 分頁顯示控制
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.style.display = conf.allowed.indexOf(b.dataset.tab) !== -1 ? '' : 'none';
+  });
+  switchTab(conf.default);
+
+  // 身分標籤與切換鈕
+  const badge = $id('roleBadge');
+  badge.style.display = 'inline-block';
+  badge.textContent = ROLE_LABEL[r.role] + (r.name ? '：' + r.name : '');
+  $id('btnSwitchRole').style.display = 'block';
+
+  // 選手：鎖定姓名為自己
+  if (r.role === 'student' && r.name) {
+    const nameSel = $id('name');
+    if (nameSel) { nameSel.value = r.name; nameSel.disabled = true; nameSel.dispatchEvent(new Event('change')); }
+    const lp = $id('lastPerfName'); if (lp) lp.value = r.name;
+  } else {
+    const nameSel = $id('name'); if (nameSel) nameSel.disabled = false;
+  }
+
+  // 家長：鎖定孩子、隱藏查詢列、自動載入
+  const queryCard = $id('lastPerfQueryCard');
+  if (r.role === 'parent' && r.name) {
+    const lp = $id('lastPerfName'); if (lp) lp.value = r.name;
+    if (queryCard) queryCard.style.display = 'none';
+    loadLastPerfPage();
+  } else if (queryCard) {
+    queryCard.style.display = '';
+  }
+}
+
+function setupRoleHandlers() {
+  document.querySelectorAll('.login-role-btn').forEach(btn => {
+    btn.addEventListener('click', () => loginStep2(btn.dataset.role));
+  });
+  $id('btnSwitchRole').addEventListener('click', () => {
+    clearRole();
+    // 解除選手姓名鎖定
+    const nameSel = $id('name'); if (nameSel) nameSel.disabled = false;
+    const queryCard = $id('lastPerfQueryCard'); if (queryCard) queryCard.style.display = '';
+    $id('roleBadge').style.display = 'none';
+    $id('btnSwitchRole').style.display = 'none';
+    showLoginOverlay();
+  });
+}
+
+/* ============================================================
    16. 初始化
    ============================================================ */
 function init() {
@@ -1948,8 +2126,15 @@ function init() {
   setupSettingsHandlers();
   renderPlayerList();
 
+  // 角色登入
+  setupRoleHandlers();
+
   // 從雲端拉共用名單（學生手機開連結也會自動拿到最新名單）
-  loadRosterFromServer();
+  // 拉完名單後再套用角色（選手/家長姓名鎖定才正確）
+  loadRosterFromServer().then(() => {
+    if (getRole()) applyRole();
+    else showLoginOverlay();
+  });
 
   // 初次載入教練後台資料
   refreshCoach();
