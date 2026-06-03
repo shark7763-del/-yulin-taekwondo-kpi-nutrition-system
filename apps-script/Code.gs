@@ -312,6 +312,55 @@ function updateRecord(recordId, fields) {
   return { ok: true, recordId: recordId };
 }
 
+/*
+   手動執行一次：清掉 records 裡「同一人同一天」的重複列，每人每天只留一筆。
+   保留優先序：① 有教練評分的列 ② timestamp 最新的列。
+   在 Apps Script 編輯器選 dedupeSheet 按執行即可，會回傳刪除筆數。
+   （日常的重複已由 addRecord 的 upsert 防止，這支只用來清理舊資料。）
+*/
+function dedupeSheet() {
+  var sheet = getSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 3) return '資料少於 2 筆，無需處理。';
+
+  var nameIdx = HEADERS.indexOf('name');
+  var dateIdx = HEADERS.indexOf('date');
+  var coachIdx = HEADERS.indexOf('coachAverageScore');
+  var tsIdx = 0; // timestamp 是第一欄
+  var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+
+  // 每個 name+date 找出最該保留的列
+  var best = {}; // key -> { idx, hasCoach, ts }
+  for (var i = 0; i < values.length; i++) {
+    var name = String(values[i][nameIdx]).trim();
+    var date = formatDateCell(values[i][dateIdx]);
+    if (!name || !date) continue; // 沒 name/date 的列不動
+    var key = name + '|' + date;
+    var hasCoach = (coachIdx !== -1 && String(values[i][coachIdx] || '') !== '') ? 1 : 0;
+    var ts = new Date(values[i][tsIdx] || 0).getTime();
+    var cur = { idx: i, hasCoach: hasCoach, ts: ts };
+    var prev = best[key];
+    if (!prev || cur.hasCoach > prev.hasCoach || (cur.hasCoach === prev.hasCoach && cur.ts >= prev.ts)) {
+      best[key] = cur;
+    }
+  }
+  var keep = {};
+  Object.keys(best).forEach(function (k) { keep[best[k].idx] = true; });
+
+  // 收集要刪的 sheet 列號（只刪有 name+date 且非保留者）
+  var toDelete = [];
+  for (var j = 0; j < values.length; j++) {
+    var nm = String(values[j][nameIdx]).trim();
+    var dt = formatDateCell(values[j][dateIdx]);
+    if (!nm || !dt) continue;
+    if (!keep[j]) toDelete.push(j + 2);
+  }
+  toDelete.sort(function (a, b) { return b - a; }); // 由下往上刪，避免位移
+  toDelete.forEach(function (r) { sheet.deleteRow(r); });
+
+  return '完成：刪除 ' + toDelete.length + ' 筆重複列，每人每天只保留一筆（優先留有教練評分者）。';
+}
+
 /* ============================================================
    選手名單（全裝置共用，存在 roster 工作表 A 欄）
    ============================================================ */
