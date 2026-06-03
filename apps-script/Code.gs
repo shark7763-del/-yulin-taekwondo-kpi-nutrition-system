@@ -115,6 +115,8 @@ function handleAction(action, data) {
       return jsonOut(setLineConfigFromRequest(data));
     case 'lineTest':
       return jsonOut(lineTest(data));
+    case 'pushLineText':
+      return jsonOut(pushLineText(data));
     case 'getLineLastSource':
       return jsonOut({ ok: true, data: { lastSourceId: getProp('LINE_LAST_SOURCE_ID') || '', lastSourceType: getProp('LINE_LAST_SOURCE_TYPE') || '' } });
     case 'verifyAdmin':
@@ -482,6 +484,15 @@ function setLineConfigFromRequest(data) {
 function lineTest(data) {
   if (!checkAdminKey(data)) return { ok: false, error: '管理密碼錯誤。' };
   return pushToLine('✅ 育林跆拳道系統｜LINE 測試訊息，看到這則代表推播設定成功。');
+}
+
+// 教練後台「發送 LINE 催繳」：把指定文字推到設定好的 LINE 目標
+// （需管理密碼；不受 LINE_ENABLED 限制，屬於教練主動觸發的即時推播）
+function pushLineText(data) {
+  if (!checkAdminKey(data)) return { ok: false, error: '管理密碼錯誤。' };
+  var text = data && data.text ? String(data.text) : '';
+  if (!text.trim()) return { ok: false, error: '沒有要發送的內容。' };
+  return pushToLine(text);
 }
 
 /*

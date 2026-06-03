@@ -238,6 +238,30 @@ function todayStr() {
 // 將 yyyy-mm-dd 轉成 yyyy/mm/dd 顯示
 function dateSlash(s) { return (s || '').replace(/-/g, '/'); }
 
+/*
+   把任意日期值正規化成 yyyy-mm-dd。
+   Google Sheet 會把日期字串自動轉成 Date，讀回來經 JSON 會變成
+   "2026-06-02T16:00:00.000Z"（UTC）這種格式，直接字串比對會對不上，
+   因此後台篩選日期前一律先過這個函式。
+*/
+function normDate(v) {
+  if (!v) return '';
+  const s = String(v).trim();
+  // 已是 yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // yyyy/mm/dd（可能後面還有時間）
+  const m = s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // ISO 或其他可被 Date 解析的格式 -> 用本地時區還原日期
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  }
+  return s;
+}
+
 function round1(n) { return Math.round(n * 10) / 10; }
 function round2(n) { return Math.round(n * 100) / 100; }
 
@@ -640,6 +664,17 @@ function renderLastReview(rec, containerId, cardId) {
   html += `<h4 style="margin:12px 0 6px;color:var(--blue)">上次身體狀態</h4>`;
   html += `<div class="review-row"><span class="review-label">體重</span><span class="review-value">${rec.weightKg || '--'} kg</span></div>`;
   html += `<div class="review-row"><span class="review-label">BMI</span><span class="review-value">${rec.bmi || '--'}</span></div>`;
+
+  // 當日飲食狀況（讓選手回顧前一天吃了什麼）
+  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">🍱 當日飲食狀況</h4>`;
+  const mealRow = (label, val) => `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${escapeHtml(val || '—').replace(/\n/g, '<br>')}</span></div>`;
+  html += mealRow('早餐', rec.breakfast);
+  html += mealRow('午餐', rec.lunch);
+  html += mealRow('晚餐', rec.dinner);
+  if (rec.snacksDrinks) html += mealRow('點心／飲料', rec.snacksDrinks);
+  html += mealRow('今日水量', rec.waterIntake);
+  html += mealRow('宵夜', rec.lateNightSnack);
+  html += mealRow('訓練強度', rec.trainingIntensity);
   html += `<div class="review-row"><span class="review-label">飲食風險</span><span class="review-value">${nutritionRisks}</span></div>`;
 
   if (lowItems.length) {
@@ -1272,11 +1307,12 @@ async function refreshCoach() {
   const filterDate = $id('coachDate').value;
   const statusFilter = $id('coachStatusFilter').value;
 
-  // 今日（或選定日期）紀錄
-  let todays = all.filter(r => r.date === filterDate);
+  // 今日（或選定日期）紀錄（日期先正規化，避免 Sheet 把日期轉成 Date 物件導致比對失敗）
+  let todays = all.filter(r => normDate(r.date) === filterDate);
   if (statusFilter !== 'all') todays = todays.filter(r => r.status === statusFilter);
 
   renderOverview(todays);
+  renderSubmitStatus(todays);
   renderStatusLists(todays);
   renderAnalysis(todays);
   renderCoachNutrition(todays, all);
@@ -1301,6 +1337,98 @@ function renderOverview(todays) {
     ['🟢 綠燈', green], ['平均體重', avgWeight + ' kg'], ['飲食風險', riskCount], ['水量不足', lowWaterCount]
   ];
   box.innerHTML = cells.map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
+}
+
+/* ---- 已填寫 / 未填寫名單（對照全隊名單）---- */
+function renderSubmitStatus(todays) {
+  const box = $id('coachSubmitStatus');
+  if (!box) return;
+  const roster = getPlayers();
+
+  // 已填寫姓名（去重）
+  const submittedSet = {};
+  todays.forEach(r => { if (r.name) submittedSet[String(r.name).trim()] = true; });
+
+  const submitted = roster.filter(n => submittedSet[n]);
+  const notSubmitted = roster.filter(n => !submittedSet[n]);
+  // 有填寫但不在名單上的（例如名單改過、或臨時填的）
+  const extra = Object.keys(submittedSet).filter(n => roster.indexOf(n) === -1);
+
+  // 卡片標題：未填 > 0 時顯示紅字提醒
+  const title = $id('coachSubmitTitle');
+  if (title) {
+    if (notSubmitted.length) {
+      title.innerHTML = `📝 填寫狀況 <span style="color:var(--red,#ff6b6b)">（未填 ${notSubmitted.length} 人）</span>`;
+    } else {
+      title.innerHTML = `📝 填寫狀況 <span style="color:var(--green,#39d98a)">（全員已填）</span>`;
+    }
+  }
+
+  let html = '';
+  html += `<div class="review-row"><span class="review-label">填寫進度</span>` +
+          `<span class="review-value">${submitted.length} / ${roster.length} 人（未填 ${notSubmitted.length} 人）</span></div>`;
+
+  html += `<div class="list-block"><h4>✅ 已填寫（${submitted.length}）</h4><div class="name-list">`;
+  if (submitted.length) submitted.forEach(n => html += `<span class="tag tag-green">${n}</span>`);
+  else html += '<span class="review-label">尚無人填寫</span>';
+  html += `</div></div>`;
+
+  html += `<div class="list-block"><h4>⭕ 未填寫（${notSubmitted.length}）</h4><div class="name-list">`;
+  if (notSubmitted.length) notSubmitted.forEach(n => html += `<span class="tag tag-red">${n}</span>`);
+  else html += '<span class="review-label">全員都填了，太棒了！</span>';
+  html += `</div>`;
+  // 催繳按鈕：複製 + 直接發 LINE
+  if (notSubmitted.length) {
+    html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button type="button" id="btnPushRemind" class="btn btn-line-share">📢 發送 LINE 催繳</button>
+      <button type="button" id="btnCopyNotSubmitted" class="btn btn-secondary">📋 複製未填名單</button>
+    </div>
+    <div id="remindStatus" class="conn-status" style="display:none;margin-top:6px"></div>`;
+  }
+  html += `</div>`;
+
+  if (extra.length) {
+    html += `<div class="list-block"><h4>❓ 名單外（${extra.length}）</h4><div class="name-list">`;
+    extra.forEach(n => html += `<span class="tag tag-orange">${n}</span>`);
+    html += `<div style="color:var(--text-soft);font-size:0.82rem;margin-top:4px">這些人有填寫但不在目前名單，可能是改名或臨時填寫。</div></div></div>`;
+  }
+
+  box.innerHTML = html;
+
+  // 催繳訊息文字
+  function buildRemindText() {
+    const dateStr = dateSlash($id('coachDate').value || todayStr());
+    return `🥋 育林國中跆拳道隊｜今日 KPI 填寫提醒
+日期：${dateStr}
+
+以下同學今天還沒填寫，請記得完成自己的訓練紀錄 🙏
+
+${notSubmitted.map(n => '・' + n).join('\n')}
+
+（填寫進度：${submitted.length} / ${roster.length} 人）`;
+  }
+
+  // 綁定「複製未填名單」
+  const copyBtn = $id('btnCopyNotSubmitted');
+  if (copyBtn) copyBtn.addEventListener('click', () => copyText(buildRemindText()));
+
+  // 綁定「發送 LINE 催繳」（透過後台 LINE 推播）
+  const pushBtn = $id('btnPushRemind');
+  if (pushBtn) pushBtn.addEventListener('click', async () => {
+    const st = $id('remindStatus');
+    if (!getWebAppUrl()) { st.style.display = 'block'; st.className = 'conn-status fail'; st.textContent = '尚未設定 Web App URL，無法發送。'; return; }
+    if (!confirm(`確定要發送催繳到 LINE 群組嗎？\n未填寫 ${notSubmitted.length} 人。`)) return;
+    pushBtn.disabled = true; pushBtn.textContent = '發送中...';
+    st.style.display = 'block'; st.className = 'conn-status info'; st.textContent = '發送中...';
+    try {
+      const res = await postToWebApp({ action: 'pushLineText', adminKey: getLineAdminKey(), text: buildRemindText() });
+      if (res && res.ok) { st.className = 'conn-status ok'; st.textContent = '✅ 已發送 LINE 催繳。'; }
+      else { st.className = 'conn-status fail'; st.textContent = '發送失敗：' + ((res && res.error) || '請確認 LINE 推播已設定（Token／目標 ID）'); }
+    } catch (e) {
+      st.className = 'conn-status fail'; st.textContent = '發送失敗，請檢查連線與 LINE 設定。';
+    }
+    pushBtn.disabled = false; pushBtn.textContent = '📢 發送 LINE 催繳';
+  });
 }
 
 function renderStatusLists(todays) {
@@ -1625,7 +1753,22 @@ function renderLastReviewInto(rec, box) {
   html += radarFromRecord(rec);  // 六大面向雷達圖
   html += `<div class="review-row"><span class="review-label">體重</span><span class="review-value">${rec.weightKg || '--'} kg</span></div>`;
   html += `<div class="review-row"><span class="review-label">BMI</span><span class="review-value">${rec.bmi || '--'}</span></div>`;
-  html += `<div class="review-row"><span class="review-label">飲食風險</span><span class="review-value">${rec.nutritionRisks || '無'}</span></div>`;
+
+  // 當日飲食狀況（給家長看孩子每天吃什麼＋家長版建議）
+  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">🍱 當日飲食狀況</h4>`;
+  const mealRow = (label, val) => `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${escapeHtml(val || '—').replace(/\n/g, '<br>')}</span></div>`;
+  html += mealRow('早餐', rec.breakfast);
+  html += mealRow('午餐', rec.lunch);
+  html += mealRow('晚餐', rec.dinner);
+  if (rec.snacksDrinks) html += mealRow('點心／飲料', rec.snacksDrinks);
+  html += mealRow('今日水量', rec.waterIntake);
+  html += mealRow('宵夜', rec.lateNightSnack);
+  html += mealRow('訓練強度', rec.trainingIntensity);
+  html += `<div class="review-row"><span class="review-label">飲食風險</span><span class="review-value">${rec.nutritionRisks || '無明顯風險'}</span></div>`;
+  if (rec.nutritionAdviceParent) {
+    html += `<div class="hint-box">${escapeHtml(rec.nutritionAdviceParent).replace(/\n/g, '<br>')}</div>`;
+  }
+
   if (lowItems.length) {
     html += `<h4 style="margin:12px 0 6px;color:var(--blue)">上次最低三項</h4><div>`;
     lowItems.forEach((s, i) => html += `<span class="tag tag-red">${i + 1}. ${s}</span>`);
@@ -2176,6 +2319,14 @@ function init() {
     });
   });
 
+  // 分享到 LINE 按鈕（跳出 LINE 讓使用者選群組／好友）
+  document.querySelectorAll('.btn-line-share').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const text = $id(btn.dataset.target).textContent;
+      shareToLine(text);
+    });
+  });
+
   // 上次表現分頁
   $id('btnLoadLastPerf').addEventListener('click', loadLastPerfPage);
 
@@ -2199,6 +2350,16 @@ function init() {
 
   // 初次載入教練後台資料
   refreshCoach();
+}
+
+/*
+   分享到 LINE：用官方分享網址開啟 LINE，由使用者自己選要分享到哪個
+   群組或好友（不需要任何 token、不需後端）。手機與桌機版 LINE 皆支援。
+*/
+function shareToLine(text) {
+  if (!text || !text.trim()) { toast('沒有可分享的內容'); return; }
+  const url = 'https://line.me/R/msg/text/?' + encodeURIComponent(text);
+  window.open(url, '_blank');
 }
 
 // 複製文字（相容無 navigator.clipboard 的情況）

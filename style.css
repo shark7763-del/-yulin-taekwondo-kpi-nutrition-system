@@ -203,10 +203,12 @@ textarea.text-input { resize: vertical; }
 
 /* ===================== LINE 文字區 ===================== */
 .line-block { margin-bottom: 16px; }
-.line-block-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.line-block-head span { font-weight: 700; color: var(--blue); }
+.line-block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.line-block-head span { font-weight: 700; color: var(--blue); margin-right: auto; }
 .btn-copy { background: var(--gold); color: #1a1206; border: none; border-radius: 8px; padding: 6px 12px; font-weight: 700; cursor: pointer; }
 .btn-copy:hover { filter: brightness(1.1); }
+.btn-line-share { background: #06c755; color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-weight: 700; cursor: pointer; }
+.btn-line-share:hover { filter: brightness(1.1); }
 .line-text {
   background: #0f141c; border: 1px solid var(--border); border-radius: 10px;
   padding: 12px; white-space: pre-wrap; word-break: break-word;
