@@ -338,3 +338,25 @@ textarea.text-input { resize: vertical; }
   .aspect-grid { grid-template-columns: repeat(3, 1fr); }
   .overview-grid { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ===================== 每日教練語錄 ===================== */
+.quote-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(245, 197, 24, 0.10), rgba(46, 125, 209, 0.10));
+  border: 1px solid rgba(245, 197, 24, 0.35);
+  overflow: hidden;
+}
+.quote-card .quote-mark {
+  position: absolute; top: -10px; left: 10px;
+  font-size: 4rem; color: rgba(245, 197, 24, 0.25); line-height: 1;
+  font-family: Georgia, serif; pointer-events: none;
+}
+.quote-text {
+  position: relative; z-index: 1;
+  font-size: 1.08rem; font-weight: 700; color: var(--text-main);
+  padding: 6px 4px 4px 14px; line-height: 1.7;
+}
+.quote-by {
+  text-align: right; color: var(--gold);
+  font-size: 0.85rem; font-weight: 600; margin-top: 4px;
+}
