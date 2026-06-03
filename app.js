@@ -1688,10 +1688,9 @@ function renderSubmitStatus(todays) {
     notSubmitted.forEach(n => html += `<span class="tag tag-red tag-pick sel" data-name="${n}">${n}</span>`);
     html += `</div>`;
     html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <button type="button" id="btnPushRemind" class="btn btn-line-share">📢 發送 LINE 催繳<span id="remindCount"></span></button>
+      <button type="button" id="btnShareRemind" class="btn btn-line-share">💬 分享催繳到 LINE<span id="remindCount"></span></button>
       <button type="button" id="btnCopyNotSubmitted" class="btn btn-secondary">📋 複製名單</button>
-    </div>
-    <div id="remindStatus" class="conn-status" style="display:none;margin-top:6px"></div>`;
+    </div>`;
   } else {
     html += `<div class="name-list"><span class="review-label">全員都填了，太棒了！</span></div>`;
   }
@@ -1759,24 +1758,12 @@ ${names.map(n => '・' + n).join('\n')}
     copyText(buildRemindText(picked));
   });
 
-  // 發送 LINE 催繳（只含勾選，透過後台 LINE 推播）
-  const pushBtn = $id('btnPushRemind');
-  if (pushBtn) pushBtn.addEventListener('click', async () => {
-    const st = $id('remindStatus');
+  // 分享催繳到 LINE（免費分享，跳出 LINE 選群組送出，不吃推播額度）
+  const shareBtn = $id('btnShareRemind');
+  if (shareBtn) shareBtn.addEventListener('click', () => {
     const picked = getPicked();
     if (!picked.length) { toast('請至少點選一位'); return; }
-    if (!getWebAppUrl()) { st.style.display = 'block'; st.className = 'conn-status fail'; st.textContent = '尚未設定 Web App URL，無法發送。'; return; }
-    if (!confirm(`確定要發送催繳到 LINE 群組嗎？\n已選 ${picked.length} 人。`)) return;
-    pushBtn.disabled = true;
-    st.style.display = 'block'; st.className = 'conn-status info'; st.textContent = '發送中...';
-    try {
-      const res = await postToWebApp({ action: 'pushLineText', adminKey: getLineAdminKey(), text: buildRemindText(picked) });
-      if (res && res.ok) { st.className = 'conn-status ok'; st.textContent = `✅ 已發送 LINE 催繳（${picked.length} 人）。`; }
-      else { st.className = 'conn-status fail'; st.textContent = '發送失敗：' + ((res && res.error) || '請確認 LINE 推播已設定（Token／目標 ID）'); }
-    } catch (e) {
-      st.className = 'conn-status fail'; st.textContent = '發送失敗，請檢查連線與 LINE 設定。';
-    }
-    pushBtn.disabled = false;
+    shareToLine(buildRemindText(picked));
   });
 
   updateRemindCount();
