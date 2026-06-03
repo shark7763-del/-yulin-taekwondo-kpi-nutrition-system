@@ -244,6 +244,18 @@ const ENCOURAGEMENTS = {
   ]
 };
 
+// 鼓勵隊友的快捷用語（點一下帶入內容欄）
+const ENCOURAGE_PRESETS = [
+  '今天練得很拼，繼續加油！',
+  '你的動作越來越穩了，很棒！',
+  '謝謝你今天陪我對練，一起變強！',
+  '不要灰心，下次一定更好！',
+  '看到你很努力，我也要跟上你！',
+  '你的精神喊聲超有氣勢，讚！',
+  '受傷要好好休息，我們等你回來！',
+  '一起加油，比賽我們互相罩！'
+];
+
 /* 依日期挑一句（同一天固定），讓「每日語錄」整天不變 */
 function dailyPick(arr) {
   if (!arr || !arr.length) return '';
@@ -400,6 +412,31 @@ function refreshNameSelects() {
     const prev = el.value;
     fillSelect(el, players, '請選擇選手');
     if (players.indexOf(prev) !== -1) el.value = prev;
+  });
+  // 想鼓勵的隊友（選填）
+  const te = $id('encourageTeammate');
+  if (te) {
+    const prev = te.value;
+    fillSelect(te, players, '（選填）選擇要鼓勵的隊友');
+    if (players.indexOf(prev) !== -1) te.value = prev;
+  }
+}
+
+// 渲染「鼓勵的內容」快捷按鈕（點一下帶入文字框）
+function renderEncourageChips() {
+  const box = $id('encourageQuick');
+  if (!box) return;
+  box.innerHTML = '';
+  ENCOURAGE_PRESETS.forEach(text => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.textContent = text;
+    chip.addEventListener('click', () => {
+      const ta = $id('encouragementToTeammate');
+      ta.value = ta.value.trim() ? (ta.value.trim() + '\n' + text) : text;
+    });
+    box.appendChild(chip);
   });
 }
 
@@ -844,6 +881,107 @@ async function fetchLastRecord(name) {
   return localLastRecord(name);
 }
 
+// 取得某選手最近 N 筆（正式優先，否則本機）
+async function fetchRecentRecords(name, limit) {
+  const url = getWebAppUrl();
+  if (url) {
+    try {
+      const res = await postToWebApp({ action: 'getRecentRecordsByName', name: name, limit: limit || 60 });
+      if (res && res.ok && Array.isArray(res.data)) return res.data;
+    } catch (e) { /* 落回本機 */ }
+  }
+  return localRecentRecords(name, limit || 60);
+}
+
+/* ============================================================
+   9.6 進步肯定（跟昨天的自己比 / 成長型思維）
+   ------------------------------------------------------------
+   buildAffirmations：依今天這筆 rec、上一筆 last、歷史 history，
+   算出徽章與具體肯定句。純前端計算，不寫入 Sheet。
+   ============================================================ */
+
+// 從一筆紀錄取某細項分數（找遍六大面向）
+function itemScoreFromRecord(scoresObj, itemName) {
+  for (let i = 0; i < ASPECT_ORDER.length; i++) {
+    const k = ASPECT_ORDER[i];
+    if (scoresObj[k] && scoresObj[k][itemName] != null) return scoresObj[k][itemName];
+  }
+  return null;
+}
+
+// Date -> yyyy-mm-dd
+function ymd(d) {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function buildAffirmations(rec, last, history) {
+  const badges = [];   // [{icon,label}]
+  const lines = [];    // 具體肯定句
+  const todayTotal = parseFloat(rec.totalScore) || 0;
+
+  // 排除「今天這一天」的歷史（避免重送把自己當成過去）
+  const past = (history || [])
+    .filter(r => normDate(r.date) !== normDate(rec.date))
+    .sort((a, b) => (a.timestamp || a.date) < (b.timestamp || b.date) ? 1 : -1);
+
+  // ① 弱項翻轉：上次最低項，今天變高
+  if (last) {
+    let lastScores = {}, todayScores = {};
+    try { lastScores = JSON.parse(last.rawScoresJson || '{}'); } catch (e) { /* */ }
+    try { todayScores = JSON.parse(rec.rawScoresJson || '{}'); } catch (e) { /* */ }
+    const lastLow = findLowItems(lastScores); // 上次低於 3 分的最低三項
+    let flipped = false;
+    lastLow.forEach(l => {
+      const todayVal = itemScoreFromRecord(todayScores, l.item);
+      if (todayVal != null && todayVal > l.score) {
+        lines.push(`「${l.item}」${l.score} → ${todayVal}，你把昨天的弱點練成了今天的成長！`);
+        flipped = true;
+      }
+    });
+    if (flipped) badges.push({ icon: '🔁', label: '弱項翻轉' });
+  }
+
+  // ② 總分進步
+  const lastTotal = last ? (parseFloat(last.totalScore) || 0) : null;
+  if (lastTotal != null && todayTotal > lastTotal) {
+    badges.push({ icon: '⭐', label: '進步之星' });
+  }
+
+  // ③ 個人最佳 PB：超越歷史最佳總分
+  if (past.length) {
+    const prevBest = Math.max.apply(null, past.map(r => parseFloat(r.totalScore) || 0));
+    if (todayTotal > prevBest) {
+      badges.push({ icon: '🏆', label: '個人最佳' });
+      lines.push(`總分 ${todayTotal}，刷新你的個人最佳紀錄（之前最佳 ${prevBest}）！`);
+    }
+  }
+
+  // ④ 連續進步（今天 > 上次 且 上次 > 上上次）
+  if (past.length >= 2) {
+    const t0 = parseFloat(past[0].totalScore) || 0;
+    const t1 = parseFloat(past[1].totalScore) || 0;
+    if (todayTotal > t0 && t0 > t1) badges.push({ icon: '📈', label: '連續進步' });
+  }
+
+  // ⑤ 連續紀錄天數（含今天，往回數連續有填的日子）
+  const dateSet = {};
+  (history || []).forEach(r => { dateSet[normDate(r.date)] = true; });
+  dateSet[normDate(rec.date)] = true;
+  let streak = 0;
+  const cur = new Date(rec.date);
+  while (dateSet[ymd(cur)]) { streak++; cur.setDate(cur.getDate() - 1); }
+  if (streak >= 2) badges.push({ icon: '🔥', label: `連續紀錄 ${streak} 天` });
+
+  // ⑥ 狀態與健康習慣徽章
+  if (String(rec.status).indexOf('綠') !== -1) badges.push({ icon: '🟢', label: '綠燈狀態' });
+  if (rec.nutritionRisks === '無明顯風險') badges.push({ icon: '🥗', label: '飲食零風險' });
+  if (rec.waterIntake === '2000ml 以上' || rec.waterIntake === '1500-2000ml') badges.push({ icon: '💧', label: '水分達標' });
+
+  return { badges, lines };
+}
+
 /* ============================================================
    9.5 交叉辯論：更新紀錄 / 計算透明化 / 自評vs教練評
    ============================================================ */
@@ -1069,6 +1207,7 @@ function buildRecord() {
     mainGoalToday: mainGoalToday,
     reflection: $id('reflection').value,
     tomorrowGoal: $id('tomorrowGoal').value,
+    encourageTeammateName: $id('encourageTeammate') ? $id('encourageTeammate').value : '',
     encouragementToTeammate: $id('encouragementToTeammate').value,
     nutritionRisks: nutrition.risks.join('、') || '無明顯風險',
     nutritionAdviceStudent: nutrition.student,
@@ -1085,8 +1224,21 @@ function buildRecord() {
   return rec;
 }
 
+// 送出進行中旗標，避免連點造成重複送出
+let _submitting = false;
+// 最近一次送出產生的選手版 LINE 文字（供「送出並分享到 LINE」用）
+let lastStudentLineText = '';
+
+// 送出（正式）後直接分享選手版到 LINE
+async function submitAndShareLine() {
+  lastStudentLineText = '';
+  await doSubmit('official');
+  if (lastStudentLineText) shareToLine(lastStudentLineText);
+}
+
 // 主送出函式
 async function doSubmit(mode) {
+  if (_submitting) return;            // 正在送出，忽略重複點擊
   if (!validateForm()) return;
 
   if (mode === 'official' && !getWebAppUrl()) {
@@ -1095,17 +1247,38 @@ async function doSubmit(mode) {
     return;
   }
 
+  // 鎖定送出按鈕，避免連點
+  _submitting = true;
+  const submitBtns = [$id('btnSubmit'), $id('btnLocalSubmit')].filter(Boolean);
+  submitBtns.forEach(b => b.disabled = true);
+
+  try {
+    await doSubmitInner(mode);
+  } finally {
+    _submitting = false;
+    submitBtns.forEach(b => b.disabled = false);
+  }
+}
+
+async function doSubmitInner(mode) {
   const rec = buildRecord();
 
-  // 取得上一筆做比較
-  const last = await fetchLastRecord(rec.name);
+  // 取得上一筆與歷史（並行），做比較與進步肯定
+  const [last, history] = await Promise.all([
+    fetchLastRecord(rec.name),
+    fetchRecentRecords(rec.name, 60)
+  ]);
+
+  // 進步肯定（跟昨天的自己比）
+  const affirm = buildAffirmations(rec, last, history);
 
   // 體重變化提醒
   let weightNote = '';
   if (last) weightNote = weightChangeNote(rec.weightKg, last.weightKg);
 
   // 產生 LINE 文字
-  const lineTexts = buildLineTexts(rec, weightNote);
+  const lineTexts = buildLineTexts(rec, weightNote, affirm);
+  lastStudentLineText = lineTexts.student;   // 供「送出並分享到 LINE」使用
   rec.studentLineText = lineTexts.student;
   rec.parentLineText = lineTexts.parent;
   rec.coachLineText = lineTexts.coach;
@@ -1132,7 +1305,7 @@ async function doSubmit(mode) {
   }
 
   // 顯示三張回饋卡
-  renderCompareCard(rec, last);
+  renderCompareCard(rec, last, affirm);
   renderNutritionCard(rec);
   renderLineCard(lineTexts);
 
@@ -1140,12 +1313,26 @@ async function doSubmit(mode) {
   $id('compareCard').scrollIntoView({ behavior: 'smooth' });
 }
 
+/* ---- 進步肯定區塊 HTML（徽章＋具體肯定句）---- */
+function affirmHtml(affirm) {
+  if (!affirm || (!affirm.badges.length && !affirm.lines.length)) return '';
+  let html = `<div class="affirm-box"><h4 class="affirm-title">🌟 今日進步肯定</h4>`;
+  if (affirm.badges.length) {
+    html += `<div class="badge-row">`;
+    affirm.badges.forEach(b => html += `<span class="badge">${b.icon} ${b.label}</span>`);
+    html += `</div>`;
+  }
+  affirm.lines.forEach(l => html += `<div class="hint-box good">🎉 ${l}</div>`);
+  return html + `</div>`;
+}
+
 /* ---- 今日 vs 上次 ---- */
-function renderCompareCard(rec, last) {
+function renderCompareCard(rec, last, affirm) {
   const card = $id('compareCard');
   const box = $id('compareContent');
   if (!last) {
-    box.innerHTML = `<div class="hint-box good">這是你的第一筆紀錄，今天開始建立自己的成長軌跡。下一次就能看到進步比較了！</div>`;
+    box.innerHTML = affirmHtml(affirm) +
+      `<div class="hint-box good">這是你的第一筆紀錄，今天開始建立自己的成長軌跡。下一次就能看到進步比較了！</div>`;
     card.style.display = 'block';
     return;
   }
@@ -1163,7 +1350,7 @@ function renderCompareCard(rec, last) {
   const bestUp = sortedUp[0];
   const worstDown = sortedUp[sortedUp.length - 1];
 
-  let html = '';
+  let html = affirmHtml(affirm);   // 進步肯定放最上面
   html += `<div class="review-row"><span class="review-label">今日總分</span><span class="review-value">${rec.totalScore}</span></div>`;
   html += `<div class="review-row"><span class="review-label">上次總分</span><span class="review-value">${lastTotal}</span></div>`;
   const diffTag = diff >= 0 ? `<span class="tag tag-green">${diff >= 0 ? '+' : ''}${diff}</span>` : `<span class="tag tag-red">${diff}</span>`;
@@ -1251,11 +1438,20 @@ function renderLineCard(lineTexts) {
 /* ============================================================
    產生 LINE 四版本文字
    ============================================================ */
-function buildLineTexts(rec, weightNote) {
+function buildLineTexts(rec, weightNote, affirm) {
   const lowArr = rec._lowItemsArr || [];
   const lowLines = lowArr.map((l, i) => `${i + 1}. ${l.item}：${l.score} 分`).join('\n');
   const remind = buildRemindText(lowArr.map(l => `${l.item}：${l.score} 分`));
   const n = rec._nutrition;
+
+  // 進步肯定（徽章 + 最強的一句具體肯定）
+  let affirmBlock = '';
+  if (affirm && (affirm.badges.length || affirm.lines.length)) {
+    const parts = [];
+    if (affirm.badges.length) parts.push('🌟 今日肯定：' + affirm.badges.map(b => b.icon + b.label).join('、'));
+    if (affirm.lines.length) parts.push('🎉 ' + affirm.lines[0]);
+    affirmBlock = '\n' + parts.join('\n') + '\n';
+  }
 
   // 選手版
   const studentLine =
@@ -1266,7 +1462,7 @@ function buildLineTexts(rec, weightNote) {
 今日狀態：${rec.status}
 今日總分：${rec.totalScore} / 30
 平均分數：${rec.averageScore} / 5
-
+${affirmBlock}
 今天最低三項：
 
 ${lowLines || '今天沒有低於 3 分的項目，表現很穩！'}
@@ -1393,6 +1589,20 @@ async function fetchAllRecords() {
   return getLocalRecords();
 }
 
+// 同一人同一天只保留最新一筆（依 timestamp，缺則用 date）
+function dedupeLatestByName(records) {
+  const map = {};
+  records.forEach(r => {
+    const k = String(r.name || '').trim();
+    if (!k) return;
+    if (!map[k]) { map[k] = r; return; }
+    const tNew = new Date(r.timestamp || r.date || 0).getTime();
+    const tOld = new Date(map[k].timestamp || map[k].date || 0).getTime();
+    if (tNew >= tOld) map[k] = r;
+  });
+  return Object.keys(map).map(k => map[k]);
+}
+
 async function refreshCoach() {
   toast('讀取資料中...');
   const all = await fetchAllRecords();
@@ -1401,6 +1611,8 @@ async function refreshCoach() {
 
   // 今日（或選定日期）紀錄（日期先正規化，避免 Sheet 把日期轉成 Date 物件導致比對失敗）
   let todays = all.filter(r => normDate(r.date) === filterDate);
+  // 同一人同一天只保留最新一筆，避免重複送出灌水（含舊資料已存在的重複）
+  todays = dedupeLatestByName(todays);
   if (statusFilter !== 'all') todays = todays.filter(r => r.status === statusFilter);
 
   renderOverview(todays);
@@ -1465,17 +1677,23 @@ function renderSubmitStatus(todays) {
   else html += '<span class="review-label">尚無人填寫</span>';
   html += `</div></div>`;
 
-  html += `<div class="list-block"><h4>⭕ 未填寫（${notSubmitted.length}）</h4><div class="name-list">`;
-  if (notSubmitted.length) notSubmitted.forEach(n => html += `<span class="tag tag-red">${n}</span>`);
-  else html += '<span class="review-label">全員都填了，太棒了！</span>';
-  html += `</div>`;
-  // 催繳按鈕：複製 + 直接發 LINE
+  html += `<div class="list-block"><h4>⭕ 未填寫（${notSubmitted.length}）</h4>`;
   if (notSubmitted.length) {
-    html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-      <button type="button" id="btnPushRemind" class="btn btn-line-share">📢 發送 LINE 催繳</button>
-      <button type="button" id="btnCopyNotSubmitted" class="btn btn-secondary">📋 複製未填名單</button>
+    html += `<div style="color:var(--text-soft);font-size:0.82rem;margin-bottom:6px">👆 點選姓名挑選要催繳的對象（預設全選）</div>`;
+    html += `<div style="display:flex;gap:6px;margin-bottom:8px">
+      <button type="button" id="btnPickAll" class="btn btn-secondary" style="padding:4px 12px">全選</button>
+      <button type="button" id="btnPickNone" class="btn btn-secondary" style="padding:4px 12px">全不選</button>
+    </div>`;
+    html += `<div class="name-list" id="notSubmittedList">`;
+    notSubmitted.forEach(n => html += `<span class="tag tag-red tag-pick sel" data-name="${n}">${n}</span>`);
+    html += `</div>`;
+    html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button type="button" id="btnPushRemind" class="btn btn-line-share">📢 發送 LINE 催繳<span id="remindCount"></span></button>
+      <button type="button" id="btnCopyNotSubmitted" class="btn btn-secondary">📋 複製名單</button>
     </div>
     <div id="remindStatus" class="conn-status" style="display:none;margin-top:6px"></div>`;
+  } else {
+    html += `<div class="name-list"><span class="review-label">全員都填了，太棒了！</span></div>`;
   }
   html += `</div>`;
 
@@ -1487,40 +1705,81 @@ function renderSubmitStatus(todays) {
 
   box.innerHTML = html;
 
-  // 催繳訊息文字
-  function buildRemindText() {
+  // 取得目前勾選（點選）的未填姓名
+  function getPicked() {
+    return Array.from(box.querySelectorAll('.tag-pick.sel')).map(e => e.dataset.name);
+  }
+
+  // 更新催繳按鈕上的人數
+  function updateRemindCount() {
+    const cntEl = $id('remindCount');
+    if (cntEl) cntEl.textContent = `（${getPicked().length}）`;
+  }
+
+  // 催繳訊息文字（只含勾選的人）
+  function buildRemindText(names) {
     const dateStr = dateSlash($id('coachDate').value || todayStr());
     return `🥋 育林國中跆拳道隊｜今日 KPI 填寫提醒
 日期：${dateStr}
 
 以下同學今天還沒填寫，請記得完成自己的訓練紀錄 🙏
 
-${notSubmitted.map(n => '・' + n).join('\n')}
+${names.map(n => '・' + n).join('\n')}
 
 （填寫進度：${submitted.length} / ${roster.length} 人）`;
   }
 
-  // 綁定「複製未填名單」
-  const copyBtn = $id('btnCopyNotSubmitted');
-  if (copyBtn) copyBtn.addEventListener('click', () => copyText(buildRemindText()));
+  // 點選姓名切換選取
+  const listEl = $id('notSubmittedList');
+  if (listEl) {
+    listEl.addEventListener('click', e => {
+      const tag = e.target.closest('.tag-pick');
+      if (!tag) return;
+      tag.classList.toggle('sel');
+      updateRemindCount();
+    });
+  }
+  // 全選 / 全不選
+  const pickAllBtn = $id('btnPickAll');
+  if (pickAllBtn) pickAllBtn.addEventListener('click', () => {
+    box.querySelectorAll('.tag-pick').forEach(t => t.classList.add('sel'));
+    updateRemindCount();
+  });
+  const pickNoneBtn = $id('btnPickNone');
+  if (pickNoneBtn) pickNoneBtn.addEventListener('click', () => {
+    box.querySelectorAll('.tag-pick').forEach(t => t.classList.remove('sel'));
+    updateRemindCount();
+  });
 
-  // 綁定「發送 LINE 催繳」（透過後台 LINE 推播）
+  // 複製名單（只含勾選）
+  const copyBtn = $id('btnCopyNotSubmitted');
+  if (copyBtn) copyBtn.addEventListener('click', () => {
+    const picked = getPicked();
+    if (!picked.length) { toast('請至少點選一位'); return; }
+    copyText(buildRemindText(picked));
+  });
+
+  // 發送 LINE 催繳（只含勾選，透過後台 LINE 推播）
   const pushBtn = $id('btnPushRemind');
   if (pushBtn) pushBtn.addEventListener('click', async () => {
     const st = $id('remindStatus');
+    const picked = getPicked();
+    if (!picked.length) { toast('請至少點選一位'); return; }
     if (!getWebAppUrl()) { st.style.display = 'block'; st.className = 'conn-status fail'; st.textContent = '尚未設定 Web App URL，無法發送。'; return; }
-    if (!confirm(`確定要發送催繳到 LINE 群組嗎？\n未填寫 ${notSubmitted.length} 人。`)) return;
-    pushBtn.disabled = true; pushBtn.textContent = '發送中...';
+    if (!confirm(`確定要發送催繳到 LINE 群組嗎？\n已選 ${picked.length} 人。`)) return;
+    pushBtn.disabled = true;
     st.style.display = 'block'; st.className = 'conn-status info'; st.textContent = '發送中...';
     try {
-      const res = await postToWebApp({ action: 'pushLineText', adminKey: getLineAdminKey(), text: buildRemindText() });
-      if (res && res.ok) { st.className = 'conn-status ok'; st.textContent = '✅ 已發送 LINE 催繳。'; }
+      const res = await postToWebApp({ action: 'pushLineText', adminKey: getLineAdminKey(), text: buildRemindText(picked) });
+      if (res && res.ok) { st.className = 'conn-status ok'; st.textContent = `✅ 已發送 LINE 催繳（${picked.length} 人）。`; }
       else { st.className = 'conn-status fail'; st.textContent = '發送失敗：' + ((res && res.error) || '請確認 LINE 推播已設定（Token／目標 ID）'); }
     } catch (e) {
       st.className = 'conn-status fail'; st.textContent = '發送失敗，請檢查連線與 LINE 設定。';
     }
-    pushBtn.disabled = false; pushBtn.textContent = '📢 發送 LINE 催繳';
+    pushBtn.disabled = false;
   });
+
+  updateRemindCount();
 }
 
 function renderStatusLists(todays) {
@@ -2378,6 +2637,7 @@ function init() {
   fillSelect($id('lateNightSnack'), LATE_NIGHT_OPTIONS);
   fillSelect($id('trainingIntensity'), INTENSITY_OPTIONS, '請選擇強度');
   refreshNameSelects();
+  renderEncourageChips();
 
   // KPI 拉桿（預設對練）
   renderKpiSliders('對練｜校隊');
@@ -2404,6 +2664,8 @@ function init() {
 
   // 送出按鈕
   $id('btnSubmit').addEventListener('click', () => doSubmit('official'));
+  const btnSubmitShare = $id('btnSubmitShare');
+  if (btnSubmitShare) btnSubmitShare.addEventListener('click', submitAndShareLine);
   $id('btnLocalSubmit').addEventListener('click', () => doSubmit('local'));
   $id('btnClear').addEventListener('click', clearForm);
 
@@ -2481,6 +2743,7 @@ function clearForm() {
   $id('date').value = todayStr();
   $id('bodyStatus').value = '普通';
   ['group', 'waterIntake', 'trainingIntensity'].forEach(id => $id(id).selectedIndex = 0);
+  if ($id('encourageTeammate')) $id('encourageTeammate').selectedIndex = 0;
   $id('lateNightSnack').value = '無';
   updateBmiDisplay();
   // 拉桿全部回 3

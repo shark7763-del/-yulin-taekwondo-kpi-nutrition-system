@@ -360,3 +360,35 @@ textarea.text-input { resize: vertical; }
   text-align: right; color: var(--gold);
   font-size: 0.85rem; font-weight: 600; margin-top: 4px;
 }
+
+/* ===================== 可點選催繳標籤 ===================== */
+.tag-pick { cursor: pointer; user-select: none; transition: opacity .15s, filter .15s; }
+.tag-pick:not(.sel) { opacity: 0.35; filter: grayscale(0.6); }
+.tag-pick.sel::before { content: '✓ '; font-weight: 700; }
+
+/* ===================== 鼓勵內容快捷詞 ===================== */
+.quick-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.chip {
+  background: var(--bg-card-2); color: var(--text-main);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 5px 12px; font-size: 0.85rem; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.chip:hover { background: rgba(46, 125, 209, 0.18); border-color: var(--blue); }
+
+/* ===================== 進步肯定 / 徽章 ===================== */
+.affirm-box {
+  background: linear-gradient(135deg, rgba(46, 204, 113, 0.12), rgba(245, 197, 24, 0.12));
+  border: 1px solid rgba(46, 204, 113, 0.4);
+  border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 12px;
+}
+.affirm-title { color: var(--green); margin-bottom: 8px; }
+.badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.badge {
+  background: rgba(245, 197, 24, 0.16);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  border-radius: 999px; padding: 5px 12px;
+  font-weight: 700; font-size: 0.88rem;
+}

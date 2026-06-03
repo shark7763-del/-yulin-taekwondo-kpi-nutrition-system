@@ -167,13 +167,18 @@
           <label class="field-label">明日目標 <span class="req">*</span></label>
           <textarea id="tomorrowGoal" class="text-input" rows="2" placeholder="明天我要做到..."></textarea>
 
-          <label class="field-label">隊友鼓勵</label>
-          <textarea id="encouragementToTeammate" class="text-input" rows="2" placeholder="想對隊友說的話..."></textarea>
+          <label class="field-label">想鼓勵的隊友</label>
+          <select id="encourageTeammate" class="text-input"></select>
+
+          <label class="field-label">鼓勵的內容</label>
+          <div id="encourageQuick" class="quick-chips"></div>
+          <textarea id="encouragementToTeammate" class="text-input" rows="2" placeholder="想對這位隊友說的話...（可點上方按鈕快速帶入）"></textarea>
         </fieldset>
 
         <!-- 送出按鈕 -->
         <div class="btn-group">
           <button type="button" id="btnSubmit" class="btn btn-primary">🚀 正式送出到 Google Sheet</button>
+          <button type="button" id="btnSubmitShare" class="btn btn-line-share">💬 送出並分享到 LINE</button>
           <button type="button" id="btnLocalSubmit" class="btn btn-secondary">💾 本機測試送出</button>
           <button type="button" id="btnClear" class="btn btn-ghost">🧹 一鍵清空表單</button>
         </div>
@@ -207,6 +212,7 @@
         <div class="line-block">
           <div class="line-block-head">
             <span>👨‍👩‍👧 家長版</span>
+            <button type="button" class="btn-line-share" data-target="lineParent">💬 分享到 LINE</button>
             <button type="button" class="btn-copy" data-target="lineParent">📋 複製</button>
           </div>
           <pre id="lineParent" class="line-text"></pre>
@@ -215,6 +221,7 @@
         <div class="line-block">
           <div class="line-block-head">
             <span>📊 教練版</span>
+            <button type="button" class="btn-line-share" data-target="lineCoach">💬 分享到 LINE</button>
             <button type="button" class="btn-copy" data-target="lineCoach">📋 複製</button>
           </div>
           <pre id="lineCoach" class="line-text"></pre>
@@ -223,6 +230,7 @@
         <div class="line-block">
           <div class="line-block-head">
             <span>🍱 純飲食建議版</span>
+            <button type="button" class="btn-line-share" data-target="lineNutrition">💬 分享到 LINE</button>
             <button type="button" class="btn-copy" data-target="lineNutrition">📋 複製</button>
           </div>
           <pre id="lineNutrition" class="line-text"></pre>

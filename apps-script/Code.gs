@@ -47,7 +47,8 @@ var HEADERS = [
   'coachComment',                                               // 教練評語
   'studentResponse',                                            // 選手對這筆的看法
   'coachReply',                                                 // 教練回覆選手
-  'reviewUpdatedAt'                                             // 最後更新時間
+  'reviewUpdatedAt',                                            // 最後更新時間
+  'encourageTeammateName'                                       // 想鼓勵的隊友（選填）
 ];
 
 /* ============================================================
@@ -198,24 +199,60 @@ function rowToObject(headers, row) {
    資料操作
    ============================================================ */
 
-// 新增一筆紀錄
+/*
+   新增（或更新）一筆紀錄。
+   為避免選手同一天重複送出造成多列，採 upsert：
+   同一個 name+date 已存在就「更新該列」，否則才新增。
+   更新時只覆寫前端有提供的學生欄位，保留教練複評欄位與原 recordId。
+*/
 function addRecord(payload) {
   var sheet = getSheet();
+  var nameIdx = HEADERS.indexOf('name');
+  var dateIdx = HEADERS.indexOf('date');
+  var lastRow = sheet.getLastRow();
+
+  // 找同一天、同一人是否已有紀錄
+  var existingRow = -1;
+  if (lastRow >= 2 && payload.name && payload.date) {
+    var data = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][nameIdx]) === String(payload.name) &&
+          formatDateCell(data[i][dateIdx]) === formatDateCell(payload.date)) {
+        existingRow = i + 2;
+        break;
+      }
+    }
+  }
+
+  var pushResult = null;
+
+  if (existingRow !== -1) {
+    // ---- 更新既有那一列 ----
+    var rowVals = sheet.getRange(existingRow, 1, 1, HEADERS.length).getValues()[0];
+    for (var c = 0; c < HEADERS.length; c++) {
+      var key = HEADERS[c];
+      if (key === 'recordId') continue; // 保留原 recordId，教練複評才不會斷鏈
+      if (Object.prototype.hasOwnProperty.call(payload, key)) {
+        rowVals[c] = (payload[key] === undefined || payload[key] === null) ? '' : payload[key];
+      }
+    }
+    rowVals[0] = new Date().toISOString(); // timestamp 用伺服器最新時間
+    sheet.getRange(existingRow, 1, 1, HEADERS.length).setValues([rowVals]);
+
+    try { pushResult = pushRecordToLine(payload); } catch (e) { pushResult = { ok: false, error: String(e) }; }
+    return { ok: true, updated: true, message: '已更新今日紀錄（同一天只保留最新一筆）', name: payload.name, date: payload.date, line: pushResult };
+  }
+
+  // ---- 新增一列 ----
   var row = HEADERS.map(function (key) {
     var v = payload[key];
     return (v === undefined || v === null) ? '' : v;
   });
-  // 若前端沒給 timestamp，補上伺服器時間
-  if (!payload.timestamp) {
-    row[0] = new Date().toISOString();
-  }
+  if (!payload.timestamp) row[0] = new Date().toISOString();
   sheet.appendRow(row);
 
-  // 自動推播到 LINE（若已啟用設定）
-  var pushResult = null;
   try { pushResult = pushRecordToLine(payload); } catch (e) { pushResult = { ok: false, error: String(e) }; }
-
-  return { ok: true, message: '已新增紀錄', name: payload.name, date: payload.date, line: pushResult };
+  return { ok: true, updated: false, message: '已新增紀錄', name: payload.name, date: payload.date, line: pushResult };
 }
 
 // 讀取全部紀錄為物件陣列
