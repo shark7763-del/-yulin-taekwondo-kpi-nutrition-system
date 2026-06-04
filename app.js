@@ -294,7 +294,8 @@ function encouragementByStatus(status) {
 const LS_KEYS = {
   players: 'yulin_players',
   webAppUrl: 'yulin_webapp_url',
-  localRecords: 'yulin_local_records'
+  localRecords: 'yulin_local_records',
+  formDraft: 'yulin_form_draft'
 };
 
 function getPlayers() {
@@ -1410,7 +1411,7 @@ async function doSubmitInner(mode) {
     toast('送出中...');
     try {
       const res = await postToWebApp({ action: 'addRecord', payload: payload });
-      if (res && res.ok) toast('✅ 已送出到 Google Sheet');
+      if (res && res.ok) { toast('✅ 已送出到 Google Sheet'); clearDraft(); }
       else toast('⚠️ 送出失敗：' + (res && res.error ? res.error : '未知錯誤'));
     } catch (e) {
       toast('⚠️ 送出失敗，請檢查網路與 Web App 設定');
@@ -1419,6 +1420,7 @@ async function doSubmitInner(mode) {
     saveLocalRecord(payload);
   } else {
     saveLocalRecord(payload);
+    clearDraft();
     toast('💾 已存入本機測試資料');
   }
 
@@ -2929,19 +2931,28 @@ function init() {
     toast(e.target.value.indexOf('品勢') !== -1 ? '已切換為品勢評分細項' : '已套用對練評分細項');
   });
 
-  // 選姓名 -> 抓上一筆
+  // 選姓名 -> 抓上一筆 + 自動帶入不太會變的欄位
   $id('name').addEventListener('change', async e => {
     const name = e.target.value;
     if (!name) return;
     toast('讀取上次表現中...');
     const rec = await fetchLastRecord(name);
     renderLastReview(rec, 'lastReviewContent', 'lastReviewCard');
+    autofillFromLast(rec);
+    saveDraft();
   });
 
   // BMI 即時計算
   ['heightCm', 'weightKg', 'targetWeightKg'].forEach(id => {
     $id(id).addEventListener('input', updateBmiDisplay);
   });
+
+  // 表單草稿自動保存（填一半關掉也不會不見）
+  const saveDraftDebounced = debounce(saveDraft, 400);
+  const studentForm = $id('studentForm');
+  if (studentForm) ['input', 'change'].forEach(ev => studentForm.addEventListener(ev, saveDraftDebounced));
+  const mgt = $id('mainGoalToday');
+  if (mgt) mgt.addEventListener('input', saveDraftDebounced);
 
   // 送出按鈕
   $id('btnSubmit').addEventListener('click', () => doSubmit('official'));
@@ -2985,6 +2996,8 @@ function init() {
   loadRosterFromServer().then(() => {
     if (getRole()) applyRole();
     else showLoginOverlay();
+    // 角色套用後再還原草稿（選手姓名鎖定才正確）；有還原才提示
+    if (restoreDraft()) toast('📝 已還原上次未送出的草稿');
   });
 
   // 初次載入教練後台資料
@@ -3032,7 +3045,86 @@ function clearForm() {
   document.querySelectorAll('.kpi-slider').forEach(s => s.dispatchEvent(new Event('input')));
   // 隱藏回饋卡
   ['compareCard', 'nutritionCard', 'lineCard'].forEach(id => $id(id).style.display = 'none');
+  clearDraft();
   toast('已清空表單');
+}
+
+/* ============================================================
+   12.5 表單草稿自動保存 + 自動帶入上次資料
+   ------------------------------------------------------------
+   - 草稿：邊填邊存 localStorage，重開／不小心關掉自動還原，送出成功才清。
+   - 自動帶入：選姓名後，把不太會天天變的欄位（身高/班級/組別/目標體重）
+     從「上一筆」帶入，且只在欄位還空白時帶，不覆蓋學生已輸入的內容。
+   ============================================================ */
+
+// 草稿要保存的欄位（簡單欄位，KPI 拉桿另外處理）
+const DRAFT_FIELDS = [
+  'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'bodyStatus',
+  'heightCm', 'weightKg', 'targetWeightKg',
+  'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'lateNightSnack', 'trainingIntensity',
+  'reflection', 'tomorrowGoal', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday'
+];
+
+function debounce(fn, ms) {
+  let t;
+  return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+}
+
+function saveDraft() {
+  const d = { _savedAt: Date.now() };
+  DRAFT_FIELDS.forEach(id => { const el = $id(id); if (el) d[id] = el.value; });
+  d._kpi = {};
+  document.querySelectorAll('.kpi-slider').forEach(s => { d._kpi[s.id] = s.value; });
+  try { localStorage.setItem(LS_KEYS.formDraft, JSON.stringify(d)); } catch (e) { /* 容量滿就略過 */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(LS_KEYS.formDraft); } catch (e) { /* */ }
+}
+
+// 還原草稿；回傳是否真的有還原內容
+function restoreDraft() {
+  let d;
+  try { d = JSON.parse(localStorage.getItem(LS_KEYS.formDraft)); } catch (e) { return false; }
+  if (!d) return false;
+  // 只還原「今天」的草稿，昨天的舊草稿直接丟掉
+  if (d.date && d.date !== todayStr()) { clearDraft(); return false; }
+
+  const nameLocked = $id('name') && $id('name').disabled;
+  // 先還原組別並重建對應 KPI 拉桿，再套拉桿數值
+  if (d.group) { const g = $id('group'); if (g) { g.value = d.group; renderKpiSliders(d.group); } }
+  DRAFT_FIELDS.forEach(id => {
+    if (id === 'group') return;
+    if (id === 'name' && nameLocked) return; // 選手姓名已鎖定，不被草稿蓋掉
+    const el = $id(id);
+    if (el && d[id] !== undefined) el.value = d[id];
+  });
+  if (d._kpi) Object.keys(d._kpi).forEach(sid => {
+    const s = $id(sid);
+    if (s) { s.value = d._kpi[sid]; s.dispatchEvent(new Event('input')); }
+  });
+  updateBmiDisplay();
+  return true;
+}
+
+// 從上一筆帶入不太會變的欄位（只填空白欄，不覆蓋已輸入）
+function autofillFromLast(rec) {
+  if (!rec) return;
+  let filled = false;
+  const map = { gradeClass: rec.gradeClass, heightCm: rec.heightCm, targetWeightKg: rec.targetWeightKg };
+  Object.keys(map).forEach(id => {
+    const el = $id(id);
+    const val = map[id];
+    if (el && !String(el.value).trim() && val != null && String(val).trim() !== '') {
+      el.value = val; filled = true;
+    }
+  });
+  // 組別：空白才帶，並重建 KPI 拉桿
+  const g = $id('group');
+  if (g && (!g.value || g.selectedIndex === 0) && rec.group) {
+    g.value = rec.group; renderKpiSliders(rec.group); filled = true;
+  }
+  if (filled) { updateBmiDisplay(); toast('已帶入上次的身高/班級/組別，記得確認 🙂'); }
 }
 
 // 啟動
