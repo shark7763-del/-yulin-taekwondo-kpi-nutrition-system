@@ -1122,6 +1122,114 @@ function radarFromRecord(rec) {
   return radarChartSVG(selfAvg, coachAvg);
 }
 
+/* ============================================================
+   七天成長趨勢折線圖（純 SVG，股票走勢風）
+   ============================================================ */
+
+// series: [{label, value}] 由舊到新；range: {min,max}
+function trendChartSVG(series, range) {
+  const W = 640, H = 250, padL = 38, padR = 16, padT = 22, padB = 36;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = series.length;
+  if (!n) return '<div class="hint-box">尚無足夠資料繪製趨勢。</div>';
+
+  const minV = range.min, maxV = range.max, span = (maxV - minV) || 1;
+  const xAt = i => padL + (n === 1 ? plotW / 2 : plotW * i / (n - 1));
+  const yAt = v => padT + plotH * (1 - (Math.max(minV, Math.min(maxV, v)) - minV) / span);
+
+  // 水平格線 + Y 軸刻度
+  let grid = '';
+  const ticks = 4;
+  for (let t = 0; t <= ticks; t++) {
+    const val = minV + span * t / ticks;
+    const y = yAt(val);
+    grid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#2c3442" stroke-width="1"/>`;
+    grid += `<text x="${padL - 6}" y="${(y + 4).toFixed(1)}" fill="#aab2c0" font-size="11" text-anchor="end">${round1(val)}</text>`;
+  }
+
+  // 趨勢顏色：尾 >= 首 為綠（上升），否則紅
+  const up = series[n - 1].value >= series[0].value;
+  const lineColor = up ? '#2ecc71' : '#e74c3c';
+  const areaColor = up ? 'rgba(46,204,113,0.16)' : 'rgba(231,76,60,0.16)';
+
+  // 線與填色
+  let dPath = '', area = '';
+  series.forEach((p, i) => {
+    const cmd = i === 0 ? 'M' : 'L';
+    dPath += `${cmd} ${xAt(i).toFixed(1)} ${yAt(p.value).toFixed(1)} `;
+  });
+  area = dPath + `L ${xAt(n - 1).toFixed(1)} ${(padT + plotH).toFixed(1)} L ${xAt(0).toFixed(1)} ${(padT + plotH).toFixed(1)} Z`;
+
+  // 資料點 + 數值 + X 軸日期
+  let pts = '', xlabels = '';
+  series.forEach((p, i) => {
+    const x = xAt(i), y = yAt(p.value);
+    pts += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.6" fill="${lineColor}"/>`;
+    pts += `<text x="${x.toFixed(1)}" y="${(y - 9).toFixed(1)}" fill="#f2f4f8" font-size="11" text-anchor="middle">${round1(p.value)}</text>`;
+    xlabels += `<text x="${x.toFixed(1)}" y="${H - 12}" fill="#aab2c0" font-size="10.5" text-anchor="middle">${p.label}</text>`;
+  });
+
+  return `<div class="trend-wrap"><svg viewBox="0 0 ${W} ${H}" class="trend-chart">
+    ${grid}
+    <path d="${area}" fill="${areaColor}" stroke="none"/>
+    <path d="${dPath}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${pts}${xlabels}
+  </svg></div>`;
+}
+
+// 在 box 內渲染「可切換指標」的七天趨勢圖
+function renderTrendSection(box, records) {
+  // 同一天只留一筆，取最近 7 天，改為由舊到新
+  const recs = dedupeLatestByDate(records).slice(0, 7).reverse();
+  if (recs.length < 2) {
+    box.innerHTML = '<div class="hint-box">至少要 2 天的紀錄才看得出趨勢，繼續每天紀錄就會出現成長曲線！</div>';
+    return;
+  }
+
+  const METRICS = [
+    { key: 'totalScore', label: '總分', max: 30, min: 0 },
+    { key: 'averageScore', label: '平均', max: 5, min: 0 },
+    { key: 'physicalAvg', label: '體能', max: 5, min: 0 },
+    { key: 'technicalAvg', label: '技術', max: 5, min: 0 },
+    { key: 'focusAvg', label: '專注', max: 5, min: 0 },
+    { key: 'disciplineAvg', label: '自律', max: 5, min: 0 },
+    { key: 'emotionAvg', label: '情緒', max: 5, min: 0 },
+    { key: 'tacticalAvg', label: '戰術', max: 5, min: 0 },
+    { key: 'weightKg', label: '體重', max: null, min: null }
+  ];
+  let cur = METRICS[0];
+
+  let html = `<div class="trend-btns">`;
+  METRICS.forEach(m => html += `<button type="button" class="trend-btn" data-key="${m.key}">${m.label}</button>`);
+  html += `</div><div id="trendChartBox"></div><div id="trendSummary" class="trend-summary"></div>`;
+  box.innerHTML = html;
+
+  function draw() {
+    const vals = recs.map(r => parseFloat(r[cur.key]) || 0);
+    let min = cur.min, max = cur.max;
+    if (min === null || max === null) { // 體重：動態範圍
+      const mx = Math.max.apply(null, vals), mn = Math.min.apply(null, vals);
+      min = Math.floor(mn - 1); max = Math.ceil(mx + 1);
+      if (max - min < 2) max = min + 2;
+    }
+    const series = recs.map(r => ({ label: dateSlash(r.date).slice(5), value: parseFloat(r[cur.key]) || 0 }));
+    $id('trendChartBox').innerHTML = trendChartSVG(series, { min, max });
+
+    const first = vals[0], last = vals[vals.length - 1];
+    const diff = round1(last - first);
+    const dir = diff > 0 ? `📈 上升 ${diff}` : (diff < 0 ? `📉 下降 ${Math.abs(diff)}` : '➡️ 持平');
+    $id('trendSummary').innerHTML = `<b>${cur.label}</b>：${recs.length} 天從 <b>${round1(first)}</b> → <b>${round1(last)}</b>　<span class="${diff >= 0 ? 'up' : 'down'}">${dir}</span>`;
+
+    box.querySelectorAll('.trend-btn').forEach(b => b.classList.toggle('active', b.dataset.key === cur.key));
+  }
+
+  box.querySelectorAll('.trend-btn').forEach(b => b.addEventListener('click', () => {
+    cur = METRICS.find(m => m.key === b.dataset.key) || METRICS[0];
+    draw();
+  }));
+  draw();
+}
+
 // 簡單 HTML 跳脫，避免使用者輸入破壞版面
 function escapeHtml(s) {
   return String(s == null ? '' : s)
@@ -2061,7 +2169,8 @@ async function loadPersonRecords() {
   const box = $id('coachPersonResult');
   if (!recs.length) { box.innerHTML = '<div class="hint-box">查無紀錄。</div>'; return; }
 
-  let html = '<div class="table-scroll"><table class="record-table"><thead><tr>' +
+  let html = '<h4 style="margin-bottom:8px">📈 七天成長趨勢</h4><div id="personTrendBox"></div>';
+  html += '<div class="table-scroll"><table class="record-table"><thead><tr>' +
     '<th>日期</th><th>總分</th><th>平均</th><th>狀態</th><th>體重</th><th>BMI</th><th>飲食風險</th><th>最低三項</th>' +
     '</tr></thead><tbody>';
   recs.forEach(r => {
@@ -2089,6 +2198,10 @@ async function loadPersonRecords() {
   recs.forEach(r => html += renderCoachReviewBlock(r));
 
   box.innerHTML = html;
+
+  // 七天成長趨勢圖
+  const ptb = $id('personTrendBox');
+  if (ptb) renderTrendSection(ptb, recs);
 
   // 綁定每張卡的事件
   recs.forEach(r => wireCoachReviewBlock(r));
@@ -2185,9 +2298,23 @@ function wireCoachReviewBlock(rec) {
 async function loadLastPerfPage() {
   const name = $id('lastPerfName').value;
   if (!name) { toast('請選擇選手'); return; }
-  const rec = await fetchLastRecord(name);
+  toast('讀取中...');
+  // 同時抓最近一筆與歷史（畫趨勢圖）
+  const [rec, history] = await Promise.all([
+    fetchLastRecord(name),
+    fetchRecentRecords(name, 60)
+  ]);
   const card = $id('lastPerfResultCard');
   const box = $id('lastPerfResult');
+  const trendCard = $id('trendCard');
+  const trendBox = $id('trendBox');
+
+  // 七天成長趨勢圖
+  if (trendCard && trendBox) {
+    renderTrendSection(trendBox, history || []);
+    trendCard.style.display = 'block';
+  }
+
   if (!rec) {
     box.innerHTML = `<div class="hint-box good">這是你的第一筆紀錄，今天開始建立自己的成長軌跡。</div>`;
     card.style.display = 'block';

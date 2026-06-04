@@ -410,3 +410,19 @@ textarea.text-input { resize: vertical; }
   border-color: rgba(241, 196, 15, 0.45);
   border-left-color: var(--yellow);
 }
+
+/* ===================== 七天成長趨勢圖 ===================== */
+.trend-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.trend-btn {
+  background: var(--bg-card-2); color: var(--text-soft);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 5px 13px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  transition: all .15s;
+}
+.trend-btn:hover { border-color: var(--blue); color: var(--text-main); }
+.trend-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+.trend-wrap { width: 100%; overflow-x: auto; }
+.trend-chart { width: 100%; min-width: 340px; height: auto; display: block; }
+.trend-summary { margin-top: 8px; font-size: 0.95rem; color: var(--text-main); }
+.trend-summary .up { color: var(--green); font-weight: 700; }
+.trend-summary .down { color: var(--red); font-weight: 700; }
