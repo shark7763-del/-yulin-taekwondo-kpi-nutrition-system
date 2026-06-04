@@ -404,3 +404,9 @@ textarea.text-input { resize: vertical; }
 .redcare-head b { font-size: 1.05rem; }
 .redcare-low { color: var(--text-soft); font-size: 0.9rem; margin-bottom: 4px; }
 .redcare-suggest { color: var(--gold); font-size: 0.88rem; margin-bottom: 8px; }
+
+/* 黃燈關懷卡（左邊框換成黃色） */
+.redcare-card.is-yellow {
+  border-color: rgba(241, 196, 15, 0.45);
+  border-left-color: var(--yellow);
+}

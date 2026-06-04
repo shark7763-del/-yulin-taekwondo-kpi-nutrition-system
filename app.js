@@ -1815,26 +1815,32 @@ function renderStatusLists(todays) {
   box.innerHTML = html;
 }
 
-/* ---- 紅燈關懷：教練給方向與鼓勵（送出後選手在「上次表現」看得到）---- */
+/* ---- 紅黃燈關懷：教練給方向與鼓勵（送出後選手在「上次表現」看得到）---- */
 function renderRedLightCoaching(todays) {
   const box = $id('coachRedLight');
   if (!box) return;
+  // 紅燈優先、其次黃燈
   const reds = todays.filter(r => r.status && r.status.indexOf('紅') !== -1);
-  if (!reds.length) {
-    box.innerHTML = '<div class="hint-box good">今天沒有紅燈選手，狀況穩定 👍</div>';
+  const yellows = todays.filter(r => r.status && r.status.indexOf('黃') !== -1);
+  const list = reds.concat(yellows);
+  if (!list.length) {
+    box.innerHTML = '<div class="hint-box good">今天沒有紅燈或黃燈選手，狀況穩定 👍</div>';
     return;
   }
 
   let html = '';
-  reds.forEach(r => {
+  list.forEach(r => {
+    const isRed = r.status && r.status.indexOf('紅') !== -1;
+    const tagCls = isRed ? 'tag-red' : 'tag-yellow';
+    const lampTxt = isRed ? '🔴 紅燈' : '🟡 黃燈';
     let low = [];
     try { low = findLowItems(JSON.parse(r.rawScoresJson || '{}')); } catch (e) { /* */ }
     const lowText = low.length ? low.map(l => `${l.item}(${l.score})`).join('、') : '—';
     const suggested = (low.length && suggestionMap[low[0].item]) ? suggestionMap[low[0].item].advice : '明天先把基本動作與節奏做穩。';
     const canTarget = !!r.recordId;
 
-    html += `<div class="redcare-card" data-rid="${r.recordId || ''}">`;
-    html += `<div class="redcare-head"><b>${r.name}</b><span class="tag tag-red">平均 ${r.averageScore}</span></div>`;
+    html += `<div class="redcare-card ${isRed ? '' : 'is-yellow'}" data-rid="${r.recordId || ''}">`;
+    html += `<div class="redcare-head"><b>${r.name}</b><span class="tag ${tagCls}">${lampTxt}・平均 ${r.averageScore}</span></div>`;
     html += `<div class="redcare-low">今日偏弱：${lowText}</div>`;
     html += `<div class="redcare-suggest">💡 建議方向：${suggested}</div>`;
     if (r.coachReply) html += `<div class="hint-box good">✅ 已送出給選手：${escapeHtml(r.coachReply)}</div>`;
@@ -1842,7 +1848,10 @@ function renderRedLightCoaching(todays) {
     if (canTarget) {
       html += `<div class="quick-chips" id="redchips-${r.recordId}"></div>`;
       html += `<textarea class="text-input" id="redmsg-${r.recordId}" rows="2" placeholder="給 ${r.name} 的方向與鼓勵…（可點上方快捷語）">${escapeHtml(r.coachReply || '')}</textarea>`;
-      html += `<button type="button" class="btn btn-primary" data-redsend="${r.recordId}" style="margin-top:6px">📨 送出給選手</button>`;
+      html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <button type="button" class="btn btn-primary" data-redsend="${r.recordId}">📨 送出給選手</button>
+        <button type="button" class="btn btn-line-share" data-redshare="${r.recordId}">💬 分享到 LINE</button>
+      </div>`;
     } else {
       html += `<div class="hint-box">這是較舊的紀錄，無法直接送出（新版紀錄才支援）。可用個人查詢或當面給予。</div>`;
     }
@@ -1850,8 +1859,19 @@ function renderRedLightCoaching(todays) {
   });
   box.innerHTML = html;
 
-  // 快捷語 + 送出按鈕
-  reds.forEach(r => {
+  // 組成要分享／送出的訊息
+  function careMessage(r, text) {
+    return `🥋 育林國中跆拳道隊｜教練的話
+給：${r.name}
+日期：${dateSlash(r.date)}
+
+${text}
+
+教練相信你，明天一起調整 💪`;
+  }
+
+  // 快捷語 + 送出 + 分享按鈕
+  list.forEach(r => {
     if (!r.recordId) return;
     const chipBox = $id(`redchips-${r.recordId}`);
     if (chipBox) {
@@ -1877,6 +1897,12 @@ function renderRedLightCoaching(todays) {
       btn.disabled = false; btn.textContent = '📨 送出給選手';
       toast(ok ? '✅ 已送出，選手在「上次表現」看得到' : '⚠️ 送出失敗，請檢查連線');
       if (ok) { r.coachReply = text; renderRedLightCoaching(todays); }
+    });
+    const shareBtn = box.querySelector(`[data-redshare="${r.recordId}"]`);
+    if (shareBtn) shareBtn.addEventListener('click', () => {
+      const text = $id(`redmsg-${r.recordId}`).value.trim();
+      if (!text) { toast('請先輸入要給選手的話'); return; }
+      shareToLine(careMessage(r, text));
     });
   });
 }
