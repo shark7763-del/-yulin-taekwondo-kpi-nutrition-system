@@ -1355,6 +1355,22 @@ async function submitAndShareLine() {
   if (lastStudentLineText) shareToLine(lastStudentLineText);
 }
 
+// 本機今天是否已有同名紀錄
+function localHasToday(name, date) {
+  const d = normDate(date);
+  return getLocalRecords().some(r => String(r.name) === String(name) && normDate(r.date) === d);
+}
+
+// 當日是否已送出過（先看本機，再看雲端最後一筆）
+async function alreadySubmittedToday(name, date) {
+  if (localHasToday(name, date)) return true;
+  try {
+    const last = await fetchLastRecord(name);
+    if (last && normDate(last.date) === normDate(date)) return true;
+  } catch (e) { /* 連線失敗就不擋，讓使用者照常送出 */ }
+  return false;
+}
+
 // 主送出函式
 async function doSubmit(mode) {
   if (_submitting) return;            // 正在送出，忽略重複點擊
@@ -1372,6 +1388,15 @@ async function doSubmit(mode) {
   submitBtns.forEach(b => b.disabled = true);
 
   try {
+    // 當日重複送出防呆：今天已填過就先確認是否覆蓋
+    const name = $id('name').value;
+    const date = $id('date').value || todayStr();
+    if (await alreadySubmittedToday(name, date)) {
+      if (!confirm('⚠️ 你今天已經填過了，要用這次的內容覆蓋今天那筆嗎？')) {
+        toast('已取消送出');
+        return;   // finally 會解鎖按鈕
+      }
+    }
     await doSubmitInner(mode);
   } finally {
     _submitting = false;
