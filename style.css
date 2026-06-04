@@ -392,3 +392,15 @@ textarea.text-input { resize: vertical; }
   border-radius: 999px; padding: 5px 12px;
   font-weight: 700; font-size: 0.88rem;
 }
+
+/* ===================== 紅燈關懷卡 ===================== */
+.redcare-card {
+  background: var(--bg-card-2);
+  border: 1px solid rgba(226, 59, 59, 0.45);
+  border-left: 4px solid var(--red);
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 12px;
+}
+.redcare-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.redcare-head b { font-size: 1.05rem; }
+.redcare-low { color: var(--text-soft); font-size: 0.9rem; margin-bottom: 4px; }
+.redcare-suggest { color: var(--gold); font-size: 0.88rem; margin-bottom: 8px; }

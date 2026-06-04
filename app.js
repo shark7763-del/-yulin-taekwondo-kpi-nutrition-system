@@ -256,6 +256,16 @@ const ENCOURAGE_PRESETS = [
   '一起加油，比賽我們互相罩！'
 ];
 
+// 教練給紅燈選手的方向＋鼓勵快捷語（成長型思維口吻）
+const COACH_DIRECTION_PRESETS = [
+  '今天紅燈沒關係，先好好休息，明天我們一項一項調整。',
+  '你今天有來、有記錄，這就是負責任的態度。明天從基本動作開始穩住。',
+  '分數只是提醒，不是定義你。明天先把最弱那一項練紮實。',
+  '辛苦了，先把身體恢復顧好，狀態回來表現就回來。',
+  '我看到你願意面對問題，這比分數更重要。明天一起修正。',
+  '別跟別人比，跟昨天的自己比，明天進步一點點就好。'
+];
+
 /* 依日期挑一句（同一天固定），讓「每日語錄」整天不變 */
 function dailyPick(arr) {
   if (!arr || !arr.length) return '';
@@ -1632,6 +1642,7 @@ async function refreshCoach() {
   renderOverview(todays);
   renderSubmitStatus(todays);
   renderStatusLists(todays);
+  renderRedLightCoaching(todays);
   renderAnalysis(todays);
   renderCoachNutrition(todays, all);
   renderInterviewList(todays, all);
@@ -1802,6 +1813,72 @@ function renderStatusLists(todays) {
     html += `</div></div>`;
   });
   box.innerHTML = html;
+}
+
+/* ---- 紅燈關懷：教練給方向與鼓勵（送出後選手在「上次表現」看得到）---- */
+function renderRedLightCoaching(todays) {
+  const box = $id('coachRedLight');
+  if (!box) return;
+  const reds = todays.filter(r => r.status && r.status.indexOf('紅') !== -1);
+  if (!reds.length) {
+    box.innerHTML = '<div class="hint-box good">今天沒有紅燈選手，狀況穩定 👍</div>';
+    return;
+  }
+
+  let html = '';
+  reds.forEach(r => {
+    let low = [];
+    try { low = findLowItems(JSON.parse(r.rawScoresJson || '{}')); } catch (e) { /* */ }
+    const lowText = low.length ? low.map(l => `${l.item}(${l.score})`).join('、') : '—';
+    const suggested = (low.length && suggestionMap[low[0].item]) ? suggestionMap[low[0].item].advice : '明天先把基本動作與節奏做穩。';
+    const canTarget = !!r.recordId;
+
+    html += `<div class="redcare-card" data-rid="${r.recordId || ''}">`;
+    html += `<div class="redcare-head"><b>${r.name}</b><span class="tag tag-red">平均 ${r.averageScore}</span></div>`;
+    html += `<div class="redcare-low">今日偏弱：${lowText}</div>`;
+    html += `<div class="redcare-suggest">💡 建議方向：${suggested}</div>`;
+    if (r.coachReply) html += `<div class="hint-box good">✅ 已送出給選手：${escapeHtml(r.coachReply)}</div>`;
+
+    if (canTarget) {
+      html += `<div class="quick-chips" id="redchips-${r.recordId}"></div>`;
+      html += `<textarea class="text-input" id="redmsg-${r.recordId}" rows="2" placeholder="給 ${r.name} 的方向與鼓勵…（可點上方快捷語）">${escapeHtml(r.coachReply || '')}</textarea>`;
+      html += `<button type="button" class="btn btn-primary" data-redsend="${r.recordId}" style="margin-top:6px">📨 送出給選手</button>`;
+    } else {
+      html += `<div class="hint-box">這是較舊的紀錄，無法直接送出（新版紀錄才支援）。可用個人查詢或當面給予。</div>`;
+    }
+    html += `</div>`;
+  });
+  box.innerHTML = html;
+
+  // 快捷語 + 送出按鈕
+  reds.forEach(r => {
+    if (!r.recordId) return;
+    const chipBox = $id(`redchips-${r.recordId}`);
+    if (chipBox) {
+      COACH_DIRECTION_PRESETS.forEach(text => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip';
+        chip.textContent = text.length > 18 ? text.slice(0, 18) + '…' : text;
+        chip.title = text;
+        chip.addEventListener('click', () => {
+          const ta = $id(`redmsg-${r.recordId}`);
+          ta.value = ta.value.trim() ? (ta.value.trim() + '\n' + text) : text;
+        });
+        chipBox.appendChild(chip);
+      });
+    }
+    const btn = box.querySelector(`[data-redsend="${r.recordId}"]`);
+    if (btn) btn.addEventListener('click', async () => {
+      const text = $id(`redmsg-${r.recordId}`).value.trim();
+      if (!text) { toast('請先輸入要給選手的話'); return; }
+      btn.disabled = true; btn.textContent = '送出中...';
+      const ok = await updateRecordRemote(r.recordId, { coachReply: text });
+      btn.disabled = false; btn.textContent = '📨 送出給選手';
+      toast(ok ? '✅ 已送出，選手在「上次表現」看得到' : '⚠️ 送出失敗，請檢查連線');
+      if (ok) { r.coachReply = text; renderRedLightCoaching(todays); }
+    });
+  });
 }
 
 function renderAnalysis(todays) {
