@@ -411,6 +411,18 @@ textarea.text-input { resize: vertical; }
   border-left-color: var(--yellow);
 }
 
+/* 資訊區 / 操作區分隔線 */
+.redcare-divider {
+  height: 1px; background: var(--border);
+  margin: 10px 0 12px;
+}
+/* 收合的快捷語（展開時 JS 改成 flex） */
+.redcare-chips { margin: 8px 0 0; }
+/* 操作列：快捷語切換 + 送出 + 分享 */
+.redcare-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+/* 小尺寸按鈕（快捷語切換鈕用） */
+.btn-sm { padding: 7px 12px; font-size: 0.85rem; }
+
 /* ===================== 七天成長趨勢圖 ===================== */
 .trend-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .trend-btn {

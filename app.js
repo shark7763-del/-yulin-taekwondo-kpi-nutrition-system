@@ -1965,9 +1965,11 @@ function renderRedLightCoaching(todays) {
     if (r.coachReply) html += `<div class="hint-box good">✅ 已送出給選手：${escapeHtml(r.coachReply)}</div>`;
 
     if (canTarget) {
-      html += `<div class="quick-chips" id="redchips-${r.recordId}"></div>`;
-      html += `<textarea class="text-input" id="redmsg-${r.recordId}" rows="2" placeholder="給 ${r.name} 的方向與鼓勵…（可點上方快捷語）">${escapeHtml(r.coachReply || '')}</textarea>`;
-      html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+      html += `<div class="redcare-divider"></div>`;
+      html += `<textarea class="text-input" id="redmsg-${r.recordId}" rows="2" placeholder="給 ${r.name} 的方向與鼓勵…（可用下方快捷語帶入）">${escapeHtml(r.coachReply || '')}</textarea>`;
+      html += `<div class="quick-chips redcare-chips" id="redchips-${r.recordId}" style="display:none;"></div>`;
+      html += `<div class="redcare-actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-redtoggle="${r.recordId}">💬 快捷語 ▾</button>
         <button type="button" class="btn btn-primary" data-redsend="${r.recordId}">📨 送出給選手</button>
         <button type="button" class="btn btn-line-share" data-redshare="${r.recordId}">💬 分享到 LINE</button>
       </div>`;
@@ -2007,6 +2009,14 @@ ${text}
         chipBox.appendChild(chip);
       });
     }
+    const toggleBtn = box.querySelector(`[data-redtoggle="${r.recordId}"]`);
+    if (toggleBtn) toggleBtn.addEventListener('click', () => {
+      const cb = $id(`redchips-${r.recordId}`);
+      if (!cb) return;
+      const show = cb.style.display === 'none';
+      cb.style.display = show ? 'flex' : 'none';
+      toggleBtn.textContent = show ? '💬 快捷語 ▴' : '💬 快捷語 ▾';
+    });
     const btn = box.querySelector(`[data-redsend="${r.recordId}"]`);
     if (btn) btn.addEventListener('click', async () => {
       const text = $id(`redmsg-${r.recordId}`).value.trim();
