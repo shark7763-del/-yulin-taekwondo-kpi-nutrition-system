@@ -1571,6 +1571,13 @@ function buildLineTexts(rec, weightNote, affirm) {
     affirmBlock = '\n' + parts.join('\n') + '\n';
   }
 
+  // 鼓勵隊友（學生有填才顯示）
+  const encMsg = (rec.encouragementToTeammate || '').trim();
+  const encName = (rec.encourageTeammateName || '').trim();
+  const encourageTeammateBlock = encMsg
+    ? `\n🤝 想對${encName ? ` ${encName} ` : '隊友'}說的話：\n${encMsg}\n`
+    : '';
+
   // 選手版
   const studentLine =
 `🥋 育林國中跆拳道隊｜每日 KPI 回饋
@@ -1596,7 +1603,7 @@ ${shortNutrition(n)}
 明日目標：
 
 ${rec.tomorrowGoal || '把今天的重點再做穩一點。'}
-
+${encourageTeammateBlock}
 💪 ${encouragementByStatus(rec.status)}
 
 📣 教練的話：${dailyPick(COACH_QUOTES)}
@@ -1851,6 +1858,7 @@ function renderSubmitStatus(todays) {
   // 催繳訊息文字（只含勾選的人）
   function buildRemindText(names) {
     const dateStr = dateSlash($id('coachDate').value || todayStr());
+    const fillUrl = location.origin + location.pathname;
     return `🥋 育林國中跆拳道隊｜今日 KPI 填寫提醒
 日期：${dateStr}
 
@@ -1858,7 +1866,10 @@ function renderSubmitStatus(todays) {
 
 ${names.map(n => '・' + n).join('\n')}
 
-（填寫進度：${submitted.length} / ${roster.length} 人）`;
+（填寫進度：${submitted.length} / ${roster.length} 人）
+
+👉 點我填寫：
+${fillUrl}`;
   }
 
   // 點選姓名切換選取
