@@ -2249,6 +2249,8 @@ function renderCoachReviewBlock(rec) {
 
   // 選手的看法
   if (rec.studentResponse) html += `<div class="hint-box">💬 選手的看法：${escapeHtml(rec.studentResponse)}</div>`;
+  // 家長留言
+  if (rec.parentNote) html += `<div class="hint-box">👨‍👩‍👧 家長留言：${escapeHtml(rec.parentNote)}</div>`;
 
   // 教練評分表單
   html += `<details class="explain"${coach ? '' : ' open'}><summary>✍️ ${coach ? '修改' : '填寫'}教練評分</summary><div class="explain-body">`;
@@ -2392,20 +2394,32 @@ function renderLastReviewInto(rec, box) {
   if (rec.reflection) html += `<div class="hint-box">📝 上次心得：${escapeHtml(rec.reflection)}</div>`;
   if (rec.tomorrowGoal) html += `<div class="hint-box good">🎯 上次明日目標：${escapeHtml(rec.tomorrowGoal)}</div>`;
 
-  // 選手回應欄（交叉辯論）
+  // 教練回覆（學生／家長都看得到）
+  if (rec.coachReply) html += `<div class="hint-box good">💬 教練回覆：${escapeHtml(rec.coachReply)}</div>`;
+
+  // 回應區依身分分流：家長用獨立「家長留言」欄，不覆蓋學生的自我回應
+  const viewRole = (getRole() || {}).role;
   if (rec.recordId) {
-    if (rec.coachReply) html += `<div class="hint-box good">💬 教練回覆你：${escapeHtml(rec.coachReply)}</div>`;
-    html += `<h4 style="margin:14px 0 6px;color:var(--blue)">💬 我對這筆的看法</h4>`;
-    html += `<textarea id="studentResponseBox" class="text-input" rows="2" placeholder="例如：核心穩定我覺得不只 2 分，因為今天…">${escapeHtml(rec.studentResponse || '')}</textarea>`;
-    html += `<button type="button" id="btnSendStudentResponse" class="btn btn-secondary" style="margin-top:8px">📨 送出我的看法</button>`;
-    html += `<div style="color:var(--text-soft);font-size:0.82rem;margin-top:6px">這裡是讓你說明想法，幫助教練了解你，不是用來改分數。</div>`;
+    if (viewRole === 'parent') {
+      if (rec.studentResponse) html += `<div class="hint-box">💬 孩子的看法：${escapeHtml(rec.studentResponse)}</div>`;
+      html += `<h4 style="margin:14px 0 6px;color:var(--blue)">💬 家長留言給教練</h4>`;
+      html += `<textarea id="parentNoteBox" class="text-input" rows="2" placeholder="想讓教練知道的狀況，例如：最近睡得比較少、這週鼻子過敏…">${escapeHtml(rec.parentNote || '')}</textarea>`;
+      html += `<button type="button" id="btnSendParentNote" class="btn btn-secondary" style="margin-top:8px">📨 送出給教練</button>`;
+      html += `<div style="color:var(--text-soft);font-size:0.82rem;margin-top:6px">這是家長與教練的溝通，不會蓋掉孩子的自我紀錄。</div>`;
+    } else {
+      html += `<h4 style="margin:14px 0 6px;color:var(--blue)">💬 我對這筆的看法</h4>`;
+      html += `<textarea id="studentResponseBox" class="text-input" rows="2" placeholder="例如：核心穩定我覺得不只 2 分，因為今天…">${escapeHtml(rec.studentResponse || '')}</textarea>`;
+      html += `<button type="button" id="btnSendStudentResponse" class="btn btn-secondary" style="margin-top:8px">📨 送出我的看法</button>`;
+      html += `<div style="color:var(--text-soft);font-size:0.82rem;margin-top:6px">這裡是讓你說明想法，幫助教練了解你，不是用來改分數。</div>`;
+      if (rec.parentNote) html += `<div class="hint-box" style="margin-top:10px">👨‍👩‍👧 家長留言：${escapeHtml(rec.parentNote)}</div>`;
+    }
   } else {
     html += `<div class="hint-box" style="color:var(--text-soft)">這是較早的紀錄，無法回應（新版紀錄才支援交叉辯論）。</div>`;
   }
 
   box.innerHTML = html;
 
-  // 綁定送出看法
+  // 綁定：選手送出看法
   const btn = $id('btnSendStudentResponse');
   if (btn) {
     btn.addEventListener('click', async () => {
@@ -2414,6 +2428,17 @@ function renderLastReviewInto(rec, box) {
       const ok = await updateRecordRemote(rec.recordId, { studentResponse: text });
       btn.disabled = false; btn.textContent = '📨 送出我的看法';
       toast(ok ? '✅ 已送出你的看法，教練會看到' : '⚠️ 送出失敗，請稍後再試');
+    });
+  }
+  // 綁定：家長留言給教練
+  const pbtn = $id('btnSendParentNote');
+  if (pbtn) {
+    pbtn.addEventListener('click', async () => {
+      const text = $id('parentNoteBox').value.trim();
+      pbtn.disabled = true; pbtn.textContent = '送出中...';
+      const ok = await updateRecordRemote(rec.recordId, { parentNote: text });
+      pbtn.disabled = false; pbtn.textContent = '📨 送出給教練';
+      toast(ok ? '✅ 已送出給教練' : '⚠️ 送出失敗，請稍後再試');
     });
   }
 }

@@ -48,7 +48,8 @@ var HEADERS = [
   'studentResponse',                                            // 選手對這筆的看法
   'coachReply',                                                 // 教練回覆選手
   'reviewUpdatedAt',                                            // 最後更新時間
-  'encourageTeammateName'                                       // 想鼓勵的隊友（選填）
+  'encourageTeammateName',                                      // 想鼓勵的隊友（選填）
+  'parentNote'                                                  // 家長留言給教練（家長專用，不覆蓋 studentResponse）
 ];
 
 /* ============================================================
