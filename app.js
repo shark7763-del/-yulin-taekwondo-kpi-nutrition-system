@@ -335,7 +335,7 @@ function todayStr() {
 }
 
 // 將 yyyy-mm-dd 轉成 yyyy/mm/dd 顯示
-function dateSlash(s) { return (s || '').replace(/-/g, '/'); }
+function dateSlash(s) { return normDate(s).replace(/-/g, '/'); }
 
 /*
    把任意日期值正規化成 yyyy-mm-dd。
@@ -1603,6 +1603,20 @@ function dedupeLatestByName(records) {
   return Object.keys(map).map(k => map[k]);
 }
 
+// 同一天只保留最新一筆（給單一選手的紀錄用），回傳新→舊排序
+function dedupeLatestByDate(records) {
+  const map = {};
+  records.forEach(r => {
+    const k = normDate(r.date);
+    if (!k) return;
+    if (!map[k]) { map[k] = r; return; }
+    const tNew = new Date(r.timestamp || r.date || 0).getTime();
+    const tOld = new Date(map[k].timestamp || map[k].date || 0).getTime();
+    if (tNew >= tOld) map[k] = r;
+  });
+  return Object.keys(map).sort((a, b) => a < b ? 1 : -1).map(k => map[k]);
+}
+
 async function refreshCoach() {
   toast('讀取資料中...');
   const all = await fetchAllRecords();
@@ -1930,12 +1944,16 @@ async function loadPersonRecords() {
   const url = getWebAppUrl();
   if (url) {
     try {
-      const res = await postToWebApp({ action: 'getRecentRecordsByName', name: name, limit: 7 });
-      recs = (res && res.ok && Array.isArray(res.data)) ? res.data : localRecentRecords(name, 7);
-    } catch (e) { recs = localRecentRecords(name, 7); }
+      // 多抓一些，去重後再取 7 筆（避免舊重複資料把名額占滿）
+      const res = await postToWebApp({ action: 'getRecentRecordsByName', name: name, limit: 40 });
+      recs = (res && res.ok && Array.isArray(res.data)) ? res.data : localRecentRecords(name, 40);
+    } catch (e) { recs = localRecentRecords(name, 40); }
   } else {
-    recs = localRecentRecords(name, 7);
+    recs = localRecentRecords(name, 40);
   }
+
+  // 同一天只保留最新一筆，並取最近 7 天
+  recs = dedupeLatestByDate(recs).slice(0, 7);
 
   const box = $id('coachPersonResult');
   if (!recs.length) { box.innerHTML = '<div class="hint-box">查無紀錄。</div>'; return; }
