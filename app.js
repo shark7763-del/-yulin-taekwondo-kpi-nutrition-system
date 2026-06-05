@@ -1351,8 +1351,15 @@ let lastStudentLineText = '';
 // 送出（正式）後直接分享選手版到 LINE
 async function submitAndShareLine() {
   lastStudentLineText = '';
-  await doSubmit('official');
-  if (lastStudentLineText) shareToLine(lastStudentLineText);
+  const ok = await doSubmit('official');
+  if (ok && lastStudentLineText) {
+    // 確實存進 Google Sheet 才開 LINE，避免「LINE 有開、後台沒資料」
+    shareToLine(lastStudentLineText);
+  } else if (!ok && lastStudentLineText) {
+    // 有跑送出流程但存後台失敗 → 不開 LINE，明確告知學生重送
+    alert('⚠️ 這筆還沒成功存到後台，所以先不開 LINE。\n請確認網路後，再按一次「送出並分享到 LINE」。');
+  }
+  // lastStudentLineText 為空＝沒通過必填或取消，已有提示，不重複跳窗
 }
 
 // 本機今天是否已有同名紀錄
@@ -1373,13 +1380,13 @@ async function alreadySubmittedToday(name, date) {
 
 // 主送出函式
 async function doSubmit(mode) {
-  if (_submitting) return;            // 正在送出，忽略重複點擊
-  if (!validateForm()) return;
+  if (_submitting) return false;      // 正在送出，忽略重複點擊
+  if (!validateForm()) return false;
 
   if (mode === 'official' && !getWebAppUrl()) {
     toast('請先到「系統設定」貼上 Google Apps Script Web App URL。');
     switchTab('settings');
-    return;
+    return false;
   }
 
   // 鎖定送出按鈕，避免連點
@@ -1394,10 +1401,10 @@ async function doSubmit(mode) {
     if (await alreadySubmittedToday(name, date)) {
       if (!confirm('⚠️ 你今天已經填過了，要用這次的內容覆蓋今天那筆嗎？')) {
         toast('已取消送出');
-        return;   // finally 會解鎖按鈕
+        return false;   // finally 會解鎖按鈕
       }
     }
-    await doSubmitInner(mode);
+    return await doSubmitInner(mode);
   } finally {
     _submitting = false;
     submitBtns.forEach(b => b.disabled = false);
@@ -1432,11 +1439,13 @@ async function doSubmitInner(mode) {
   const payload = Object.assign({}, rec);
   delete payload._lowItemsArr; delete payload._aspectAvg; delete payload._nutrition;
 
+  let saved = false;   // 是否真的存進後台（official）／本機（local）
+
   if (mode === 'official') {
     toast('送出中...');
     try {
       const res = await postToWebApp({ action: 'addRecord', payload: payload });
-      if (res && res.ok) { toast('✅ 已送出到 Google Sheet'); clearDraft(); }
+      if (res && res.ok) { toast('✅ 已送出到 Google Sheet'); clearDraft(); saved = true; }
       else toast('⚠️ 送出失敗：' + (res && res.error ? res.error : '未知錯誤'));
     } catch (e) {
       toast('⚠️ 送出失敗，請檢查網路與 Web App 設定');
@@ -1446,6 +1455,7 @@ async function doSubmitInner(mode) {
   } else {
     saveLocalRecord(payload);
     clearDraft();
+    saved = true;
     toast('💾 已存入本機測試資料');
   }
 
@@ -1456,6 +1466,8 @@ async function doSubmitInner(mode) {
 
   // 捲動到比較卡
   $id('compareCard').scrollIntoView({ behavior: 'smooth' });
+
+  return saved;
 }
 
 /* ---- 進步肯定區塊 HTML（徽章＋具體肯定句）---- */
