@@ -423,6 +423,23 @@ textarea.text-input { resize: vertical; }
 /* 小尺寸按鈕（快捷語切換鈕用） */
 .btn-sm { padding: 7px 12px; font-size: 0.85rem; }
 
+/* ===================== 本週之星 ===================== */
+.star-card {
+  background: linear-gradient(135deg, rgba(245, 197, 24, 0.10), rgba(46, 125, 209, 0.10));
+  border: 1px solid rgba(245, 197, 24, 0.45);
+}
+.star-sub { color: var(--text-soft); font-size: 0.82rem; margin: -4px 0 10px; }
+.star-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; margin-bottom: 8px;
+  background: var(--bg-card-2); border-radius: 10px;
+  border-left: 3px solid var(--gold);
+}
+.star-row:last-child { margin-bottom: 0; }
+.star-cat { font-weight: 700; color: var(--gold); min-width: 92px; }
+.star-name { font-weight: 700; font-size: 1.05rem; color: var(--text-main); }
+.star-note { color: var(--text-soft); font-size: 0.85rem; flex: 1 1 100%; }
+
 /* ===================== 七天成長趨勢圖 ===================== */
 .trend-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .trend-btn {

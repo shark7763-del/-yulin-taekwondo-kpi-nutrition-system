@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中跆拳道隊｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260605j" />
+  <link rel="stylesheet" href="style.css?v=20260605k" />
 </head>
 <body>
 
@@ -58,6 +58,13 @@
         <div class="quote-mark">❝</div>
         <p class="quote-text" id="dailyQuoteText"></p>
         <p class="quote-by">— 育林跆拳道隊・教練語錄</p>
+      </div>
+
+      <!-- 本週之星（努力型、正向、不露分數；教練可在系統設定關閉） -->
+      <div class="card star-card" id="weeklyStarCard" style="display:none;">
+        <h3 class="card-title">🌟 本週之星</h3>
+        <p class="star-sub">看重的是努力與堅持，不是分數。每個人都有機會被看見 💪</p>
+        <div id="weeklyStarContent"></div>
       </div>
 
       <!-- 上次表現回顧（學生選姓名後自動帶出） -->
@@ -361,6 +368,21 @@
       </div>
 
       <div class="card">
+        <h3 class="card-title">🌟 本週之星設定</h3>
+        <p class="review-label" style="margin-bottom:10px">學生填寫頁上方會顯示「本週之星」，看重努力與堅持（最堅持／進步最多／最佳隊友／最自律），不露任何人的分數。不想用可關閉。</p>
+        <label class="field-label">管理密碼（若後端有設 ADMIN_KEY）</label>
+        <input type="password" id="starAdminKey" class="text-input" placeholder="沒設定可留空" />
+        <label class="field-label" style="display:flex;align-items:center;gap:8px;margin-top:14px">
+          <input type="checkbox" id="starEnabled" style="width:18px;height:18px;" /> 顯示本週之星給學生
+        </label>
+        <div class="btn-group">
+          <button type="button" id="btnSaveStar" class="btn btn-primary">💾 儲存設定</button>
+          <button type="button" id="btnRefreshStar" class="btn btn-ghost">🔄 讀取目前狀態</button>
+        </div>
+        <div id="starStatus" class="conn-status"></div>
+      </div>
+
+      <div class="card">
         <h3 class="card-title">📱 LINE 自動推播設定</h3>
         <p class="review-label" style="margin-bottom:10px">學生送出紀錄後，系統會自動把訊息推到指定的 LINE 群組或個人。設定步驟詳見 README「E. LINE 自動推播」。</p>
 
@@ -427,6 +449,6 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260605j"></script>
+  <script src="app.js?v=20260605k"></script>
 </body>
 </html>

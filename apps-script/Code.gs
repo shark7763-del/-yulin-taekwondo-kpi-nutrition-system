@@ -123,6 +123,11 @@ function handleAction(action, data) {
       return jsonOut({ ok: true, data: { lastSourceId: getProp('LINE_LAST_SOURCE_ID') || '', lastSourceType: getProp('LINE_LAST_SOURCE_TYPE') || '' } });
     case 'verifyAdmin':
       return jsonOut(verifyAdmin(data));
+    // ---- 本週之星開關（教練可關，全裝置共用，預設開）----
+    case 'getStarConfig':
+      return jsonOut({ ok: true, data: { enabled: getProp('STAR_ENABLED') !== 'false' } });
+    case 'setStarConfig':
+      return jsonOut(setStarConfig(data));
     default:
       return jsonOut({ ok: false, error: '未知的 action：' + action });
   }
@@ -539,6 +544,13 @@ function checkAdminKey(data) {
   var key = getProp('ADMIN_KEY');
   if (!key) return true; // 未設定密碼則不檢查
   return data && data.adminKey === key;
+}
+
+// 設定本週之星開關（教練端，可用 ADMIN_KEY 保護）
+function setStarConfig(data) {
+  if (!checkAdminKey(data)) return { ok: false, error: '管理密碼錯誤，無法修改設定。' };
+  setProp('STAR_ENABLED', data && data.enabled ? 'true' : 'false');
+  return { ok: true, data: { enabled: getProp('STAR_ENABLED') !== 'false' } };
 }
 
 // 回傳目前 LINE 設定狀態（token 遮罩，不外洩）

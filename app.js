@@ -1741,6 +1741,109 @@ async function fetchAllRecords() {
   return getLocalRecords();
 }
 
+/* ============================================================
+   11.3 本週之星（努力型、正向、不露分數）
+   ------------------------------------------------------------
+   依據「努力/過程」而非能力：最堅持（填寫天數）、進步最多（本週首尾差）、
+   最佳隊友（鼓勵次數）、最自律（自律面向）。每類只表揚 1 人、只露名字＋
+   正向標籤，不秀全班分數。教練可在系統設定關閉（後端 STAR_ENABLED）。
+   ============================================================ */
+
+// 本週起始（週一 00:00）
+function weekStartMondayStr() {
+  const x = new Date();
+  const day = (x.getDay() + 6) % 7; // 週一=0
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - day);
+  return ymd(x);
+}
+
+function computeWeeklyStars(all) {
+  const startStr = weekStartMondayStr();
+  const wk = (all || []).filter(r => r && r.name && normDate(r.date) >= startStr);
+  if (!wk.length) return [];
+
+  const byName = {};
+  wk.forEach(r => {
+    const n = r.name;
+    if (!byName[n]) byName[n] = { dates: {}, recs: [] };
+    byName[n].dates[normDate(r.date)] = true;
+    byName[n].recs.push(r);
+  });
+  const names = Object.keys(byName);
+  const stars = [];
+  let best;
+
+  // 🔥 最堅持：本週填最多天（≥2 才表揚）
+  best = null;
+  names.forEach(n => {
+    const days = Object.keys(byName[n].dates).length;
+    if (!best || days > best.v) best = { name: n, v: days };
+  });
+  if (best && best.v >= 2) stars.push({ icon: '🔥', label: '最堅持', name: best.name, note: `本週紀錄 ${best.v} 天，超有毅力！` });
+
+  // 📈 進步最多：本週最早 vs 最晚 平均分差（>0、≥2 筆）
+  best = null;
+  names.forEach(n => {
+    const recs = byName[n].recs.slice().sort((a, b) => normDate(a.date) < normDate(b.date) ? -1 : 1);
+    if (recs.length < 2) return;
+    const first = parseFloat(recs[0].averageScore), last = parseFloat(recs[recs.length - 1].averageScore);
+    if (isNaN(first) || isNaN(last)) return;
+    const delta = last - first;
+    if (delta > 0 && (!best || delta > best.v)) best = { name: n, v: delta };
+  });
+  if (best) stars.push({ icon: '📈', label: '進步最多', name: best.name, note: `本週進步 +${round1(best.v)} 分，繼續衝！` });
+
+  // 🤝 最佳隊友：本週最常鼓勵隊友（≥1）
+  best = null;
+  names.forEach(n => {
+    const c = byName[n].recs.filter(r => (r.encouragementToTeammate || '').trim()).length;
+    if (!best || c > best.v) best = { name: n, v: c };
+  });
+  if (best && best.v >= 1) stars.push({ icon: '🤝', label: '最佳隊友', name: best.name, note: `本週鼓勵隊友 ${best.v} 次，超暖！` });
+
+  // 🎯 最自律：本週自律面向平均最高
+  best = null;
+  names.forEach(n => {
+    const arr = byName[n].recs.map(r => parseFloat(r.disciplineAvg)).filter(v => !isNaN(v));
+    if (!arr.length) return;
+    const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+    if (!best || avg > best.v) best = { name: n, v: avg };
+  });
+  if (best) stars.push({ icon: '🎯', label: '最自律', name: best.name, note: `自律表現亮眼（${round1(best.v)} 分）` });
+
+  return stars;
+}
+
+async function renderWeeklyStars() {
+  const card = $id('weeklyStarCard');
+  const box = $id('weeklyStarContent');
+  if (!card || !box) return;
+
+  // 開關（後端 STAR_ENABLED，預設開；讀不到也預設開）
+  let enabled = true;
+  if (getWebAppUrl()) {
+    try {
+      const res = await postToWebApp({ action: 'getStarConfig' });
+      if (res && res.ok && res.data && typeof res.data.enabled !== 'undefined') enabled = !!res.data.enabled;
+    } catch (e) { /* 預設開 */ }
+  }
+  if (!enabled) { card.style.display = 'none'; return; }
+
+  const all = await fetchAllRecords();
+  const stars = computeWeeklyStars(all);
+  if (!stars.length) { card.style.display = 'none'; return; }
+
+  box.innerHTML = stars.map(s =>
+    `<div class="star-row">
+       <span class="star-cat">${s.icon} ${s.label}</span>
+       <span class="star-name">${escapeHtml(s.name)}</span>
+       <span class="star-note">${escapeHtml(s.note)}</span>
+     </div>`
+  ).join('');
+  card.style.display = 'block';
+}
+
 // 同一人同一天只保留最新一筆（依 timestamp，缺則用 date）
 function dedupeLatestByName(records) {
   const map = {};
@@ -2619,6 +2722,63 @@ function setupSettingsHandlers() {
 
   // ---- LINE 推播設定 ----
   setupLineHandlers();
+
+  // ---- 本週之星設定 ----
+  setupStarHandlers();
+}
+
+/* ============================================================
+   本週之星設定（前端，共用 ADMIN_KEY）
+   ============================================================ */
+function showStarStatus(type, msg) {
+  const el = $id('starStatus');
+  if (!el) return;
+  el.className = 'conn-status ' + type;
+  el.textContent = msg;
+}
+
+async function loadStarStatus() {
+  if (!getWebAppUrl()) { showStarStatus('', '尚未設定 Web App URL（仍會以「開啟」顯示）。'); return; }
+  try {
+    const res = await postToWebApp({ action: 'getStarConfig' });
+    if (res && res.ok && res.data) {
+      $id('starEnabled').checked = !!res.data.enabled;
+      showStarStatus('ok', '✅ 目前狀態：' + (res.data.enabled ? '顯示中' : '已關閉'));
+    } else {
+      showStarStatus('fail', '讀取失敗：' + ((res && res.error) || '請確認後端是否已更新部署'));
+    }
+  } catch (e) { showStarStatus('fail', '讀取失敗，請檢查連線。'); }
+}
+
+function setupStarHandlers() {
+  const saveBtn = $id('btnSaveStar');
+  const refreshBtn = $id('btnRefreshStar');
+  const keyEl = $id('starAdminKey');
+  if (!saveBtn) return;
+
+  // 還原管理密碼（與 LINE 共用同一組 ADMIN_KEY）
+  if (keyEl) keyEl.value = getLineAdminKey();
+
+  saveBtn.addEventListener('click', async () => {
+    if (!getWebAppUrl()) { showStarStatus('fail', '請先在上方設定並儲存 Web App URL。'); return; }
+    const adminKey = keyEl ? keyEl.value.trim() : '';
+    saveLineAdminKey(adminKey);
+    saveBtn.disabled = true; saveBtn.textContent = '儲存中...';
+    try {
+      const res = await postToWebApp({ action: 'setStarConfig', adminKey: adminKey, enabled: $id('starEnabled').checked });
+      if (res && res.ok) {
+        showStarStatus('ok', '✅ 已儲存：' + (res.data && res.data.enabled ? '顯示中' : '已關閉'));
+        renderWeeklyStars();
+      } else {
+        showStarStatus('fail', '儲存失敗：' + ((res && res.error) || '請確認管理密碼/部署'));
+      }
+    } catch (e) { showStarStatus('fail', '儲存失敗，請檢查連線。'); }
+    saveBtn.disabled = false; saveBtn.textContent = '💾 儲存設定';
+  });
+
+  if (refreshBtn) refreshBtn.addEventListener('click', loadStarStatus);
+
+  loadStarStatus();
 }
 
 // 改完名單後：本機已存，若有雲端則一併推上去
@@ -3027,6 +3187,9 @@ function init() {
 
   // 初次載入教練後台資料
   refreshCoach();
+
+  // 本週之星（學生填寫頁上方）
+  renderWeeklyStars();
 }
 
 /*
