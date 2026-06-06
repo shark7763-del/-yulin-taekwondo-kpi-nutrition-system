@@ -1,5 +1,5 @@
 /* ============================================================
-   育林國中跆拳道隊｜KPI＋身體狀態＋AI 飲食建議系統
+   育林國中技擊隊｜KPI＋身體狀態＋AI 飲食建議系統
    Google Apps Script Web App 後端 — Code.gs
 
    功能：
@@ -49,7 +49,19 @@ var HEADERS = [
   'coachReply',                                                 // 教練回覆選手
   'reviewUpdatedAt',                                            // 最後更新時間
   'encourageTeammateName',                                      // 想鼓勵的隊友（選填）
-  'parentNote'                                                  // 家長留言給教練（家長專用，不覆蓋 studentResponse）
+  'parentNote',                                                 // 家長留言給教練（家長專用，不覆蓋 studentResponse）
+  // ===== 自由品勢（Freestyle Poomsae）相關（新增，皆在最後，不影響舊資料） =====
+  'mode',                                                       // standard / freestyle
+  'freestyleTotal', 'freestyleStatus',                          // 100 分制總分、4 級燈號
+  'freestyleDifficulty', 'freestyleCompletion', 'freestyleMusic',   // 六加權類別分數（0–100）
+  'freestyleCreativity', 'freestyleExpression', 'freestyleSafety',
+  'rawFreestyleScoresJson',                                     // 10 項細項分數（JSON）
+  'freestyleLineText',                                          // 自由品勢建議版 LINE 文字
+  'musicName', 'musicSeconds', 'freestyleTheme', 'practiceSection',  // 額外紀錄欄位
+  'aerialSuccessRate', 'spinSuccessRate', 'acroSuccessRate',
+  'comboKickCount', 'landingErrors', 'breakCount',
+  'needVideoFix', 'focusEightCount',
+  'aerialKickCount', 'unlockedMoves'                            // 空中踢擊完成幾腳、解鎖哪些高難度動作
 ];
 
 /* ============================================================
@@ -458,7 +470,8 @@ var LINE_VERSION_FIELD = {
   coach: 'coachLineText',
   parent: 'parentLineText',
   student: 'studentLineText',
-  nutrition: 'nutritionLineText'
+  nutrition: 'nutritionLineText',
+  freestyle: 'freestyleLineText'
 };
 
 // --- Script Properties 小工具 ---
@@ -481,7 +494,7 @@ function setLineConfig() {
 
 // 在編輯器直接測試推播
 function lineTestFromEditor() {
-  return pushToLine('✅ 育林跆拳道系統｜LINE 測試訊息，看到這則代表推播設定成功。');
+  return pushToLine('✅ 育林國中技擊隊系統｜LINE 測試訊息，看到這則代表推播設定成功。');
 }
 
 // 在編輯器查看 Webhook 最近捕獲的來源 ID（把 bot 加進群組並發一句話後執行）
@@ -582,7 +595,7 @@ function setLineConfigFromRequest(data) {
 // 前端按「測試推播」
 function lineTest(data) {
   if (!checkAdminKey(data)) return { ok: false, error: '管理密碼錯誤。' };
-  return pushToLine('✅ 育林跆拳道系統｜LINE 測試訊息，看到這則代表推播設定成功。');
+  return pushToLine('✅ 育林國中技擊隊系統｜LINE 測試訊息，看到這則代表推播設定成功。');
 }
 
 // 教練後台「發送 LINE 催繳」：把指定文字推到設定好的 LINE 目標

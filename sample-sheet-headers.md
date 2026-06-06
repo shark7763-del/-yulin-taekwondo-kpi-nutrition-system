@@ -16,7 +16,7 @@
 ## 一行 tab 分隔表頭（複製這一整行）
 
 ```
-timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	targetWeightKg	bmi	weightGap	breakfast	lunch	dinner	snacksDrinks	waterIntake	lateNightSnack	trainingIntensity	physicalAvg	technicalAvg	focusAvg	disciplineAvg	emotionAvg	tacticalAvg	totalScore	averageScore	status	lowItems	improveTargets	mainGoalToday	reflection	tomorrowGoal	encouragementToTeammate	nutritionRisks	nutritionAdviceStudent	nutritionAdviceParent	nutritionAdviceCoach	studentLineText	parentLineText	coachLineText	nutritionLineText	rawScoresJson	rawNutritionJson	recordId	coachPhysicalAvg	coachTechnicalAvg	coachFocusAvg	coachDisciplineAvg	coachEmotionAvg	coachTacticalAvg	coachTotalScore	coachAverageScore	coachStatus	coachComment	studentResponse	coachReply	reviewUpdatedAt
+timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	targetWeightKg	bmi	weightGap	breakfast	lunch	dinner	snacksDrinks	waterIntake	lateNightSnack	trainingIntensity	physicalAvg	technicalAvg	focusAvg	disciplineAvg	emotionAvg	tacticalAvg	totalScore	averageScore	status	lowItems	improveTargets	mainGoalToday	reflection	tomorrowGoal	encouragementToTeammate	nutritionRisks	nutritionAdviceStudent	nutritionAdviceParent	nutritionAdviceCoach	studentLineText	parentLineText	coachLineText	nutritionLineText	rawScoresJson	rawNutritionJson	recordId	coachPhysicalAvg	coachTechnicalAvg	coachFocusAvg	coachDisciplineAvg	coachEmotionAvg	coachTacticalAvg	coachTotalScore	coachAverageScore	coachStatus	coachComment	studentResponse	coachReply	reviewUpdatedAt	encourageTeammateName	parentNote	mode	freestyleTotal	freestyleStatus	freestyleDifficulty	freestyleCompletion	freestyleMusic	freestyleCreativity	freestyleExpression	freestyleSafety	rawFreestyleScoresJson	freestyleLineText	musicName	musicSeconds	freestyleTheme	practiceSection	aerialSuccessRate	spinSuccessRate	acroSuccessRate	comboKickCount	landingErrors	breakCount	needVideoFix	focusEightCount	aerialKickCount	unlockedMoves
 ```
 
 > 💡 後面 14 個欄位（`recordId` 起）是「交叉辯論／教練複評」功能用的，**不用手動補**——只要在 Apps Script 編輯器重新執行一次 `setupSheet()`，系統會自動把工作表補到最新欄位。
@@ -78,5 +78,23 @@ timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	
 | studentResponse | 選手對這筆的看法（交叉辯論） |
 | coachReply | 教練回覆選手 |
 | reviewUpdatedAt | 複評／回應最後更新時間 |
+| encourageTeammateName | 想鼓勵的隊友（選填） |
+| parentNote | 家長留言給教練 |
+| mode | 紀錄類型：`standard`（6 面向）或 `freestyle`（自由品勢） |
+| freestyleTotal | 自由品勢總分（100 分制） |
+| freestyleStatus | 自由品勢 4 級燈號（綠／黃綠／黃／紅） |
+| freestyleDifficulty ~ freestyleSafety | 自由品勢六加權類別分數（技術難度／動作完成度／音樂與節奏／創意編排／表現力／安全與穩定，皆 0–100） |
+| rawFreestyleScoresJson | 自由品勢 10 項細項分數（JSON） |
+| freestyleLineText | 自由品勢建議版 LINE 文字 |
+| musicName / musicSeconds | 音樂名稱／秒數 |
+| freestyleTheme / practiceSection | 自由品勢主題／今日練習段落 |
+| aerialSuccessRate / spinSuccessRate / acroSuccessRate | 空中踢擊／旋轉／特技動作成功率（%） |
+| comboKickCount / landingErrors / breakCount | 連續踢擊完成數／落地失誤次數／動作中斷次數 |
+| needVideoFix | 是否需要影片修正（是／否）｜目前前端未使用 |
+| focusEightCount | 今日最需要修正的 8 拍｜目前前端未使用 |
+| aerialKickCount | 空中踢擊完成幾腳 |
+| unlockedMoves | 解鎖哪些高難度動作 |
 
-共 **58 欄**（A 到 BF）。前 44 欄為原始紀錄，後 14 欄為交叉辯論功能。
+共 **85 欄**。前 44 欄為原始紀錄，接著 14 欄交叉辯論、2 欄（隊友鼓勵名／家長留言），最後 25 欄為自由品勢功能。新增欄位皆在最後，**舊資料位置不變**——重新部署後在 Apps Script 編輯器執行一次 `setupSheet()` 即可自動補欄。
+
+> 註：自由品勢前端目前只填「主題、空中踢擊完成幾腳、落地失誤幾次、解鎖哪些高難度動作」＋10 項評分拉桿；其餘 freestyle 欄位（成功率、練習段落、影片修正、8 拍…）保留在表頭但不寫入，作日後擴充用。
