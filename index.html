@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260607a" />
+  <link rel="stylesheet" href="style.css?v=20260607d" />
 </head>
 <body>
 
@@ -42,6 +42,7 @@
   <nav class="tab-nav" id="tabNav">
     <button class="tab-btn active" data-tab="student">📝 學生填寫</button>
     <button class="tab-btn" data-tab="lastperf">📌 上次表現</button>
+    <button class="tab-btn" data-tab="profile">👤 個人檔案</button>
     <button class="tab-btn" data-tab="coach">📊 教練後台</button>
     <button class="tab-btn" data-tab="settings">⚙️ 系統設定</button>
   </nav>
@@ -71,6 +72,12 @@
       <div class="card" id="lastReviewCard" style="display:none;">
         <h3 class="card-title">📌 上次表現回顧</h3>
         <div id="lastReviewContent"></div>
+      </div>
+
+      <!-- 今日任務（教練指派，選姓名後帶出） -->
+      <div class="card" id="taskCard" style="display:none;">
+        <h3 class="card-title">📋 今日任務</h3>
+        <div id="taskContent"></div>
       </div>
 
       <!-- 今天我要改善 -->
@@ -158,13 +165,7 @@
           <select id="trainingIntensity" class="text-input"></select>
         </fieldset>
 
-        <!-- KPI 紀錄（標準 6 面向，自由品勢時隱藏） -->
-        <fieldset class="form-section" id="standardKpiSection">
-          <legend>KPI 六大面向 📈</legend>
-          <div id="kpiContainer"></div>
-        </fieldset>
-
-        <!-- 自由品勢專屬區塊（選「跆拳道自由品勢」才顯示） -->
+        <!-- 自由品勢額外紀錄（選「跆拳道自由品勢」才顯示） -->
         <fieldset class="form-section" id="freestyleSection" style="display:none;">
           <legend>自由品勢紀錄 🤸</legend>
 
@@ -176,9 +177,12 @@
 
           <label class="field-label">解鎖哪些高難度動作</label>
           <input type="text" id="unlockedMoves" class="text-input" placeholder="例如：540 旋風踢、空中側踢" />
+        </fieldset>
 
-          <h4 class="card-title" style="margin-top:14px">自由品勢評分（10 項，100 分制）📈</h4>
-          <div id="freestyleKpiContainer"></div>
+        <!-- KPI 紀錄（所有項目共用標準 6 面向 /30） -->
+        <fieldset class="form-section" id="standardKpiSection">
+          <legend>KPI 六大面向 📈</legend>
+          <div id="kpiContainer"></div>
         </fieldset>
 
         <!-- 文字紀錄 -->
@@ -259,15 +263,6 @@
           </div>
           <pre id="lineNutrition" class="line-text"></pre>
         </div>
-
-        <div class="line-block" id="lineFreestyleBlock" style="display:none;">
-          <div class="line-block-head">
-            <span>🤸 自由品勢建議版</span>
-            <button type="button" class="btn-line-share" data-target="lineFreestyle">💬 分享到 LINE</button>
-            <button type="button" class="btn-copy" data-target="lineFreestyle">📋 複製</button>
-          </div>
-          <pre id="lineFreestyle" class="line-text"></pre>
-        </div>
       </div>
 
     </section>
@@ -290,6 +285,21 @@
 
       <div class="card" id="lastPerfResultCard" style="display:none;">
         <div id="lastPerfResult"></div>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- 分頁：個人檔案                                            -->
+    <!-- ========================================================= -->
+    <section class="tab-panel" id="tab-profile">
+      <div class="card" id="profileQueryCard">
+        <h3 class="card-title">👤 選手個人檔案</h3>
+        <label class="field-label">選擇選手</label>
+        <select id="profileName" class="text-input"></select>
+        <button type="button" id="btnLoadProfile" class="btn btn-primary">🔍 查看個人檔案</button>
+      </div>
+      <div class="card" id="profileResultCard" style="display:none;">
+        <div id="profileResult"></div>
       </div>
     </section>
 
@@ -318,6 +328,31 @@
       <div class="card">
         <h3 class="card-title">📅 今日總覽</h3>
         <div id="coachOverview" class="overview-grid"></div>
+      </div>
+
+      <!-- 今日任務指派 -->
+      <div class="card">
+        <h3 class="card-title">🎯 今日任務指派</h3>
+        <div class="coach-controls">
+          <label class="field-label">日期</label>
+          <input type="date" id="taskDate" class="text-input" />
+          <label class="field-label">選手</label>
+          <select id="taskAssignName" class="text-input"></select>
+        </div>
+        <label class="field-label">今日任務</label>
+        <textarea id="taskAssignText" class="text-input" rows="2" placeholder="例如：把旋踢距離控制做到位，每組 10 次"></textarea>
+        <div class="btn-group">
+          <button type="button" id="btnAssignTask" class="btn btn-primary">🎯 指派任務</button>
+          <button type="button" id="btnRefreshTasks" class="btn btn-ghost">🔄 重新整理</button>
+        </div>
+        <h4 class="card-title" style="margin-top:12px">今日任務完成狀況</h4>
+        <div id="coachTaskList"></div>
+      </div>
+
+      <!-- 連續警示 -->
+      <div class="card">
+        <h3 class="card-title">🚨 連續警示</h3>
+        <div id="coachAlerts"></div>
       </div>
 
       <!-- 填寫狀況 -->
@@ -350,10 +385,14 @@
         <div id="coachNutrition"></div>
       </div>
 
-      <!-- 自由品勢分析 -->
+
+      <!-- 賽前狀態分析 -->
       <div class="card">
-        <h3 class="card-title">🤸 自由品勢分析</h3>
-        <div id="coachFreestyle"></div>
+        <h3 class="card-title">🥇 賽前狀態分析</h3>
+        <label class="field-label">選擇選手</label>
+        <select id="preCompName" class="text-input"></select>
+        <button type="button" id="btnPreComp" class="btn btn-primary">🥇 產生賽前分析</button>
+        <div id="preCompResult"></div>
       </div>
 
       <!-- 建議晤談名單 -->
@@ -436,10 +475,8 @@
           <option value="parent">家長版</option>
           <option value="student">選手版</option>
           <option value="nutrition">純飲食版</option>
-          <option value="freestyle">自由品勢建議版</option>
           <option value="coach,parent">教練版＋家長版</option>
           <option value="coach,parent,nutrition">教練＋家長＋飲食</option>
-          <option value="coach,parent,freestyle">教練＋家長＋自由品勢</option>
         </select>
 
         <label class="field-label" style="display:flex;align-items:center;gap:8px;margin-top:14px">
@@ -483,6 +520,6 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260607a"></script>
+  <script src="app.js?v=20260607d"></script>
 </body>
 </html>

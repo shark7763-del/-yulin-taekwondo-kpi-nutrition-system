@@ -61,7 +61,9 @@ var HEADERS = [
   'aerialSuccessRate', 'spinSuccessRate', 'acroSuccessRate',
   'comboKickCount', 'landingErrors', 'breakCount',
   'needVideoFix', 'focusEightCount',
-  'aerialKickCount', 'unlockedMoves'                            // 空中踢擊完成幾腳、解鎖哪些高難度動作
+  'aerialKickCount', 'unlockedMoves',                           // 空中踢擊完成幾腳、解鎖哪些高難度動作
+  // ===== 紅燈處理紀錄（教練後台）=====
+  'redLightReason', 'redLightHandling', 'redLightNote'          // 原因分類、處理方式、備註
 ];
 
 /* ============================================================
@@ -117,6 +119,13 @@ function handleAction(action, data) {
       return jsonOut({ ok: true, data: getAllRecords() });
     case 'updateRecord':
       return jsonOut(updateRecord(data.recordId, data.fields || {}));
+    // ---- 通用同步儲存（任務、個人檔案目標/備註等）----
+    case 'getAppData':
+      return jsonOut({ ok: true, data: getAppData(data.key) });
+    case 'setAppData':
+      return jsonOut(setAppData(data.key, data.value, data));
+    case 'getAllAppData':
+      return jsonOut({ ok: true, data: getAllAppData(data.prefix || '') });
     // ---- 選手名單（全裝置共用）----
     case 'getRoster':
       return jsonOut({ ok: true, data: getRoster() });
@@ -421,6 +430,74 @@ function setRoster(players, data) {
   return { ok: true, count: players.length };
 }
 
+/* ============================================================
+   通用同步儲存（appdata 工作表：A=key、B=value(JSON 字串)）
+   ------------------------------------------------------------
+   給教練指定任務、個人檔案目標/備註等新功能用。
+   ============================================================ */
+var APPDATA_SHEET = 'appdata';
+
+function getAppDataSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(APPDATA_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(APPDATA_SHEET);
+    sh.getRange(1, 1, 1, 2).setValues([['key', 'value']]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+// 找某 key 的列號（找不到回 -1）
+function appDataRow(sh, key) {
+  var last = sh.getLastRow();
+  if (last < 2) return -1;
+  var keys = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = 0; i < keys.length; i++) {
+    if (String(keys[i][0]) === String(key)) return i + 2;
+  }
+  return -1;
+}
+
+// 讀單一 key，回傳已解析的物件（無則 null）
+function getAppData(key) {
+  if (!key) return null;
+  var sh = getAppDataSheet();
+  var row = appDataRow(sh, key);
+  if (row === -1) return null;
+  var raw = sh.getRange(row, 2).getValue();
+  if (raw === '' || raw === null || raw === undefined) return null;
+  try { return JSON.parse(raw); } catch (e) { return raw; }
+}
+
+// 寫單一 key（upsert）。可用 ADMIN_KEY 保護寫入。
+function setAppData(key, value, data) {
+  if (!checkAdminKey(data)) return { ok: false, error: '管理密碼錯誤，無法寫入。' };
+  if (!key) return { ok: false, error: '缺少 key' };
+  var sh = getAppDataSheet();
+  var json = JSON.stringify(value === undefined ? null : value);
+  var row = appDataRow(sh, key);
+  if (row === -1) sh.appendRow([key, json]);
+  else sh.getRange(row, 2).setValue(json);
+  return { ok: true, key: key };
+}
+
+// 取得某前綴的所有 key/value（例如 prefix='task:' 取全部任務）
+function getAllAppData(prefix) {
+  var sh = getAppDataSheet();
+  var last = sh.getLastRow();
+  var out = {};
+  if (last < 2) return out;
+  var vals = sh.getRange(2, 1, last - 1, 2).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    var k = String(vals[i][0]);
+    if (!k) continue;
+    if (prefix && k.indexOf(prefix) !== 0) continue;
+    try { out[k] = JSON.parse(vals[i][1]); } catch (e) { out[k] = vals[i][1]; }
+  }
+  return out;
+}
+
 // 依日期取得所有紀錄
 function getRecordsByDate(date) {
   if (!date) return [];
@@ -470,8 +547,7 @@ var LINE_VERSION_FIELD = {
   coach: 'coachLineText',
   parent: 'parentLineText',
   student: 'studentLineText',
-  nutrition: 'nutritionLineText',
-  freestyle: 'freestyleLineText'
+  nutrition: 'nutritionLineText'
 };
 
 // --- Script Properties 小工具 ---

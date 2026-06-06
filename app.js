@@ -30,7 +30,7 @@
    留空字串 '' 時，系統會改用「系統設定」存在各裝置的網址（舊行為）。
    ============================================================ */
 const CONFIG = {
-  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbzgEfr0ranuG1n6wdUe0he9gCV_WZYXy92xkIQaHHRPjvePSbTA0zR30oavJLRoGrFl0g/exec'
+  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbxyPgaXgpOA4oyRVxswOWkyvWv5iLC6QTkzOPUSIDl20wE1hBFVXAaSamy3cmvDz_LW/exec'
 };
 
 /* ============================================================
@@ -51,44 +51,16 @@ const GROUP_OPTIONS = [
 ];
 
 /* ============================================================
-   自由品勢（Freestyle Poomsae）專屬模型
+   自由品勢（Freestyle Poomsae）
    ------------------------------------------------------------
-   與一般 6 面向 /30 模型平行：100 分制、6 個加權類別、4 級燈號、
-   額外紀錄欄位、專屬 LINE 建議與教練後台分析。
-   選到 FREESTYLE_GROUP 時整張表單切換到這套流程。
+   採標準 6 面向 /30 模型（細項見 KPI_ASPECTS 的 freestyle 變體），
+   另外多 3 個額外紀錄欄位（空中踢擊完成幾腳/落地失誤幾次/解鎖動作）。
    ============================================================ */
 const FREESTYLE_GROUP = '跆拳道自由品勢';
 
-// 10 項 KPI 細項（1–5 拉桿，順序＝畫面顯示順序）
-const FREESTYLE_KPI_ITEMS = [
-  '創意編排', '音樂契合', '空中踢擊', '旋轉動作', '連續踢擊',
-  '特技難度', '動作連結', '表現力', '完整度', '安全控制'
-];
-
 /*
-   6 個加權評分類別（測出 100 分）。
-   每個類別分數 = 其組成細項平均（1–5）×20（正規化成 0–100），
-   freestyleTotal = Σ(權重 × 類別分數)。
-*/
-const FREESTYLE_CATEGORIES = [
-  { key: 'difficulty', label: '技術難度', weight: 0.25, items: ['空中踢擊', '旋轉動作', '特技難度'] },
-  { key: 'completion', label: '動作完成度', weight: 0.20, items: ['完整度', '動作連結', '連續踢擊'] },
-  { key: 'music', label: '音樂與節奏', weight: 0.15, items: ['音樂契合'] },
-  { key: 'creativity', label: '創意編排', weight: 0.15, items: ['創意編排'] },
-  { key: 'expression', label: '表現力', weight: 0.15, items: ['表現力'] },
-  { key: 'safety', label: '安全與穩定', weight: 0.10, items: ['安全控制'] }
-];
-
-// 類別 key -> 紀錄欄位名（存進 Sheet）
-const FREESTYLE_CAT_FIELD = {
-  difficulty: 'freestyleDifficulty', completion: 'freestyleCompletion',
-  music: 'freestyleMusic', creativity: 'freestyleCreativity',
-  expression: 'freestyleExpression', safety: 'freestyleSafety'
-};
-
-/*
-   額外紀錄欄位（第三點）。type：text / number / select。
-   id 同時是 DOM input id 與紀錄欄位名。
+   自由品勢額外紀錄欄位。type：text / number。
+   id 同時是 DOM input id 與紀錄欄位名（對應 Sheet 既有欄位）。
 */
 const FREESTYLE_EXTRA_FIELDS = [
   { id: 'aerialKickCount', label: '空中踢擊完成幾腳', type: 'number', placeholder: '例如：3', step: '1' },
@@ -129,7 +101,8 @@ const KPI_ASPECTS = {
     label: '技術狀態',
     spar: ['基本動作', '距離控制', '速度反應', '動作穩定', '技術完成度'],
     poomsae: ['動作準確度', '重心穩定', '力道表現', '節奏控制', '整套完成度'],
-    wushu: ['動作規格', '手眼身法步', '勁力順達', '協調連貫', '套路完整度']
+    wushu: ['動作規格', '手眼身法步', '勁力順達', '協調連貫', '套路完整度'],
+    freestyle: ['空中踢擊', '旋轉動作', '特技難度', '完整度', '安全控制']
   },
   focus: {
     label: '專注力',
@@ -147,7 +120,8 @@ const KPI_ASPECTS = {
     label: '戰術執行力',
     spar: ['攻擊意圖', '防守反應', '邊界處理', '教練指令執行', '對打判斷'],
     poomsae: ['視線精神', '呼吸與發力', '轉身平衡', '比賽穩定度', '臨場表現'],
-    wushu: ['節奏韻律', '精神表現', '難度完成', '穩定度', '整體演練水平']
+    wushu: ['節奏韻律', '精神表現', '難度完成', '穩定度', '整體演練水平'],
+    freestyle: ['創意編排', '音樂契合', '連續踢擊', '動作連結', '表現力']
   }
 };
 
@@ -210,6 +184,18 @@ const suggestionMap = {
   '難度完成': { remind: '難度動作沒站穩就會扣分。', advice: '明天先求難度落地穩，寧穩不貪。' },
   '穩定度': { remind: '平時穩，上場才不會亂。', advice: '明天加強定勢與跳躍落地的重心控制。' },
   '整體演練水平': { remind: '演練水平是平常累積出來的。', advice: '明天用比賽模擬完整演練一次。' },
+  // 技術（自由品勢）
+  '空中踢擊': { remind: '空中踢擊不穩就先別貪高。', advice: '明天先降低難度，把騰空與落地站穩了再加。' },
+  '旋轉動作': { remind: '旋轉站不穩會整套被扣。', advice: '明天放慢轉速、固定軸心與視線定點。' },
+  '特技難度': { remind: '難度動作沒把握就有受傷風險。', advice: '明天拆解成單一動作分段練，有把握再串回。' },
+  '完整度': { remind: '整套沒收乾淨就拿不到分。', advice: '明天完整跑 3 遍，每次都要收乾淨不漏動作。' },
+  '安全控制': { remind: '安全永遠擺第一。', advice: '明天強化核心與落地緩衝，寧降難度不硬做。' },
+  // 戰術（自由品勢・演練）
+  '創意編排': { remind: '編排不順，整套就斷掉。', advice: '明天重點練段落銜接，讓動作一氣呵成。' },
+  '音樂契合': { remind: '沒對到重拍就少了氣勢。', advice: '明天跟著重拍走，數拍確認每個 8 拍落點。' },
+  '連續踢擊': { remind: '連續踢擊斷掉就扣分。', advice: '明天放慢先求連續不落地，再加速。' },
+  '動作連結': { remind: '上一動沒帶到下一動就會卡。', advice: '明天練收勢直接帶起下一個動作。' },
+  '表現力': { remind: '表現力是眼神、氣勢與張力。', advice: '明天每個定點動作要停得住、撐得滿。' },
   // 專注
   '聽指令': { remind: '沒聽清楚指令，就會做錯方向。', advice: '明天教練說明時先複誦一次再執行。' },
   '訓練投入': { remind: '投入度不夠，效果就打折。', advice: '明天訓練前先設定一個重點目標。' },
@@ -319,6 +305,10 @@ const ENCOURAGE_PRESETS = [
   '受傷要好好休息，我們等你回來！',
   '一起加油，比賽我們互相罩！'
 ];
+
+// 紅燈原因分類 / 處理方式（教練後台勾選）
+const RED_LIGHT_REASONS = ['疲勞', '受傷', '飲食', '情緒', '技術', '態度', '學業壓力'];
+const RED_LIGHT_HANDLINGS = ['已談話', '已通知家長', '已調整訓練量', '持續觀察'];
 
 // 教練給紅燈選手的方向＋鼓勵快捷語（成長型思維口吻）
 const COACH_DIRECTION_PRESETS = [
@@ -447,12 +437,13 @@ function round2(n) { return Math.round(n * 100) / 100; }
 let currentKpiStructure = buildKpiStructure('跆拳道對練');
 
 // 依組別決定 technical / tactical 細項變體：
-//   跆拳道品勢 -> poomsae、武術套路 -> wushu、其餘（對練/散打/體能訓練）-> spar。
-// （自由品勢走獨立模型，不會進到這裡）
+//   跆拳道品勢 -> poomsae、武術套路 -> wushu、跆拳道自由品勢 -> freestyle、
+//   其餘（對練/散打/體能訓練）-> spar。
 function buildKpiStructure(group) {
   let variant = 'spar';
   if (group === '跆拳道品勢') variant = 'poomsae';
   else if (group === '武術套路') variant = 'wushu';
+  else if (group === FREESTYLE_GROUP) variant = 'freestyle';
   const struct = {};
   ASPECT_ORDER.forEach(key => {
     const aspect = KPI_ASPECTS[key];
@@ -485,7 +476,7 @@ function fillSelect(el, options, placeholder) {
 // 更新所有姓名下拉選單
 function refreshNameSelects() {
   const players = getPlayers();
-  ['name', 'lastPerfName', 'coachPersonName'].forEach(id => {
+  ['name', 'lastPerfName', 'coachPersonName', 'taskAssignName', 'preCompName', 'profileName'].forEach(id => {
     const el = $id(id);
     if (!el) return;
     const prev = el.value;
@@ -543,19 +534,90 @@ async function pushRosterToServer() {
   } catch (e) { return false; }
 }
 
-// 建立 KPI 拉桿 UI。自由品勢走獨立模型；其餘走標準 6 面向。
-function renderKpiSliders(group) {
-  const stdSection = $id('standardKpiSection');
-  const fsSection = $id('freestyleSection');
+/* ============================================================
+   通用同步儲存（appdata）：本機優先 + 有雲端就同步
+   ------------------------------------------------------------
+   給新功能（教練指定任務、個人檔案目標/備註等）用。
+   key 例：task:<name>:<yyyy-mm-dd>、profile:<name>
+   ============================================================ */
 
-  if (isFreestyle(group)) {
-    if (stdSection) stdSection.style.display = 'none';
-    if (fsSection) fsSection.style.display = '';
-    renderFreestyleSliders();
-    return;
+function appLocalKey(key) { return 'yulin_app_' + key; }
+
+// 讀：先回本機快取（同步），同時背景向雲端要最新值並回填 + 觸發 callback
+function appGet(key, cb) {
+  let val = null;
+  try { const raw = localStorage.getItem(appLocalKey(key)); if (raw) val = JSON.parse(raw); } catch (e) { /* */ }
+  if (getWebAppUrl()) {
+    postToWebApp({ action: 'getAppData', key: key }).then(res => {
+      if (res && res.ok && res.data !== undefined && res.data !== null) {
+        try { localStorage.setItem(appLocalKey(key), JSON.stringify(res.data)); } catch (e) { /* */ }
+        if (cb) cb(res.data);
+      } else if (cb) cb(val);
+    }).catch(() => { if (cb) cb(val); });
+  } else if (cb) {
+    cb(val);
   }
-  if (stdSection) stdSection.style.display = '';
-  if (fsSection) fsSection.style.display = 'none';
+  return val;
+}
+
+// 寫：先寫本機，有雲端就同步（回傳 Promise<boolean>）
+async function appSet(key, value) {
+  try { localStorage.setItem(appLocalKey(key), JSON.stringify(value)); } catch (e) { /* */ }
+  if (!getWebAppUrl()) return false;
+  try {
+    const res = await postToWebApp({ action: 'setAppData', key: key, value: value, adminKey: getLineAdminKey() });
+    return !!(res && res.ok);
+  } catch (e) { return false; }
+}
+
+function appKeyTask(name, date) { return 'task:' + name + ':' + normDate(date); }
+function appKeyProfile(name) { return 'profile:' + name; }
+
+// 取某前綴的所有資料（雲端優先，否則掃本機）。回傳 Promise<{key:value}>
+async function appGetAll(prefix) {
+  if (getWebAppUrl()) {
+    try {
+      const res = await postToWebApp({ action: 'getAllAppData', prefix: prefix || '' });
+      if (res && res.ok && res.data) return res.data;
+    } catch (e) { /* 落回本機 */ }
+  }
+  const out = {};
+  const lp = 'yulin_app_';
+  for (let i = 0; i < localStorage.length; i++) {
+    const lk = localStorage.key(i);
+    if (lk && lk.indexOf(lp) === 0) {
+      const key = lk.slice(lp.length);
+      if (prefix && key.indexOf(prefix) !== 0) continue;
+      try { out[key] = JSON.parse(localStorage.getItem(lk)); } catch (e) { /* */ }
+    }
+  }
+  return out;
+}
+
+/* ============================================================
+   權限工具：家長視圖只看溫和摘要、隱藏教練內部備註
+   ============================================================ */
+function isParentView() { const r = getRole(); return !!(r && r.role === 'parent'); }
+function isCoachView() { const r = getRole(); return !!(r && r.role === 'coach'); }
+
+// 把較尖銳的字眼轉成對家長溫和的說法
+function softenForParent(text) {
+  if (!text) return text;
+  let t = String(text);
+  const map = {
+    '受傷': '身體狀況需要留意', '疲勞': '較疲累需要休息', '態度': '訓練投入',
+    '情緒': '心情狀態', '學業壓力': '課業較忙', '紅燈': '需要關心',
+    '低分': '還在進步中', '偏低': '還在進步中'
+  };
+  Object.keys(map).forEach(k => { t = t.split(k).join(map[k]); });
+  return t;
+}
+
+// 建立 KPI 拉桿 UI（所有項目都用標準 6 面向 /30）。
+// 自由品勢另外顯示 3 個額外欄位區塊。
+function renderKpiSliders(group) {
+  const fsSection = $id('freestyleSection');
+  if (fsSection) fsSection.style.display = isFreestyle(group) ? '' : 'none';
 
   currentKpiStructure = buildKpiStructure(group);
   const container = $id('kpiContainer');
@@ -621,116 +683,15 @@ function recalcAllAspects() {
   ASPECT_ORDER.forEach(k => recalcAspectAvg(k));
 }
 
-/* ============================================================
-   4.5 自由品勢：拉桿 UI、分數計算、燈號
-   ============================================================ */
-
-// 建立自由品勢 10 項拉桿（沿用 .kpi-slider 樣式與草稿/清空機制）
-function renderFreestyleSliders() {
-  const container = $id('freestyleKpiContainer');
-  if (!container) return;
-  container.innerHTML = '';
-
-  const box = document.createElement('div');
-  box.className = 'kpi-aspect';
-  const head = document.createElement('div');
-  head.className = 'kpi-aspect-head';
-  head.innerHTML = `<span>自由品勢評分（10 項）</span><span class="kpi-aspect-avg" id="freestyleTotalLabel">總分 60 / 100</span>`;
-  box.appendChild(head);
-
-  FREESTYLE_KPI_ITEMS.forEach((itemName, idx) => {
-    const item = document.createElement('div');
-    item.className = 'kpi-item';
-    item.innerHTML = `
-      <div class="kpi-item-row">
-        <span class="kpi-item-name">${itemName}</span>
-        <span class="kpi-item-score" id="fscore-${idx}">3 分 · 普通</span>
-      </div>
-      <input type="range" min="1" max="5" step="1" value="3"
-             class="kpi-slider freestyle-slider" id="fslider-${idx}"
-             data-fitem="${itemName}" data-fidx="${idx}" />
-    `;
-    box.appendChild(item);
-  });
-  container.appendChild(box);
-
-  // 6 類別加權即時顯示
-  const catBox = document.createElement('div');
-  catBox.className = 'kpi-aspect';
-  catBox.id = 'freestyleCatBox';
-  catBox.innerHTML = `<div class="kpi-aspect-head"><span>加權類別（即時）</span></div><div id="freestyleCatRows"></div>`;
-  container.appendChild(catBox);
-
-  container.querySelectorAll('.freestyle-slider').forEach(s => s.addEventListener('input', onFreestyleSliderChange));
-  recalcFreestyle();
-}
-
-function onFreestyleSliderChange(e) {
-  const idx = e.target.dataset.fidx;
-  const val = parseInt(e.target.value, 10);
-  const el = $id(`fscore-${idx}`);
-  if (el) el.textContent = `${val} 分 · ${SCORE_LABELS[val]}`;
-  recalcFreestyle();
-}
-
-// 從目前拉桿收集 { itemName: 1–5 }
-function collectFreestyleScores() {
-  const scores = {};
-  document.querySelectorAll('.freestyle-slider').forEach(s => {
-    scores[s.dataset.fitem] = parseInt(s.value, 10);
-  });
-  return scores;
-}
-
-// 各類別分數（0–100）：組成細項平均 ×20
-function freestyleCategoryScores(scores) {
-  const out = {};
-  FREESTYLE_CATEGORIES.forEach(cat => {
-    const vals = cat.items.map(it => scores[it]).filter(v => typeof v === 'number' && !isNaN(v));
-    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-    out[cat.key] = round1(avg * 20);
-  });
-  return out;
-}
-
-// 加權總分（0–100）
-function computeFreestyleTotal(catScores) {
-  let total = 0;
-  FREESTYLE_CATEGORIES.forEach(cat => { total += cat.weight * (catScores[cat.key] || 0); });
-  return round1(total);
-}
-
-// 4 級燈號（含上場建議文字）
-function judgeFreestyleStatus(total) {
-  if (total >= 85) return '🟢 綠燈（可上場表演／比賽）';
-  if (total >= 70) return '🟢 黃綠燈（可完整演練，需修細節）';
-  if (total >= 60) return '🟡 黃燈（動作還不穩，需分段練）';
-  return '🔴 紅燈（先修難度與安全，不建議完整跑）';
-}
-
-// 給既有教練總覽用的單一燈號（避免「黃綠」被雙重計數）
-function freestyleSingleLamp(total) {
-  if (total >= 85) return '🟢 綠燈';
-  if (total >= 60) return '🟡 黃燈';
-  return '🔴 紅燈';
-}
-
-// 即時重算並更新顯示
-function recalcFreestyle() {
-  const scores = collectFreestyleScores();
-  const cat = freestyleCategoryScores(scores);
-  const total = computeFreestyleTotal(cat);
-  const totalEl = $id('freestyleTotalLabel');
-  if (totalEl) totalEl.textContent = `總分 ${total} / 100`;
-  const rows = $id('freestyleCatRows');
-  if (rows) {
-    rows.innerHTML = FREESTYLE_CATEGORIES.map(c =>
-      `<div class="review-row"><span class="review-label">${c.label}（${Math.round(c.weight * 100)}%）</span>` +
-      `<span class="review-value">${cat[c.key]} / 100</span></div>`
-    ).join('') +
-    `<div class="hint-box">目前燈號：${judgeFreestyleStatus(total)}</div>`;
-  }
-  return { scores, cat, total };
+// 自由品勢額外欄位顯示用：有值才回傳一列 review-row
+function freestyleExtraHtml(rec) {
+  if (rec.group !== FREESTYLE_GROUP) return '';
+  const row = (label, v, unit) => (v !== undefined && v !== null && String(v).trim() !== '')
+    ? `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${escapeHtml(String(v))}${unit || ''}</span></div>` : '';
+  let html = row('空中踢擊完成', rec.aerialKickCount, ' 腳');
+  html += row('落地失誤', rec.landingErrors, ' 次');
+  html += row('解鎖高難度動作', rec.unlockedMoves, '');
+  return html;
 }
 
 /* ============================================================
@@ -956,29 +917,6 @@ function parseLowItems(rec) {
 }
 
 // 顯示上次表現回顧卡片（在學生填寫頁）
-// 自由品勢紀錄的回顧 HTML（給「上次表現」共用）
-function freestyleReviewHtml(rec) {
-  let html = '';
-  html += `<div class="review-row"><span class="review-label">上次日期</span><span class="review-value">${dateSlash(rec.date)}</span></div>`;
-  html += `<div class="review-row"><span class="review-label">項目</span><span class="review-value">🤸 自由品勢</span></div>`;
-  html += `<div class="review-row"><span class="review-label">總分</span><span class="review-value">${rec.freestyleTotal} / 100</span></div>`;
-  html += `<div class="review-row"><span class="review-label">燈號</span><span class="review-value">${rec.freestyleStatus || rec.status}</span></div>`;
-  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">六大加權類別</h4><div class="aspect-grid">`;
-  FREESTYLE_CATEGORIES.forEach(c => {
-    const v = rec[FREESTYLE_CAT_FIELD[c.key]];
-    html += `<div class="aspect-cell">${c.label}<br><span class="num">${v != null && v !== '' ? v : '--'}</span></div>`;
-  });
-  html += `</div>`;
-  const fsr = (label, v, unit) => (v !== undefined && v !== null && String(v).trim() !== '')
-    ? `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${escapeHtml(String(v))}${unit || ''}</span></div>` : '';
-  html += fsr('空中踢擊完成', rec.aerialKickCount, ' 腳');
-  html += fsr('落地失誤', rec.landingErrors, ' 次');
-  html += fsr('解鎖高難度動作', rec.unlockedMoves, '');
-  if (rec.coachReply) html += `<div class="hint-box good">💬 教練回覆：${escapeHtml(rec.coachReply)}</div>`;
-  if (rec.tomorrowGoal) html += `<div class="hint-box good">🎯 上次明日目標：${escapeHtml(rec.tomorrowGoal)}</div>`;
-  return html;
-}
-
 function renderLastReview(rec, containerId, cardId) {
   const content = $id(containerId);
   const card = cardId ? $id(cardId) : null;
@@ -987,14 +925,6 @@ function renderLastReview(rec, containerId, cardId) {
     content.innerHTML = `<div class="hint-box good">這是你的第一筆紀錄，今天開始建立自己的成長軌跡。</div>`;
     if (card) card.style.display = 'block';
     renderImproveOptions([]); // 沒有上次 -> 顯示六大面向
-    return;
-  }
-
-  // 自由品勢：走專屬回顧（避免以 /30 顯示）
-  if (rec.mode === 'freestyle') {
-    content.innerHTML = freestyleReviewHtml(rec);
-    if (card) card.style.display = 'block';
-    renderImproveOptions([]);
     return;
   }
 
@@ -1402,9 +1332,9 @@ function trendChartSVG(series, range) {
 }
 
 // 在 box 內渲染「可切換指標」的七天趨勢圖
-function renderTrendSection(box, records) {
-  // 同一天只留一筆，取最近 7 天，改為由舊到新
-  const recs = dedupeLatestByDate(records).slice(0, 7).reverse();
+function renderTrendSection(box, records, days) {
+  // 同一天只留一筆，取最近 N 天（預設 7），改為由舊到新
+  const recs = dedupeLatestByDate(records).slice(0, days || 7).reverse();
   if (recs.length < 2) {
     box.innerHTML = '<div class="hint-box">至少要 2 天的紀錄才看得出趨勢，繼續每天紀錄就會出現成長曲線！</div>';
     return;
@@ -1486,9 +1416,8 @@ function validateForm() {
   return true;
 }
 
-// 收集整筆紀錄物件（自由品勢委派到 buildFreestyleRecord）
+// 收集整筆紀錄物件（所有項目皆走標準 6 面向 /30）
 function buildRecord() {
-  if (isFreestyle($id('group').value)) return buildFreestyleRecord();
   const { scores, aspectAvg } = collectScores();
   const { total, average } = computeTotals(aspectAvg);
   const status = judgeStatus(average);
@@ -1562,113 +1491,16 @@ function buildRecord() {
     rawNutritionJson: JSON.stringify(nutrition)
   };
 
+  // 自由品勢額外欄位（其他項目維持空白）
+  if (isFreestyle(rec.group)) {
+    FREESTYLE_EXTRA_IDS.forEach(id => { const el = $id(id); rec[id] = el ? el.value : ''; });
+  }
+
   // 產生 LINE 四版本（需要上一筆做比較，稍後在 submit 時補上）
   rec._lowItemsArr = lowItems;
   rec._aspectAvg = aspectAvg;
   rec._nutrition = nutrition;
   return rec;
-}
-
-// 收集自由品勢整筆紀錄
-function buildFreestyleRecord() {
-  const scores = collectFreestyleScores();
-  const cat = freestyleCategoryScores(scores);
-  const total = computeFreestyleTotal(cat);
-  const fsStatus = judgeFreestyleStatus(total);
-  const status = freestyleSingleLamp(total);
-
-  const heightCm = $id('heightCm').value;
-  const weightKg = $id('weightKg').value;
-  const targetWeightKg = $id('targetWeightKg').value;
-  const bmi = computeBmi(heightCm, weightKg);
-  const weightGap = computeWeightGap(weightKg, targetWeightKg);
-
-  const nutritionInput = {
-    breakfast: $id('breakfast').value,
-    lunch: $id('lunch').value,
-    dinner: $id('dinner').value,
-    snacksDrinks: $id('snacksDrinks').value,
-    waterIntake: $id('waterIntake').value,
-    lateNightSnack: $id('lateNightSnack').value,
-    trainingIntensity: $id('trainingIntensity').value,
-    bmi: bmi, weightKg: weightKg
-  };
-  const nutrition = analyzeNutrition(nutritionInput);
-
-  const rec = {
-    recordId: 'r' + Date.now() + '_' + Math.floor(Math.random() * 100000),
-    timestamp: new Date().toISOString(),
-    mode: 'freestyle',
-    date: $id('date').value || todayStr(),
-    name: $id('name').value,
-    gradeClass: $id('gradeClass').value,
-    group: $id('group').value,
-    trainingTopic: $id('trainingTopic').value,
-    bodyStatus: $id('bodyStatus').value,
-    heightCm: heightCm,
-    weightKg: weightKg,
-    targetWeightKg: targetWeightKg,
-    bmi: bmi,
-    weightGap: weightGap,
-    breakfast: $id('breakfast').value,
-    lunch: $id('lunch').value,
-    dinner: $id('dinner').value,
-    snacksDrinks: $id('snacksDrinks').value,
-    waterIntake: $id('waterIntake').value,
-    lateNightSnack: $id('lateNightSnack').value,
-    trainingIntensity: $id('trainingIntensity').value,
-    // 自由品勢評分
-    freestyleTotal: total,
-    freestyleStatus: fsStatus,
-    status: status,                 // 單一燈號，給既有教練總覽用
-    freestyleDifficulty: cat.difficulty,
-    freestyleCompletion: cat.completion,
-    freestyleMusic: cat.music,
-    freestyleCreativity: cat.creativity,
-    freestyleExpression: cat.expression,
-    freestyleSafety: cat.safety,
-    rawFreestyleScoresJson: JSON.stringify(scores),
-    mainGoalToday: $id('mainGoalToday').value,
-    reflection: $id('reflection').value,
-    tomorrowGoal: $id('tomorrowGoal').value,
-    encourageTeammateName: $id('encourageTeammate') ? $id('encourageTeammate').value : '',
-    encouragementToTeammate: $id('encouragementToTeammate').value,
-    nutritionRisks: nutrition.risks.join('、') || '無明顯風險',
-    nutritionAdviceStudent: nutrition.student,
-    nutritionAdviceParent: nutrition.parent,
-    nutritionAdviceCoach: JSON.stringify(nutrition.coach),
-    rawNutritionJson: JSON.stringify(nutrition)
-  };
-
-  // 額外紀錄欄位
-  FREESTYLE_EXTRA_IDS.forEach(id => { const el = $id(id); rec[id] = el ? el.value : ''; });
-
-  rec._freestyleScores = scores;
-  rec._freestyleCat = cat;
-  rec._nutrition = nutrition;
-  return rec;
-}
-
-/* ============================================================
-   自由品勢：依 KPI 自動產生建議（規則式）
-   ============================================================ */
-function freestyleSuggestions(rec) {
-  const s = rec._freestyleScores || {};
-  const out = [];
-  const low = name => (s[name] || 5) <= 2; // 1–2 分視為偏低
-
-  if (low('音樂契合')) out.push('🎵 音樂節奏不穩：先把整套跟著重拍走一遍，數拍確認每個 8 拍的落點，動作對到音樂的重音。');
-  if (low('空中踢擊')) out.push('🦵 空中踢擊偏弱：先降低難度（減少騰空高度或踢擊數），把落地站穩了再逐步加難。');
-  if (low('旋轉動作')) out.push('🌀 旋轉動作不穩：放慢轉速、確認軸心與視線定點，先求轉得穩再求轉得多。');
-  if (low('特技難度')) out.push('🤸 特技動作偏弱：拆解成單一動作分段練，有把握再串回整套，安全優先。');
-  if (low('表現力')) out.push('🔥 表現力不足：加強眼神、氣勢與身體張力，每個定點動作要「停得住、撐得滿」。');
-  if (low('安全控制')) out.push('🛡️ 落地／安全要注意：強化核心與落地緩衝，寧可降難度也不要硬做造成受傷。');
-  if (low('創意編排') || low('動作連結')) out.push('🧩 編排不順／動作易中斷：重點練段落銜接與動作連結，讓上一個動作的收勢直接帶到下一個動作。');
-  if (low('連續踢擊')) out.push('👟 連續踢擊銜接不順：放慢節奏先求連續不落地，再加速。');
-  if (low('完整度')) out.push('✅ 整套完整度不足：完整跑 3 遍，每次都要求收乾淨、不漏動作。');
-
-  if (!out.length) out.push('整體狀態不錯，維持節奏，挑戰更高難度與更滿的表現力。');
-  return out;
 }
 
 // 送出進行中旗標，避免連點造成重複送出
@@ -1741,7 +1573,6 @@ async function doSubmit(mode) {
 
 async function doSubmitInner(mode) {
   const rec = buildRecord();
-  const freestyle = rec.mode === 'freestyle';
 
   // 取得上一筆與歷史（並行），做比較與進步肯定
   const [last, history] = await Promise.all([
@@ -1749,26 +1580,24 @@ async function doSubmitInner(mode) {
     fetchRecentRecords(rec.name, 60)
   ]);
 
-  // 進步肯定（跟昨天的自己比）— 自由品勢不套用標準徽章
-  const affirm = freestyle ? { badges: [], lines: [] } : buildAffirmations(rec, last, history);
+  // 進步肯定（跟昨天的自己比）
+  const affirm = buildAffirmations(rec, last, history);
 
   // 體重變化提醒
   let weightNote = '';
   if (last) weightNote = weightChangeNote(rec.weightKg, last.weightKg);
 
   // 產生 LINE 文字
-  const lineTexts = freestyle ? buildFreestyleLineTexts(rec, weightNote) : buildLineTexts(rec, weightNote, affirm);
+  const lineTexts = buildLineTexts(rec, weightNote, affirm);
   lastStudentLineText = lineTexts.student;   // 供「送出並分享到 LINE」使用
   rec.studentLineText = lineTexts.student;
   rec.parentLineText = lineTexts.parent;
   rec.coachLineText = lineTexts.coach;
   rec.nutritionLineText = lineTexts.nutrition;
-  if (freestyle) rec.freestyleLineText = lineTexts.freestyle;
 
   // 移除暫存欄位再送出
   const payload = Object.assign({}, rec);
   delete payload._lowItemsArr; delete payload._aspectAvg; delete payload._nutrition;
-  delete payload._freestyleScores; delete payload._freestyleCat;
 
   let saved = false;   // 是否真的存進後台（official）／本機（local）
 
@@ -1791,8 +1620,7 @@ async function doSubmitInner(mode) {
   }
 
   // 顯示回饋卡
-  if (freestyle) renderFreestyleCompareCard(rec, last);
-  else renderCompareCard(rec, last, affirm);
+  renderCompareCard(rec, last, affirm);
   renderNutritionCard(rec);
   renderLineCard(lineTexts);
 
@@ -1876,49 +1704,8 @@ function renderCompareCard(rec, last, affirm) {
   html += `<div class="hint-box good">💪 ${encourage}</div>`;
   html += `<div class="hint-box good">🌱 ${encouragementByStatus(rec.status)}</div>`;
 
-  box.innerHTML = html;
-  card.style.display = 'block';
-}
-
-/* ---- 自由品勢：今日 vs 上次 ---- */
-function renderFreestyleCompareCard(rec, last) {
-  const card = $id('compareCard');
-  const box = $id('compareContent');
-  const cat = rec._freestyleCat || {};
-
-  let html = '';
-  html += `<div class="review-row"><span class="review-label">今日總分</span><span class="review-value">${rec.freestyleTotal} / 100</span></div>`;
-  html += `<div class="review-row"><span class="review-label">燈號</span><span class="review-value">${rec.freestyleStatus}</span></div>`;
-
-  // 上次對比
-  const lastIsFs = last && last.mode === 'freestyle';
-  if (lastIsFs) {
-    const lt = parseFloat(last.freestyleTotal) || 0;
-    const diff = round1((parseFloat(rec.freestyleTotal) || 0) - lt);
-    const tag = diff >= 0 ? `<span class="tag tag-green">+${diff}</span>` : `<span class="tag tag-red">${diff}</span>`;
-    html += `<div class="review-row"><span class="review-label">上次總分</span><span class="review-value">${lt} / 100</span></div>`;
-    html += `<div class="review-row"><span class="review-label">總分差異</span><span class="review-value">${tag}</span></div>`;
-  } else {
-    html += `<div class="hint-box good">這是這位選手的第一筆自由品勢紀錄，之後就能看到進步比較了！</div>`;
-  }
-
-  // 六類別
-  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">六大加權類別</h4><div class="aspect-grid">`;
-  FREESTYLE_CATEGORIES.forEach(c => {
-    html += `<div class="aspect-cell">${c.label}<br><span class="num">${cat[c.key]}</span></div>`;
-  });
-  html += `</div>`;
-
-  // 今日紀錄摘要（有填才顯示）
-  const sr = (label, v, unit) => (v !== undefined && v !== null && String(v).trim() !== '')
-    ? `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${escapeHtml(String(v))}${unit || ''}</span></div>` : '';
-  html += sr('空中踢擊完成', rec.aerialKickCount, ' 腳');
-  html += sr('落地失誤', rec.landingErrors, ' 次');
-  html += sr('解鎖高難度動作', rec.unlockedMoves, '');
-
-  // 建議
-  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">🎯 今日建議</h4>`;
-  freestyleSuggestions(rec).forEach(s => html += `<div class="hint-box">${s}</div>`);
+  // 自由品勢額外紀錄
+  html += freestyleExtraHtml(rec);
 
   box.innerHTML = html;
   card.style.display = 'block';
@@ -1959,22 +1746,12 @@ function renderNutritionCard(rec) {
   card.style.display = 'block';
 }
 
-/* ---- LINE 版本卡（含自由品勢建議版第 5 區塊）---- */
+/* ---- LINE 四版本卡 ---- */
 function renderLineCard(lineTexts) {
   $id('lineStudent').textContent = lineTexts.student;
   $id('lineParent').textContent = lineTexts.parent;
   $id('lineCoach').textContent = lineTexts.coach;
   $id('lineNutrition').textContent = lineTexts.nutrition;
-  // 自由品勢建議版：有內容才顯示
-  const fsBlock = $id('lineFreestyleBlock');
-  if (fsBlock) {
-    if (lineTexts.freestyle) {
-      $id('lineFreestyle').textContent = lineTexts.freestyle;
-      fsBlock.style.display = '';
-    } else {
-      fsBlock.style.display = 'none';
-    }
-  }
   $id('lineCard').style.display = 'block';
 }
 
@@ -2053,12 +1830,21 @@ ${weightNote ? '\n⚖️ ' + weightNote + '\n' : ''}
   const coachAdvice = lowArr.length
     ? `明日安排「${lowArr.map(l => l.item).join('、')}」個別修正。`
     : '明日維持訓練節奏，挑戰更高目標。';
+  // 自由品勢額外紀錄（其他項目為空）
+  let fsBlock = '';
+  if (rec.group === FREESTYLE_GROUP) {
+    const parts = [];
+    if (String(rec.aerialKickCount || '').trim() !== '') parts.push(`空中踢擊完成 ${rec.aerialKickCount} 腳`);
+    if (String(rec.landingErrors || '').trim() !== '') parts.push(`落地失誤 ${rec.landingErrors} 次`);
+    if (String(rec.unlockedMoves || '').trim() !== '') parts.push(`解鎖：${rec.unlockedMoves}`);
+    if (parts.length) fsBlock = '\n🤸 自由品勢：' + parts.join('　') + '\n';
+  }
   const coachLine =
 `📊 育林國中技擊隊｜KPI 教練紀錄
 
 姓名：${rec.name}
 日期：${dateSlash(rec.date)}
-組別：${rec.group}
+組別：${rec.group}${fsBlock}
 狀態：${rec.status}
 總分：${rec.totalScore} / 30
 平均：${rec.averageScore} / 5
@@ -2107,93 +1893,6 @@ ${n.student}
 ${n.nextGoal}`;
 
   return { student: studentLine, parent: parentLine, coach: coachLine, nutrition: nutritionLine };
-}
-
-/* ============================================================
-   產生自由品勢 LINE 文字（含「自由品勢建議版」）
-   ============================================================ */
-function buildFreestyleLineTexts(rec, weightNote) {
-  const cat = rec._freestyleCat || {};
-  const n = rec._nutrition;
-  const suggestions = freestyleSuggestions(rec);
-  const sugText = suggestions.map(s => '・' + s).join('\n');
-
-  // 類別由低到高排序，找最弱兩項
-  const catSorted = FREESTYLE_CATEGORIES.slice().sort((a, b) => (cat[a.key] || 0) - (cat[b.key] || 0));
-  const weakTwo = catSorted.slice(0, 2).map(c => `${c.label}（${cat[c.key]}）`).join('、');
-  const catLines = FREESTYLE_CATEGORIES.map(c => `${c.label}（${Math.round(c.weight * 100)}%）：${cat[c.key]} / 100`).join('\n');
-
-  const header =
-`姓名：${rec.name}
-日期：${dateSlash(rec.date)}`;
-
-  // 選手版
-  const studentLine =
-`🤸 育林國中技擊隊｜自由品勢回饋
-
-${header}
-今日總分：${rec.freestyleTotal} / 100
-燈號：${rec.freestyleStatus}
-
-各類別：
-
-${catLines}
-
-🎯 今天的修正重點：
-
-${sugText}
-
-明日目標：
-
-${rec.tomorrowGoal || '把今天最弱的一段再練穩。'}
-
-教練相信你，難度可以慢慢加，安全永遠擺第一 💪`;
-
-  // 家長版
-  const parentLine =
-`🤸 育林國中技擊隊｜自由品勢今日回饋
-
-孩子今日自由品勢總分 ${rec.freestyleTotal} / 100，${rec.freestyleStatus}。
-${weakTwo ? `今天主要加強：${weakTwo}。` : '整體表現穩定。'}
-
-自由品勢需要長時間打磨難度與表現力，請家長多給孩子鼓勵。安全與恢復同樣重要。
-${weightNote ? '\n⚖️ ' + weightNote + '\n' : ''}`;
-
-  // 教練版
-  const coachLine =
-`📊 育林國中技擊隊｜自由品勢教練紀錄
-
-${header}
-總分：${rec.freestyleTotal} / 100
-燈號：${rec.freestyleStatus}
-
-各類別：
-
-${catLines}
-
-今日紀錄：空中踢擊完成 ${rec.aerialKickCount || '--'} 腳　落地失誤 ${rec.landingErrors || 0} 次
-解鎖高難度動作：${rec.unlockedMoves || '—'}
-
-建議處理：
-
-${sugText}`;
-
-  // 自由品勢建議版（依 KPI 自動產生）
-  const freestyleLine =
-`🤸 育林國中技擊隊｜自由品勢建議
-
-${header}
-總分：${rec.freestyleTotal} / 100｜${rec.freestyleStatus}
-
-今天最需要加強：${weakTwo || '整體均衡'}
-
-建議：
-
-${sugText}
-
-提醒：難度與安全要平衡，先求穩再求難。`;
-
-  return { student: studentLine, parent: parentLine, coach: coachLine, nutrition: n.student, freestyle: freestyleLine };
 }
 
 function statusWord(status) {
@@ -2375,17 +2074,16 @@ async function refreshCoach() {
   renderRedLightCoaching(todays);
   renderAnalysis(todays);
   renderCoachNutrition(todays, all);
-  renderCoachFreestyle(todays);
+  renderCoachAlerts(all);
   renderInterviewList(todays, all);
+  renderCoachTasks();
   toast('✅ 已更新');
 }
 
 function renderOverview(todays) {
   const box = $id('coachOverview');
   const count = todays.length;
-  // 全隊平均只計標準模型（/5）紀錄，避免自由品勢（/100）拉低或混淆
-  const stdRecs = todays.filter(r => r.mode !== 'freestyle' && String(r.averageScore || '').trim() !== '');
-  const avg = stdRecs.length ? round2(stdRecs.reduce((s, r) => s + (parseFloat(r.averageScore) || 0), 0) / stdRecs.length) : 0;
+  const avg = count ? round2(todays.reduce((s, r) => s + (parseFloat(r.averageScore) || 0), 0) / count) : 0;
   const red = todays.filter(r => r.status && r.status.indexOf('紅') !== -1).length;
   const yellow = todays.filter(r => r.status && r.status.indexOf('黃') !== -1).length;
   const green = todays.filter(r => r.status && r.status.indexOf('綠') !== -1).length;
@@ -2591,6 +2289,20 @@ function renderRedLightCoaching(todays) {
         <button type="button" class="btn btn-primary" data-redsend="${r.recordId}">📨 送出給選手</button>
         <button type="button" class="btn btn-line-share" data-redshare="${r.recordId}">💬 分享到 LINE</button>
       </div>`;
+
+      // 紅燈處理紀錄（原因 / 處理方式 / 備註）
+      const curReasons = String(r.redLightReason || '').split('、').filter(Boolean);
+      const curHandling = String(r.redLightHandling || '').split('、').filter(Boolean);
+      html += `<div class="redcare-divider"></div>`;
+      html += `<div class="redcare-low">📋 紅燈處理紀錄</div>`;
+      html += `<div style="color:var(--text-soft);font-size:0.8rem;margin:2px 0">原因分類</div><div class="name-list">`;
+      RED_LIGHT_REASONS.forEach(x => html += `<span class="tag tag-pick reason-pick ${curReasons.indexOf(x) !== -1 ? 'sel' : ''}" data-rid="${r.recordId}" data-val="${x}">${x}</span>`);
+      html += `</div>`;
+      html += `<div style="color:var(--text-soft);font-size:0.8rem;margin:6px 0 2px">處理方式</div><div class="name-list">`;
+      RED_LIGHT_HANDLINGS.forEach(x => html += `<span class="tag tag-pick handle-pick ${curHandling.indexOf(x) !== -1 ? 'sel' : ''}" data-rid="${r.recordId}" data-val="${x}">${x}</span>`);
+      html += `</div>`;
+      html += `<textarea class="text-input" id="rednote-${r.recordId}" rows="2" placeholder="處理備註（選填）" style="margin-top:8px">${escapeHtml(r.redLightNote || '')}</textarea>`;
+      html += `<button type="button" class="btn btn-secondary" data-redsave="${r.recordId}" style="margin-top:6px">💾 儲存處理紀錄</button>`;
     } else {
       html += `<div class="hint-box">這是較舊的紀錄，無法直接送出（新版紀錄才支援）。可用個人查詢或當面給予。</div>`;
     }
@@ -2650,6 +2362,21 @@ ${text}
       const text = $id(`redmsg-${r.recordId}`).value.trim();
       if (!text) { toast('請先輸入要給選手的話'); return; }
       shareToLine(careMessage(r, text));
+    });
+    // 紅燈處理紀錄：勾選切換 + 儲存
+    box.querySelectorAll(`.tag-pick[data-rid="${r.recordId}"]`).forEach(t => {
+      t.addEventListener('click', () => t.classList.toggle('sel'));
+    });
+    const saveRed = box.querySelector(`[data-redsave="${r.recordId}"]`);
+    if (saveRed) saveRed.addEventListener('click', async () => {
+      const reasons = Array.from(box.querySelectorAll(`.reason-pick.sel[data-rid="${r.recordId}"]`)).map(e => e.dataset.val).join('、');
+      const handling = Array.from(box.querySelectorAll(`.handle-pick.sel[data-rid="${r.recordId}"]`)).map(e => e.dataset.val).join('、');
+      const note = $id(`rednote-${r.recordId}`).value.trim();
+      saveRed.disabled = true; saveRed.textContent = '儲存中...';
+      const ok = await updateRecordRemote(r.recordId, { redLightReason: reasons, redLightHandling: handling, redLightNote: note });
+      saveRed.disabled = false; saveRed.textContent = '💾 儲存處理紀錄';
+      toast(ok ? '✅ 已儲存紅燈處理紀錄' : '⚠️ 儲存失敗，請檢查連線');
+      if (ok) { r.redLightReason = reasons; r.redLightHandling = handling; r.redLightNote = note; }
     });
   });
 }
@@ -2711,39 +2438,6 @@ function nameListBlock(title, names, cls) {
   else html += '<span class="review-label">無</span>';
   html += '</div></div>';
   return html;
-}
-
-/* ---- 自由品勢分析（教練後台）---- */
-function renderCoachFreestyle(todays) {
-  const box = $id('coachFreestyle');
-  if (!box) return;
-  const fs = todays.filter(r => r.mode === 'freestyle');
-  if (!fs.length) { box.innerHTML = '<div class="hint-box">今日尚無自由品勢紀錄。</div>'; return; }
-
-  // 類別分數 < 60 視為低分；單項拉桿 ≤ 2 視為偏低
-  const lowCat = (r, field) => { const v = parseFloat(r[field]); return !isNaN(v) && v < 60; };
-  const itemScore = (r, name) => {
-    try { const o = JSON.parse(r.rawFreestyleScoresJson || '{}'); const v = o[name]; return typeof v === 'number' ? v : null; }
-    catch (e) { return null; }
-  };
-  const lowItem = (r, name) => { const v = itemScore(r, name); return v !== null && v <= 2; };
-
-  let html = '';
-  // 選手總覽
-  html += `<div class="list-block"><h4>🤸 自由品勢選手總覽（${fs.length}）</h4><div class="name-list">`;
-  fs.forEach(r => {
-    const cls = r.status && r.status.indexOf('紅') !== -1 ? 'tag-red' : (r.status && r.status.indexOf('黃') !== -1 ? 'tag-yellow' : 'tag-green');
-    html += `<span class="tag ${cls}">${r.name}（${r.freestyleTotal}）</span>`;
-  });
-  html += `</div></div>`;
-
-  // 各低分名單（依拉桿分數與加權類別分數）
-  html += nameListBlock('🎵 音樂與節奏低分', fs.filter(r => lowCat(r, 'freestyleMusic') || lowItem(r, '音樂契合')).map(r => `${r.name}（${r.freestyleMusic}）`), 'tag-orange');
-  html += nameListBlock('🦵 空中踢擊低分', fs.filter(r => lowItem(r, '空中踢擊')).map(r => `${r.name}（${itemScore(r, '空中踢擊')} 分）`), 'tag-red');
-  html += nameListBlock('🤸 特技難度低分', fs.filter(r => lowItem(r, '特技難度')).map(r => `${r.name}（${itemScore(r, '特技難度')} 分）`), 'tag-red');
-  html += nameListBlock('🛡️ 安全控制低分', fs.filter(r => lowCat(r, 'freestyleSafety') || lowItem(r, '安全控制')).map(r => `${r.name}（${r.freestyleSafety}）`), 'tag-orange');
-
-  box.innerHTML = html;
 }
 
 // 建議晤談名單
@@ -2816,6 +2510,224 @@ function renderInterviewList(todays, all) {
       <div style="margin:6px 0"><b>原因：</b>${rs.join('；')}</div>
       <div><b>建議：</b>${advice}</div></div>`;
   });
+  box.innerHTML = html;
+}
+
+/* ============================================================
+   11.5 教練指定任務（功能一）
+   ============================================================ */
+
+const TASK_DONE_OPTIONS = ['未完成', '部分完成', '完成', '超越目標'];
+
+// 學生填寫頁：載入並顯示今日任務
+function loadStudentTask(name) {
+  const card = $id('taskCard');
+  const box = $id('taskContent');
+  if (!card || !box || !name) { if (card) card.style.display = 'none'; return; }
+  const date = $id('date') ? ($id('date').value || todayStr()) : todayStr();
+  appGet(appKeyTask(name, date), data => renderStudentTask(name, date, data));
+}
+
+function renderStudentTask(name, date, data) {
+  const card = $id('taskCard');
+  const box = $id('taskContent');
+  if (!card || !box) return;
+  if (!data || !data.task) { card.style.display = 'none'; return; }
+
+  let html = `<div class="hint-box">🎯 ${escapeHtml(data.task)}</div>`;
+  if (data.coachObservation) html += `<div class="hint-box good">👀 教練觀察：${escapeHtml(data.coachObservation)}</div>`;
+  if (data.coachNextStep) html += `<div class="hint-box good">➡️ 下一步：${escapeHtml(data.coachNextStep)}</div>`;
+
+  html += `<label class="field-label">任務完成度</label>`;
+  html += `<select id="taskCompletion" class="text-input">` +
+    TASK_DONE_OPTIONS.map(o => `<option value="${o}"${data.completion === o ? ' selected' : ''}>${o}</option>`).join('') + `</select>`;
+  html += `<label class="field-label">想跟教練說的（選填）</label>`;
+  html += `<textarea id="taskStudentNote" class="text-input" rows="2" placeholder="例如：旋踢距離我覺得比昨天穩了">${escapeHtml(data.studentNote || '')}</textarea>`;
+  html += `<button type="button" id="btnReportTask" class="btn btn-primary" style="margin-top:8px">📨 回報完成度</button>`;
+  box.innerHTML = html;
+  card.style.display = 'block';
+
+  $id('btnReportTask').addEventListener('click', async () => {
+    const merged = Object.assign({}, data, {
+      completion: $id('taskCompletion').value,
+      studentNote: $id('taskStudentNote').value.trim()
+    });
+    const btn = $id('btnReportTask');
+    btn.disabled = true; btn.textContent = '回報中...';
+    await appSet(appKeyTask(name, date), merged);
+    btn.disabled = false; btn.textContent = '📨 回報完成度';
+    toast('✅ 已回報任務完成度');
+    renderStudentTask(name, date, merged);
+  });
+}
+
+// 教練後台：任務指派 + 完成狀況
+function setupTaskHandlers() {
+  const dateEl = $id('taskDate');
+  if (dateEl && !dateEl.value) dateEl.value = todayStr();
+  const assignBtn = $id('btnAssignTask');
+  if (assignBtn) assignBtn.addEventListener('click', async () => {
+    const name = $id('taskAssignName').value;
+    const date = $id('taskDate').value || todayStr();
+    const task = $id('taskAssignText').value.trim();
+    if (!name) { toast('請選擇選手'); return; }
+    if (!task) { toast('請輸入任務內容'); return; }
+    const prev = appGet(appKeyTask(name, date)) || {};
+    assignBtn.disabled = true; assignBtn.textContent = '指派中...';
+    await appSet(appKeyTask(name, date), Object.assign({}, prev, { task: task }));
+    assignBtn.disabled = false; assignBtn.textContent = '🎯 指派任務';
+    $id('taskAssignText').value = '';
+    toast('✅ 已指派任務');
+    renderCoachTasks();
+  });
+  const refreshBtn = $id('btnRefreshTasks');
+  if (refreshBtn) refreshBtn.addEventListener('click', renderCoachTasks);
+}
+
+async function renderCoachTasks() {
+  const box = $id('coachTaskList');
+  if (!box) return;
+  const date = $id('taskDate') ? ($id('taskDate').value || todayStr()) : todayStr();
+  box.innerHTML = '<div class="hint-box">讀取中...</div>';
+  const all = await appGetAll('task:');
+  // 篩出當天的任務
+  const rows = Object.keys(all)
+    .filter(k => k.endsWith(':' + normDate(date)))
+    .map(k => ({ name: k.split(':')[1], data: all[k] }))
+    .filter(r => r.data && r.data.task);
+
+  if (!rows.length) { box.innerHTML = '<div class="hint-box">這天還沒指派任何任務。</div>'; return; }
+
+  let html = '';
+  rows.forEach(r => {
+    const d = r.data;
+    const doneTag = d.completion
+      ? `<span class="tag ${d.completion === '未完成' ? 'tag-red' : (d.completion === '部分完成' ? 'tag-yellow' : 'tag-green')}">${d.completion}</span>`
+      : `<span class="tag tag-orange">未回報</span>`;
+    html += `<div class="redcare-card" data-tname="${escapeHtml(r.name)}">`;
+    html += `<div class="redcare-head"><b>${escapeHtml(r.name)}</b>${doneTag}</div>`;
+    html += `<div class="redcare-low">🎯 ${escapeHtml(d.task)}</div>`;
+    if (d.studentNote) html += `<div class="hint-box">💬 選手回報：${escapeHtml(d.studentNote)}</div>`;
+    html += `<label class="field-label">教練觀察</label><textarea class="text-input" id="tobs-${escapeHtml(r.name)}" rows="2" placeholder="這次任務的觀察…">${escapeHtml(d.coachObservation || '')}</textarea>`;
+    html += `<label class="field-label">下一步建議</label><textarea class="text-input" id="tnext-${escapeHtml(r.name)}" rows="2" placeholder="下一步要練什麼…">${escapeHtml(d.coachNextStep || '')}</textarea>`;
+    html += `<button type="button" class="btn btn-primary" data-tsave="${escapeHtml(r.name)}" style="margin-top:8px">💾 儲存觀察</button>`;
+    html += `</div>`;
+  });
+  box.innerHTML = html;
+
+  rows.forEach(r => {
+    const btn = box.querySelector(`[data-tsave="${CSS.escape(r.name)}"]`);
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      const merged = Object.assign({}, r.data, {
+        coachObservation: $id(`tobs-${r.name}`).value.trim(),
+        coachNextStep: $id(`tnext-${r.name}`).value.trim()
+      });
+      btn.disabled = true; btn.textContent = '儲存中...';
+      await appSet(appKeyTask(r.name, date), merged);
+      btn.disabled = false; btn.textContent = '💾 儲存觀察';
+      toast('✅ 已儲存，選手填寫時看得到');
+    });
+  });
+}
+
+/* ============================================================
+   11.6 連續警示系統（功能五）
+   ============================================================ */
+function computeAlerts(recs) {
+  // recs：同一選手、已依日期去重、新→舊
+  const alerts = [];
+  const has = n => recs.length >= n;
+  const recent = n => recs.slice(0, n);
+  const every = (n, pred) => has(n) && recent(n).every(pred);
+  const num = (r, f) => parseFloat(r[f]);
+  const lowWater = r => r.waterIntake === '少於 500ml' || r.waterIntake === '500-1000ml';
+  // 該指標在窗內是否逐步上升（最新 > 窗內最舊）
+  const improving = (n, f) => has(n) && (num(recent(n)[0], f) > num(recent(n)[n - 1], f));
+
+  if (every(2, r => r.bodyStatus === '受傷中'))
+    alerts.push({ level: 'warn', text: '🤕 連續 2 天回報受傷中，建議調整訓練量並關心' });
+  else if (every(2, r => r.bodyStatus === '疲勞' || r.bodyStatus === '受傷中'))
+    alerts.push({ level: 'warn', text: '😪 連續 2 天疲勞，注意休息與恢復' });
+
+  if (every(3, lowWater)) alerts.push({ level: 'warn', text: '💧 連續 3 天水量不足，提醒補水' });
+  if (every(2, r => r.lateNightSnack && r.lateNightSnack !== '無'))
+    alerts.push({ level: 'warn', text: '🌙 連續 2 次宵夜，注意飲食與睡眠' });
+
+  if (every(3, r => num(r, 'emotionAvg') < 3)) {
+    if (improving(3, 'emotionAvg')) alerts.push({ level: 'watch', text: '📈 情緒分數偏低但逐日進步中（進步觀察中）' });
+    else alerts.push({ level: 'warn', text: '😔 連續 3 天情緒偏低，建議個別關心' });
+  }
+  if (every(3, r => num(r, 'technicalAvg') < 3)) {
+    if (improving(3, 'technicalAvg')) alerts.push({ level: 'watch', text: '📈 技術分數偏低但逐日進步中（進步觀察中）' });
+    else alerts.push({ level: 'warn', text: '🥋 連續 3 天技術偏低，安排技術修正' });
+  }
+  return alerts;
+}
+
+function renderCoachAlerts(all) {
+  const box = $id('coachAlerts');
+  if (!box) return;
+  const byName = {};
+  (all || []).forEach(r => { if (r && r.name) (byName[r.name] = byName[r.name] || []).push(r); });
+
+  let html = '';
+  Object.keys(byName).forEach(name => {
+    const recs = dedupeLatestByDate(byName[name]); // 新→舊
+    const alerts = computeAlerts(recs);
+    if (!alerts.length) return;
+    html += `<div class="redcare-card"><div class="redcare-head"><b>${escapeHtml(name)}</b></div>`;
+    alerts.forEach(a => {
+      const cls = a.level === 'watch' ? 'good' : 'warn';
+      html += `<div class="hint-box ${cls}">${a.text}</div>`;
+    });
+    html += `</div>`;
+  });
+  box.innerHTML = html || '<div class="hint-box good">目前沒有連續警示，全隊狀況穩定 👍</div>';
+}
+
+/* ============================================================
+   11.7 賽前狀態雷達（功能六）
+   ============================================================ */
+async function loadPreComp() {
+  const name = $id('preCompName').value;
+  const box = $id('preCompResult');
+  if (!box) return;
+  if (!name) { toast('請選擇選手'); return; }
+  box.innerHTML = '<div class="hint-box">分析中...</div>';
+  const history = await fetchRecentRecords(name, 30);
+  const recs = dedupeLatestByDate(history || []).slice(0, 5); // 最近 5 筆
+  if (!recs.length) { box.innerHTML = '<div class="hint-box">查無紀錄。</div>'; return; }
+
+  // 六面向平均
+  const avg = {};
+  ASPECT_ORDER.forEach(k => {
+    const vals = recs.map(r => parseFloat(r[ASPECT_AVG_FIELD[k]])).filter(v => !isNaN(v));
+    avg[k] = vals.length ? round1(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+  });
+  const overall = round2(ASPECT_ORDER.reduce((s, k) => s + avg[k], 0) / 6);
+
+  // 體重趨勢、恢復（疲勞/受傷天數）
+  const weights = recs.map(r => parseFloat(r.weightKg)).filter(v => !isNaN(v));
+  const wTxt = weights.length >= 2 ? `${weights[weights.length - 1]} → ${weights[0]} kg` : (weights.length ? weights[0] + ' kg' : '--');
+  const fatigueDays = recs.filter(r => r.bodyStatus === '疲勞' || r.bodyStatus === '受傷中').length;
+  const injured = recs.some(r => r.bodyStatus === '受傷中');
+
+  // 結論
+  let verdict, vClass;
+  if (injured) { verdict = '🚑 受傷風險：先確認傷勢，未恢復前不建議全力出賽'; vClass = 'warn'; }
+  else if (overall >= 4) { verdict = '✅ 可出賽：狀態穩定，維持節奏即可'; vClass = 'good'; }
+  else if (overall >= 3.5) { verdict = '🟢 可出賽但需觀察：再把最弱面向顧好'; vClass = 'good'; }
+  else if (overall >= 3) { verdict = '🟡 建議調整訓練量：先把基礎與恢復補起來'; vClass = 'warn'; }
+  else { verdict = '🔴 建議家長溝通：近期狀態偏低，需要一起關心調整'; vClass = 'warn'; }
+  if (!injured && fatigueDays >= 3) verdict += '（近期疲勞偏多，留意恢復）';
+
+  let html = `<div class="review-row"><span class="review-label">分析依據</span><span class="review-value">最近 ${recs.length} 筆</span></div>`;
+  html += `<div class="review-row"><span class="review-label">綜合平均</span><span class="review-value">${overall} / 5</span></div>`;
+  html += `<div class="review-row"><span class="review-label">體重趨勢</span><span class="review-value">${wTxt}</span></div>`;
+  html += `<div class="review-row"><span class="review-label">疲勞/受傷天數</span><span class="review-value">${fatigueDays} / ${recs.length}</span></div>`;
+  html += radarChartSVG(avg);
+  html += `<div class="hint-box ${vClass}">${verdict}</div>`;
   box.innerHTML = html;
 }
 
@@ -3000,11 +2912,6 @@ async function loadLastPerfPage() {
 }
 
 function renderLastReviewInto(rec, box) {
-  // 自由品勢：走專屬回顧
-  if (rec.mode === 'freestyle') {
-    box.innerHTML = `<h3 class="card-title">📌 上次表現回顧</h3>` + freestyleReviewHtml(rec);
-    return;
-  }
   const avg = aspectAvgFromRecord(rec);
   const lowItems = parseLowItems(rec);
   let html = `<h3 class="card-title">📌 上次表現回顧</h3>`;
@@ -3033,6 +2940,9 @@ function renderLastReviewInto(rec, box) {
   if (rec.nutritionAdviceParent) {
     html += `<div class="hint-box">${escapeHtml(rec.nutritionAdviceParent).replace(/\n/g, '<br>')}</div>`;
   }
+
+  // 自由品勢額外紀錄
+  html += freestyleExtraHtml(rec);
 
   if (lowItems.length) {
     html += `<h4 style="margin:12px 0 6px;color:var(--blue)">上次最低三項</h4><div>`;
@@ -3097,6 +3007,177 @@ function renderLastReviewInto(rec, box) {
       toast(ok ? '✅ 已送出給教練' : '⚠️ 送出失敗，請稍後再試');
     });
   }
+}
+
+/* ============================================================
+   12.8 選手個人檔案（功能四）＋ 家長週報（功能三）
+   ============================================================ */
+async function loadProfile() {
+  const name = $id('profileName').value;
+  const card = $id('profileResultCard');
+  const box = $id('profileResult');
+  if (!box) return;
+  if (!name) { toast('請選擇選手'); return; }
+  toast('讀取個人檔案中...');
+  const history = await fetchRecentRecords(name, 60);
+  const recs = dedupeLatestByDate(history || []); // 新→舊
+  renderProfile(name, recs);
+  if (card) card.style.display = 'block';
+}
+
+function renderProfile(name, recs) {
+  const box = $id('profileResult');
+  const parentView = isParentView();
+  const coachView = isCoachView();
+
+  let html = `<h3 class="card-title">👤 ${escapeHtml(name)}</h3>`;
+
+  if (!recs.length) {
+    html += `<div class="hint-box">尚無紀錄，開始每天填寫就會累積個人檔案。</div>`;
+    box.innerHTML = html;
+    setupProfileGoals(name, null, coachView, parentView);
+    return;
+  }
+
+  const latest = recs[0];
+
+  // 身高體重變化
+  const weights = recs.map(r => parseFloat(r.weightKg)).filter(v => !isNaN(v));
+  const wChange = weights.length >= 2 ? `${weights[weights.length - 1]} → ${weights[0]} kg` : (weights.length ? weights[0] + ' kg' : '--');
+  html += `<div class="review-row"><span class="review-label">身高</span><span class="review-value">${latest.heightCm || '--'} cm</span></div>`;
+  html += `<div class="review-row"><span class="review-label">體重變化</span><span class="review-value">${wChange}</span></div>`;
+  html += `<div class="review-row"><span class="review-label">最近狀態</span><span class="review-value">${parentView ? softenForParent(latest.status || '') : (latest.status || '--')}</span></div>`;
+
+  // 7 天 / 30 天趨勢
+  html += `<h4 style="margin:14px 0 6px;color:var(--blue)">📈 最近 7 天趨勢</h4><div id="profileTrend7"></div>`;
+  html += `<h4 style="margin:14px 0 6px;color:var(--blue)">📈 最近 30 天趨勢</h4><div id="profileTrend30"></div>`;
+
+  // 飲食狀況
+  const riskDays = recs.filter(r => r.nutritionRisks && r.nutritionRisks !== '無明顯風險').length;
+  const lowWaterDays = recs.filter(r => r.waterIntake === '少於 500ml' || r.waterIntake === '500-1000ml').length;
+  html += `<h4 style="margin:14px 0 6px;color:var(--blue)">🍱 飲食狀況（近 ${recs.length} 筆）</h4>`;
+  html += `<div class="review-row"><span class="review-label">有飲食風險的天數</span><span class="review-value">${riskDays}</span></div>`;
+  html += `<div class="review-row"><span class="review-label">水量不足的天數</span><span class="review-value">${lowWaterDays}</span></div>`;
+
+  // 紅燈紀錄（家長看溫和版、隱藏教練內部備註）
+  const reds = recs.filter(r => r.status && r.status.indexOf('紅') !== -1);
+  html += `<h4 style="margin:14px 0 6px;color:var(--blue)">🔴 ${parentView ? '需要關心的日子' : '紅燈紀錄'}（${reds.length}）</h4>`;
+  if (reds.length) {
+    reds.slice(0, 10).forEach(r => {
+      html += `<div class="redcare-card"><div class="redcare-head"><b>${dateSlash(r.date)}</b><span class="tag tag-red">平均 ${r.averageScore}</span></div>`;
+      if (r.redLightReason) html += `<div class="redcare-low">原因：${parentView ? softenForParent(r.redLightReason) : escapeHtml(r.redLightReason)}</div>`;
+      if (!parentView && r.redLightHandling) html += `<div class="redcare-suggest">處理：${escapeHtml(r.redLightHandling)}</div>`;
+      if (!parentView && r.redLightNote) html += `<div class="hint-box">📝 ${escapeHtml(r.redLightNote)}</div>`;
+      html += `</div>`;
+    });
+  } else {
+    html += `<div class="hint-box good">近期沒有紅燈，狀況穩定 👍</div>`;
+  }
+
+  // 目標 / 教練備註
+  html += `<h4 style="margin:14px 0 6px;color:var(--blue)">🎯 目標與備註</h4><div id="profileGoals"></div>`;
+
+  // 家長週報
+  html += `<div class="btn-group"><button type="button" id="btnParentWeekly" class="btn btn-line-share">📤 產生家長週報</button></div>`;
+  html += `<div id="parentWeeklyBox"></div>`;
+
+  box.innerHTML = html;
+
+  // 趨勢圖
+  const t7 = $id('profileTrend7'); if (t7) renderTrendSection(t7, recs, 7);
+  const t30 = $id('profileTrend30'); if (t30) renderTrendSection(t30, recs, 30);
+
+  // 目標區（教練可編輯）
+  appGet(appKeyProfile(name), data => setupProfileGoals(name, data, coachView, parentView));
+
+  // 家長週報
+  const wbtn = $id('btnParentWeekly');
+  if (wbtn) wbtn.addEventListener('click', () => {
+    const text = generateParentWeekly(name, recs);
+    const wbox = $id('parentWeeklyBox');
+    wbox.innerHTML = `<pre class="line-text">${escapeHtml(text)}</pre>
+      <div class="btn-group">
+        <button type="button" class="btn btn-line-share" id="btnWeeklyShare">💬 分享到 LINE</button>
+        <button type="button" class="btn btn-secondary" id="btnWeeklyCopy">📋 複製</button>
+      </div>`;
+    $id('btnWeeklyShare').addEventListener('click', () => shareToLine(text));
+    $id('btnWeeklyCopy').addEventListener('click', () => copyText(text));
+  });
+}
+
+// 目標 / 教練備註：教練可編輯並儲存；學生唯讀；家長唯讀且不顯示教練備註
+function setupProfileGoals(name, data, coachView, parentView) {
+  const box = $id('profileGoals');
+  if (!box) return;
+  data = data || {};
+  if (coachView) {
+    box.innerHTML =
+      `<label class="field-label">比賽目標</label><input type="text" id="profCompGoal" class="text-input" value="${escapeHtml(data.competitionGoal || '')}" placeholder="例如：全國賽前 8 強" />
+       <label class="field-label">階段訓練目標</label><input type="text" id="profStageGoal" class="text-input" value="${escapeHtml(data.stageGoal || '')}" placeholder="例如：這個月把旋踢距離練穩" />
+       <label class="field-label">教練備註（內部，家長看不到）</label><textarea id="profCoachNote" class="text-input" rows="2" placeholder="只有教練看得到">${escapeHtml(data.coachNote || '')}</textarea>
+       <button type="button" id="btnSaveProfile" class="btn btn-primary" style="margin-top:8px">💾 儲存目標與備註</button>`;
+    $id('btnSaveProfile').addEventListener('click', async () => {
+      const merged = {
+        competitionGoal: $id('profCompGoal').value.trim(),
+        stageGoal: $id('profStageGoal').value.trim(),
+        coachNote: $id('profCoachNote').value.trim()
+      };
+      const b = $id('btnSaveProfile');
+      b.disabled = true; b.textContent = '儲存中...';
+      await appSet(appKeyProfile(name), merged);
+      b.disabled = false; b.textContent = '💾 儲存目標與備註';
+      toast('✅ 已儲存');
+    });
+  } else {
+    let html = '';
+    html += `<div class="review-row"><span class="review-label">比賽目標</span><span class="review-value">${escapeHtml(data.competitionGoal || '—')}</span></div>`;
+    html += `<div class="review-row"><span class="review-label">階段訓練目標</span><span class="review-value">${escapeHtml(data.stageGoal || '—')}</span></div>`;
+    // 家長看不到教練內部備註；學生可看
+    if (!parentView && data.coachNote) html += `<div class="hint-box">📝 教練備註：${escapeHtml(data.coachNote)}</div>`;
+    box.innerHTML = html;
+  }
+}
+
+// 產生家長週報（正向、具體、不只報分數）
+function generateParentWeekly(name, recsNewToOld) {
+  const recs = recsNewToOld.slice(0, 7).reverse(); // 舊→新
+  const n = recs.length;
+  const avgOf = arr => arr.length ? round1(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
+  const totals = recs.map(r => parseFloat(r.totalScore)).filter(v => !isNaN(v));
+  const firstT = totals[0], lastT = totals[totals.length - 1];
+  const trend = (totals.length >= 2) ? (lastT > firstT ? '進步' : (lastT < firstT ? '持平調整中' : '穩定')) : '剛開始累積';
+
+  // 本週狀態
+  const greens = recs.filter(r => r.status && r.status.indexOf('綠') !== -1).length;
+  const statusLine = greens >= n - greens ? '整體狀態穩定、投入度高' : '狀態起伏中，仍持續努力';
+
+  // 亮點：六面向最高的一項
+  const aspAvg = {};
+  ASPECT_ORDER.forEach(k => aspAvg[k] = avgOf(recs.map(r => parseFloat(r[ASPECT_AVG_FIELD[k]])).filter(v => !isNaN(v))));
+  const best = ASPECT_ORDER.slice().sort((a, b) => aspAvg[b] - aspAvg[a])[0];
+  const worst = ASPECT_ORDER.slice().sort((a, b) => aspAvg[a] - aspAvg[b])[0];
+
+  // 出勤/堅持
+  const days = n;
+
+  return `🥋 育林國中技擊隊｜${name} 本週回饋
+
+親愛的家長您好，這是孩子本週（共 ${days} 天紀錄）的訓練摘要：
+
+【本週狀態】
+${statusLine}，整體表現${trend}。
+
+【本週亮點】
+孩子在「${KPI_ASPECTS[best].label}」表現最亮眼，這份努力值得肯定 👍
+
+【可以再加強】
+「${KPI_ASPECTS[worst].label}」還有成長空間，教練會在訓練中陪孩子一起調整，不需要擔心。
+
+【教練的話】
+我們看重的不是單次分數，而是孩子每天願不願意面對問題、持續進步。孩子這週有持續記錄、面對自己的狀態，這就是最重要的態度。
+
+【給家長的小提醒】
+回家可以多給孩子鼓勵，幫忙留意睡眠、三餐與水分，這些都會直接影響訓練恢復。謝謝您的支持，我們一起陪孩子變得更強 💪`;
 }
 
 /* ============================================================
@@ -3468,9 +3549,9 @@ function clearRole() { localStorage.removeItem(ROLE_KEY); }
 
 // 各角色可看的分頁與預設分頁
 const ROLE_TABS = {
-  student: { allowed: ['student', 'lastperf'], default: 'student' },
-  parent: { allowed: ['lastperf'], default: 'lastperf' },
-  coach: { allowed: ['student', 'lastperf', 'coach', 'settings'], default: 'coach' }
+  student: { allowed: ['student', 'lastperf', 'profile'], default: 'student' },
+  parent: { allowed: ['lastperf', 'profile'], default: 'lastperf' },
+  coach: { allowed: ['student', 'lastperf', 'coach', 'profile', 'settings'], default: 'coach' }
 };
 const ROLE_LABEL = { student: '🥋 選手', parent: '👨‍👩‍👧 家長', coach: '📊 教練' };
 
@@ -3591,6 +3672,17 @@ function applyRole() {
   } else if (queryCard) {
     queryCard.style.display = '';
   }
+
+  // 個人檔案：選手/家長鎖定自己、隱藏選擇列、自動載入；教練可自由查
+  const profileQuery = $id('profileQueryCard');
+  const pn = $id('profileName');
+  if ((r.role === 'student' || r.role === 'parent') && r.name) {
+    if (pn) pn.value = r.name;
+    if (profileQuery) profileQuery.style.display = 'none';
+    loadProfile();
+  } else if (profileQuery) {
+    profileQuery.style.display = '';
+  }
 }
 
 function setupRoleHandlers() {
@@ -3602,6 +3694,7 @@ function setupRoleHandlers() {
     // 解除選手姓名鎖定
     const nameSel = $id('name'); if (nameSel) nameSel.disabled = false;
     const queryCard = $id('lastPerfQueryCard'); if (queryCard) queryCard.style.display = '';
+    const profileQuery = $id('profileQueryCard'); if (profileQuery) profileQuery.style.display = '';
     $id('roleBadge').style.display = 'none';
     $id('btnSwitchRole').style.display = 'none';
     showLoginOverlay();
@@ -3640,7 +3733,7 @@ function init() {
   $id('group').addEventListener('change', e => {
     const g = e.target.value;
     renderKpiSliders(g);
-    if (isFreestyle(g)) toast('已切換為自由品勢評分（100 分制）');
+    if (isFreestyle(g)) toast('已切換為自由品勢評分細項');
     else if (g === '跆拳道品勢') toast('已切換為品勢評分細項');
     else toast('已套用對練評分細項');
   });
@@ -3650,6 +3743,7 @@ function init() {
     const name = e.target.value;
     if (!name) return;
     toast('讀取上次表現中...');
+    loadStudentTask(name);   // 今日任務
     const rec = await fetchLastRecord(name);
     renderLastReview(rec, 'lastReviewContent', 'lastReviewCard');
     autofillFromLast(rec);
@@ -3697,6 +3791,15 @@ function init() {
   // 教練後台
   $id('btnRefreshCoach').addEventListener('click', refreshCoach);
   $id('btnLoadPerson').addEventListener('click', loadPersonRecords);
+
+  // 教練戰情室：任務指派、賽前分析
+  setupTaskHandlers();
+  const btnPreComp = $id('btnPreComp');
+  if (btnPreComp) btnPreComp.addEventListener('click', loadPreComp);
+
+  // 個人檔案
+  const btnLoadProfile = $id('btnLoadProfile');
+  if (btnLoadProfile) btnLoadProfile.addEventListener('click', loadProfile);
 
   // 系統設定
   setupSettingsHandlers();
@@ -3759,7 +3862,7 @@ function clearForm() {
   // 清空自由品勢額外欄位
   FREESTYLE_EXTRA_IDS.forEach(id => { const el = $id(id); if (el) { if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = ''; } });
   updateBmiDisplay();
-  // 拉桿全部回 3（含自由品勢拉桿）
+  // 拉桿全部回 3
   document.querySelectorAll('.kpi-slider').forEach(s => { s.value = 3; });
   document.querySelectorAll('.kpi-slider').forEach(s => s.dispatchEvent(new Event('input')));
   // 隱藏回饋卡
