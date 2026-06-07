@@ -39,13 +39,19 @@ var ATTENDANCE_REPORT_HEADERS = [
 ];
 
 // Sheet 欄位順序（必須與前端 record 物件對應）
+//
+// ⚠️ 相容性重要說明：
+//   既有 100+ 筆舊資料是在「沒有睡眠/RPE/恢復」那 8 欄的年代寫入的。
+//   後來那 8 欄被插在「中間」，導致舊資料每格往左錯位 8 格、整批讀錯欄。
+//   因此這裡刻意把這 8 欄（sleepHours, sleepQuality, soreness, rpe, injuryArea,
+//   recoveryScore, recoveryState, redLightCategories）改放在「最後面」，
+//   讓舊資料自動對位，新資料照名稱寫入也不受影響。請勿再把它們移回中間。
 var HEADERS = [
   'timestamp', 'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'bodyStatus',
-  'sleepHours', 'sleepQuality', 'soreness', 'rpe', 'injuryArea',
   'heightCm', 'weightKg', 'targetWeightKg', 'bmi', 'weightGap',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'lateNightSnack', 'trainingIntensity',
   'physicalAvg', 'technicalAvg', 'focusAvg', 'disciplineAvg', 'emotionAvg', 'tacticalAvg',
-  'totalScore', 'averageScore', 'status', 'recoveryScore', 'recoveryState', 'redLightCategories',
+  'totalScore', 'averageScore', 'status',
   'lowItems', 'improveTargets', 'mainGoalToday',
   'reflection', 'tomorrowGoal', 'encouragementToTeammate',
   'nutritionRisks', 'nutritionAdviceStudent', 'nutritionAdviceParent', 'nutritionAdviceCoach',
@@ -81,7 +87,10 @@ var HEADERS = [
   'absenceMiss',        // 反思：少了今天會少練到什麼
   'absenceCatchup',     // 反思：打算怎麼把進度補回來
   'absenceHonesty',     // 自我檢視：這次請假是否真的必要
-  'absenceReflection'   // 反思彙整（可讀文字，供教練／家長後台顯示）
+  'absenceReflection',  // 反思彙整（可讀文字，供教練／家長後台顯示）
+  // ===== 睡眠/RPE/恢復 8 欄：原本被插在中間造成舊資料錯位，移到最後相容 =====
+  'sleepHours', 'sleepQuality', 'soreness', 'rpe', 'injuryArea',
+  'recoveryScore', 'recoveryState', 'redLightCategories'
 ];
 
 /* ============================================================
@@ -228,9 +237,16 @@ function ensureSchema(sheet) {
 function setupSheet() {
   var sheet = getSheet();
   ensureSchema(sheet);
+  // 強制把第一列表頭重寫成最新 HEADERS（只動第 1 列、不碰任何資料列）。
+  // 這次有調整欄位順序（睡眠/RPE/恢復 8 欄移到最後），需要強制刷新標題列。
+  if (sheet.getMaxColumns() < HEADERS.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), HEADERS.length - sheet.getMaxColumns());
+  }
+  sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+  sheet.setFrozenRows(1);
   getParentsSheet();
   getAttendanceReportsSheet();
-  return 'setupSheet 完成，表頭已建立／更新為最新版（含 parents、attendance_reports）。';
+  return 'setupSheet 完成，表頭已重寫為最新版（睡眠/RPE/恢復 8 欄已移到最後，舊資料對位）。';
 }
 
 // 今天日期字串 yyyy-MM-dd
