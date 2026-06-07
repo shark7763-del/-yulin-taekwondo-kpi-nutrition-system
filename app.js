@@ -68,6 +68,11 @@ const GROUP_OPTIONS = [
 ];
 
 const ABSENCE_GROUP = '未出席訓練';
+// 未出席訓練反思問答：快捷選項
+const ABSENCE_MISS_CHIPS = ['體能耐力', '技術手感', '對打反應', '團隊默契', '比賽經驗', '自律習慣'];
+const ABSENCE_CATCHUP_CHIPS = ['回家自主訓練', '明天提早到加練', '看比賽/教學影片', '做核心與伸展', '向教練請教進度'];
+// 是否為未出席（請假）紀錄：組別或狀態任一符合
+function isAbsenceRecord(r) { return !!r && (isAbsenceGroup(r.group) || String(r.status) === '未出席訓練'); }
 
 /* ============================================================
    自由品勢（Freestyle Poomsae）
@@ -737,7 +742,66 @@ function toggleAbsenceReason(group) {
   if (absent) {
     const topic = $id('trainingTopic');
     if (topic && !topic.value.trim()) topic.value = '未出席訓練';
+    buildAbsenceChips();
+    renderAbsenceImpact();
+  } else if (wrap) {
+    const imp = $id('absenceImpact'); if (imp) imp.style.display = 'none';
   }
+}
+
+// 建立未出席反思快捷 chip（點了把文字加入／移出對應 textarea）
+function buildAbsenceChips() {
+  buildChipToggler('absenceMissChips', 'absenceMiss', ABSENCE_MISS_CHIPS);
+  buildChipToggler('absenceCatchupChips', 'absenceCatchup', ABSENCE_CATCHUP_CHIPS);
+}
+function buildChipToggler(boxId, targetId, items) {
+  const box = $id(boxId);
+  if (!box || box.dataset.ready) return;
+  box.innerHTML = '';
+  items.forEach(label => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = label;
+    chip.addEventListener('click', () => {
+      const ta = $id(targetId);
+      if (!ta) return;
+      const on = chip.classList.toggle('sel');
+      let parts = ta.value.split(/[、,]\s*/).map(s => s.trim()).filter(Boolean);
+      if (on) { if (parts.indexOf(label) === -1) parts.push(label); }
+      else { parts = parts.filter(p => p !== label); }
+      ta.value = parts.join('、');
+    });
+    box.appendChild(chip);
+  });
+  box.dataset.ready = '1';
+}
+
+// 依個人最近出席紀錄，算出請假的累積影響，顯示在未出席表單上方
+async function renderAbsenceImpact() {
+  const box = $id('absenceImpact');
+  if (!box) return;
+  const name = $id('name') ? $id('name').value : '';
+  if (!isAbsenceGroup($id('group').value) || !name) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  box.innerHTML = '<span class="review-label">讀取你的出席紀錄中…</span>';
+  const dateStr = $id('date').value || todayStr();
+  let recents = [];
+  try { recents = await fetchRecentRecords(name, 90); } catch (e) { recents = []; }
+  const ym = normDate(dateStr).slice(0, 7);
+  const monthRecs = recents.filter(r => normDate(r.date).slice(0, 7) === ym && normDate(r.date) !== normDate(dateStr));
+  const monthAbsent = monthRecs.filter(isAbsenceRecord).length;
+  const monthPresent = monthRecs.filter(r => !isAbsenceRecord(r)).length;
+  const sorted = recents.filter(r => normDate(r.date) !== normDate(dateStr))
+    .sort((a, b) => normDate(b.date).localeCompare(normDate(a.date)));
+  let streak = 0;
+  for (const r of sorted) { if (isAbsenceRecord(r)) break; streak++; }
+  const willBe = monthAbsent + 1;
+  let html = `📅 本月（${ym}）：出席 <b>${monthPresent}</b> 次、未出席 <b>${monthAbsent}</b> 次<br>`;
+  html += `📝 今天送出後，本月就是第 <b class="${willBe >= 3 ? 'imp-warn' : ''}">${willBe}</b> 次未出席`;
+  if (willBe >= 3) html += `<br><span class="imp-warn">⚠️ 一個月未出席 ${willBe} 次，累積起來會明顯落後隊友，身手和體能都要花更多時間補回來。</span>`;
+  if (streak >= 2) html += `<br>🔥 你之前<b>連續出席 ${streak} 次</b>，今天請假這個紀錄就會歸零。`;
+  html += `<br>💪 隊友今天都在練。如果真的非請不可，把下面幾題想清楚，回來就追得回來。`;
+  box.innerHTML = html;
 }
 
 function onSliderChange(e) {
@@ -1711,6 +1775,9 @@ function buildRecord() {
     group: groupValue,
     trainingTopic: $id('trainingTopic').value,
     absenceReason: $id('absenceReason') ? $id('absenceReason').value.trim() : '',
+    absenceMiss: absenceMode && $id('absenceMiss') ? $id('absenceMiss').value.trim() : '',
+    absenceCatchup: absenceMode && $id('absenceCatchup') ? $id('absenceCatchup').value.trim() : '',
+    absenceHonesty: absenceMode && $id('absenceHonesty') ? $id('absenceHonesty').value : '',
     bodyStatus: bodyStatus,
     sleepHours: sleepHours,
     sleepQuality: sleepQuality,
@@ -1755,6 +1822,10 @@ function buildRecord() {
     rawScoresJson: JSON.stringify(scores),
     rawNutritionJson: JSON.stringify(nutrition)
   };
+  // 反思彙整（可讀文字，存一欄，供教練／家長後台顯示）
+  rec.absenceReflection = absenceMode
+    ? `會少練到：${rec.absenceMiss || '（未填）'}\n打算怎麼補：${rec.absenceCatchup || '（未填）'}\n自我檢視：${rec.absenceHonesty || '（未填）'}`
+    : '';
   rec._isAbsence = absenceMode;
 
   // 自由品勢額外欄位（其他項目維持空白）
@@ -1944,22 +2015,26 @@ async function doSubmitAbsence(mode, rec) {
 function buildAbsenceLineTexts(rec) {
   const dateText = dateSlash(rec.date);
   const reason = rec.absenceReason || '未填寫';
-  const student = `【未出席訓練報告】\n日期：${dateText}\n選手：${rec.name}\n原因：${reason}`;
-  const parent = `您好，${rec.name} 今日未出席訓練，系統已收到未出席訓練報告。原因：${reason}。`;
-  const coach = `【未出席訓練回報】\n日期：${dateText}\n選手：${rec.name}\n班級：${rec.gradeClass || '-'}\n原因：${reason}`;
+  const reflectionBlock = rec.absenceReflection ? `\n\n🤔 反思：\n${rec.absenceReflection}` : '';
+  const student = `【未出席訓練報告】\n日期：${dateText}\n選手：${rec.name}\n原因：${reason}${reflectionBlock}`;
+  const parent = `您好，${rec.name} 今日未出席訓練，系統已收到未出席訓練報告。\n原因：${reason}。\n孩子已寫下反思並規劃補回進度的方式，若需要歡迎與教練聯繫。`;
+  const coach = `【未出席訓練回報】\n日期：${dateText}\n選手：${rec.name}\n班級：${rec.gradeClass || '-'}\n原因：${reason}${reflectionBlock}`;
   return { student, parent, coach, nutrition: '未出席訓練，不需填寫飲食建議。' };
 }
 
 function renderAbsenceReportCard(rec) {
   const card = $id('compareCard');
   const box = $id('compareContent');
+  const reflectionHtml = rec.absenceReflection
+    ? `<br><br><b>你的反思：</b><br>${escapeHtml(rec.absenceReflection).replace(/\n/g, '<br>')}` : '';
   box.innerHTML = `
     <div class="hint-box warn">
       <b>未出席訓練報告已建立</b><br>
       日期：${dateSlash(rec.date)}<br>
       選手：${escapeHtml(rec.name)}<br>
-      原因：${escapeHtml(rec.absenceReason || '-')}
-    </div>`;
+      原因：${escapeHtml(rec.absenceReason || '-')}${reflectionHtml}
+    </div>
+    <div class="hint-box good">把你寫下的補回方式做到，缺的這次就追得回來。明天見 💪</div>`;
   card.style.display = 'block';
 }
 
@@ -2328,7 +2403,8 @@ function normalizeAttendanceReports(rows) {
       makeupTask: row.makeupTask || '',
       makeupStatus: row.makeupStatus || '',
       coachPublicNote: row.coachPublicNote || row.coachReply || '',
-      coachPrivateNote: row.coachPrivateNote || row.redLightNote || ''
+      coachPrivateNote: row.coachPrivateNote || row.redLightNote || '',
+      absenceReflection: row.absenceReflection || ''
     };
   }).filter(r => r.studentName && r.date).sort((a, b) => a.date < b.date ? 1 : -1);
 }
@@ -2350,7 +2426,8 @@ function attendanceReportFromRecord(rec) {
     makeupTask: '',
     makeupStatus: '',
     coachPublicNote: rec.coachReply || '',
-    coachPrivateNote: rec.redLightNote || ''
+    coachPrivateNote: rec.redLightNote || '',
+    absenceReflection: rec.absenceReflection || ''
   };
 }
 
@@ -2363,7 +2440,11 @@ function mergeAttendanceWithKpi(attendanceRows, kpiRows, studentName) {
     const derived = attendanceReportFromRecord(rec);
     const key = (derived.studentName || '') + ':' + derived.date;
     if (!map[key]) map[key] = derived;
-    else map[key].kpiSubmitted = '是';
+    else {
+      map[key].kpiSubmitted = '是';
+      if (!map[key].absenceReflection && derived.absenceReflection) map[key].absenceReflection = derived.absenceReflection;
+      if (!map[key].absenceReason && derived.absenceReason) map[key].absenceReason = derived.absenceReason;
+    }
   });
   return Object.values(map).sort((a, b) => a.date < b.date ? 1 : -1);
 }
@@ -2455,6 +2536,7 @@ async function renderParentDashboard() {
       <strong>${todayStatus}</strong>
       <div class="review-label">日期：${dateSlash(todayRow.date)}｜KPI：${todayRow.kpiSubmitted || '否'}｜補訓：${todayRow.makeupStatus || '無'}</div>
       ${todayRow.absenceReason ? `<div class="review-label">未出席原因：${escapeHtml(todayRow.absenceReason)}</div>` : ''}
+      ${todayRow.absenceReflection ? `<div class="reflection-cell">🤔 孩子的反思：<br>${escapeHtml(todayRow.absenceReflection).replace(/\n/g, '<br>')}</div>` : ''}
       ${todayRow.coachPublicNote ? `<div class="hint-box good">教練提醒：${escapeHtml(todayRow.coachPublicNote)}</div>` : ''}
     </div>`;
 
@@ -2537,7 +2619,10 @@ async function renderCoachAttendanceReports(todays) {
       <tbody>${roster.map(name => {
         const r = byName[name] || { date: filterDate, studentName: name, attendanceStatus: '尚未填寫', kpiSubmitted: '否' };
         const st = normalizeAttendanceStatus(r.attendanceStatus, r);
-        return `<tr><td>${dateSlash(r.date)}</td><td>${escapeHtml(name)}</td><td><span class="status-dot ${attendanceColor(st, r)}">${st}</span></td><td>${r.kpiSubmitted || '否'}</td><td>${escapeHtml(r.absenceReason || '-')}</td><td>${escapeHtml(r.parentConfirmed || '否')}</td><td>${escapeHtml(r.makeupTask || '-')}</td><td>${escapeHtml(r.makeupStatus || '-')}</td><td>${escapeHtml(r.coachPublicNote || '-')}</td><td>${escapeHtml(r.coachPrivateNote || '-')}</td></tr>`;
+        const reasonCell = r.absenceReason
+          ? `${escapeHtml(r.absenceReason)}${r.absenceReflection ? `<div class="reflection-cell">🤔 ${escapeHtml(r.absenceReflection)}</div>` : ''}`
+          : '-';
+        return `<tr><td>${dateSlash(r.date)}</td><td>${escapeHtml(name)}</td><td><span class="status-dot ${attendanceColor(st, r)}">${st}</span></td><td>${r.kpiSubmitted || '否'}</td><td>${reasonCell}</td><td>${escapeHtml(r.parentConfirmed || '否')}</td><td>${escapeHtml(r.makeupTask || '-')}</td><td>${escapeHtml(r.makeupStatus || '-')}</td><td>${escapeHtml(r.coachPublicNote || '-')}</td><td>${escapeHtml(r.coachPrivateNote || '-')}</td></tr>`;
       }).join('')}</tbody>
     </table></div>`;
   const copyBtn = $id('btnCoachCopyAttendanceNotice');
@@ -4347,6 +4432,7 @@ function init() {
 
   // 下拉選單
   fillSelect($id('group'), GROUP_OPTIONS, '請選擇組別');
+  buildAbsenceChips();   // 未出席訓練反思快捷選項
   fillSelect($id('waterIntake'), WATER_OPTIONS, '請選擇水量');
   fillSelect($id('lateNightSnack'), LATE_NIGHT_OPTIONS);
   fillSelect($id('trainingIntensity'), INTENSITY_OPTIONS, '請選擇強度');
@@ -4360,7 +4446,8 @@ function init() {
   $id('group').addEventListener('change', e => {
     const g = e.target.value;
     renderKpiSliders(g);
-    if (isFreestyle(g)) toast('已切換為自由品勢評分細項');
+    if (isAbsenceGroup(g)) toast('已切換為未出席訓練報告');
+    else if (isFreestyle(g)) toast('已切換為自由品勢評分細項');
     else if (g === '跆拳道品勢') toast('已切換為品勢評分細項');
     else toast('已套用對練評分細項');
   });
@@ -4374,6 +4461,7 @@ function init() {
     const rec = await fetchLastRecord(name);
     renderLastReview(rec, 'lastReviewContent', 'lastReviewCard');
     autofillFromLast(rec);
+    if (isAbsenceGroup($id('group').value)) renderAbsenceImpact();
     saveDraft();
   });
 
@@ -4479,9 +4567,11 @@ function fallbackCopy(text) {
 
 // 清空表單
 function clearForm() {
-  ['gradeClass', 'trainingTopic', 'absenceReason', 'heightCm', 'weightKg', 'targetWeightKg',
+  ['gradeClass', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'heightCm', 'weightKg', 'targetWeightKg',
    'breakfast', 'lunch', 'dinner', 'snacksDrinks',
-   'reflection', 'tomorrowGoal', 'encouragementToTeammate', 'mainGoalToday'].forEach(id => $id(id).value = '');
+   'reflection', 'tomorrowGoal', 'encouragementToTeammate', 'mainGoalToday'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
+  if ($id('absenceHonesty')) $id('absenceHonesty').selectedIndex = 0;
+  document.querySelectorAll('#absenceMissChips .chip, #absenceCatchupChips .chip').forEach(c => c.classList.remove('sel'));
   $id('date').value = todayStr();
   $id('bodyStatus').value = '普通';
   ['group', 'waterIntake', 'trainingIntensity'].forEach(id => $id(id).selectedIndex = 0);
@@ -4510,7 +4600,7 @@ function clearForm() {
 
 // 草稿要保存的欄位（簡單欄位，KPI 拉桿另外處理）
 const DRAFT_FIELDS = [
-  'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'absenceReason', 'bodyStatus',
+  'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'absenceHonesty', 'bodyStatus',
   'heightCm', 'weightKg', 'targetWeightKg',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'lateNightSnack', 'trainingIntensity',
   'reflection', 'tomorrowGoal', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday'

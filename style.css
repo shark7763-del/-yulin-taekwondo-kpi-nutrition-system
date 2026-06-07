@@ -375,6 +375,18 @@ textarea.text-input { resize: vertical; }
   transition: background .15s, border-color .15s;
 }
 .chip:hover { background: rgba(46, 125, 209, 0.18); border-color: var(--blue); }
+.chip.sel { background: rgba(46, 125, 209, 0.25); border-color: var(--blue); color: #9ccbf0; font-weight: 600; }
+
+/* 未出席訓練：影響提醒 / 反思 */
+.absence-impact {
+  background: #0f141c; border: 1px solid var(--border); border-left: 4px solid var(--gold);
+  border-radius: 10px; padding: 12px 14px; margin: 8px 0 14px;
+  font-size: 0.9rem; line-height: 1.8;
+}
+.absence-impact b { color: var(--gold); }
+.absence-impact .imp-warn { color: #ff7b7b; font-weight: 700; }
+.absence-note { font-size: 0.82rem; color: var(--text-soft); margin: 2px 0 6px; }
+.reflection-cell { margin-top: 4px; font-size: 0.8rem; color: var(--text-soft); white-space: pre-wrap; line-height: 1.6; }
 
 /* ===================== 進步肯定 / 徽章 ===================== */
 .affirm-box {

@@ -76,7 +76,12 @@ var HEADERS = [
   'aerialKickCount', 'unlockedMoves',                           // 空中踢擊完成幾腳、解鎖哪些高難度動作
   // ===== 紅燈處理紀錄（教練後台）=====
   'redLightReason', 'redLightHandling', 'redLightNote',         // 原因分類、處理方式、備註
-  'absenceReason'                                               // 未出席訓練原因（新增於最後，避免舊資料欄位位移）
+  'absenceReason',                                              // 未出席訓練原因（新增於最後，避免舊資料欄位位移）
+  // ===== 未出席訓練反思問答（新增於最後，不影響舊資料）=====
+  'absenceMiss',        // 反思：少了今天會少練到什麼
+  'absenceCatchup',     // 反思：打算怎麼把進度補回來
+  'absenceHonesty',     // 自我檢視：這次請假是否真的必要
+  'absenceReflection'   // 反思彙整（可讀文字，供教練／家長後台顯示）
 ];
 
 /* ============================================================

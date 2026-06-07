@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260607h" />
+  <link rel="stylesheet" href="style.css?v=20260608a" />
 </head>
 <body>
 
@@ -109,9 +109,29 @@
           <select id="group" class="text-input"></select>
 
           <div id="absenceReasonWrap" style="display:none;">
-            <div class="hint-box warn">未出席訓練只需填寫報告書，不需要填寫訓練 KPI。</div>
+            <div class="hint-box warn">未出席訓練只需填寫報告書（含反思），不需要填寫訓練 KPI。</div>
+
+            <!-- 影響提醒：依個人出席紀錄帶出，讓學生知道請假累積的影響 -->
+            <div id="absenceImpact" class="absence-impact" style="display:none;"></div>
+
             <label class="field-label">未出席訓練原因 <span class="req">*</span></label>
-            <textarea id="absenceReason" class="text-input" rows="2" placeholder="例如：身體不適、家中有事、學校活動、已向教練請假"></textarea>
+            <p class="absence-note">用自己的話說清楚：今天為什麼不能來訓練？</p>
+            <textarea id="absenceReason" class="text-input" rows="3" placeholder="例如：早上發燒到 38.5 度，去看醫生拿了藥，醫生說要在家休息一天..."></textarea>
+
+            <label class="field-label">少了今天這次訓練，你覺得會少練到什麼？</label>
+            <div id="absenceMissChips" class="quick-chips"></div>
+            <textarea id="absenceMiss" class="text-input" rows="2" placeholder="可點上方按鈕，或自己寫..."></textarea>
+
+            <label class="field-label">你打算怎麼把今天少的補回來？</label>
+            <div id="absenceCatchupChips" class="quick-chips"></div>
+            <textarea id="absenceCatchup" class="text-input" rows="2" placeholder="可點上方按鈕，或自己寫..."></textarea>
+
+            <label class="field-label">老實對自己說，今天這次請假其實是…</label>
+            <select id="absenceHonesty" class="text-input">
+              <option value="真的沒辦法，無法避免">真的沒辦法，無法避免（生病/受傷/家裡有事）</option>
+              <option value="可以避免，但這次真的安排不過來">可以避免，但這次真的安排不過來</option>
+              <option value="其實能來，只是今天不太想">其實能來，只是今天不太想</option>
+            </select>
           </div>
 
           <div class="training-only">
@@ -618,6 +638,6 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260607h"></script>
+  <script src="app.js?v=20260608a"></script>
 </body>
 </html>
