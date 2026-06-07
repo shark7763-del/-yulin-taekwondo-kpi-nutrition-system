@@ -40,7 +40,7 @@ var ATTENDANCE_REPORT_HEADERS = [
 
 // Sheet 欄位順序（必須與前端 record 物件對應）
 var HEADERS = [
-  'timestamp', 'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'absenceReason', 'bodyStatus',
+  'timestamp', 'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'bodyStatus',
   'sleepHours', 'sleepQuality', 'soreness', 'rpe', 'injuryArea',
   'heightCm', 'weightKg', 'targetWeightKg', 'bmi', 'weightGap',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'lateNightSnack', 'trainingIntensity',
@@ -75,7 +75,8 @@ var HEADERS = [
   'needVideoFix', 'focusEightCount',
   'aerialKickCount', 'unlockedMoves',                           // 空中踢擊完成幾腳、解鎖哪些高難度動作
   // ===== 紅燈處理紀錄（教練後台）=====
-  'redLightReason', 'redLightHandling', 'redLightNote'          // 原因分類、處理方式、備註
+  'redLightReason', 'redLightHandling', 'redLightNote',         // 原因分類、處理方式、備註
+  'absenceReason'                                               // 未出席訓練原因（新增於最後，避免舊資料欄位位移）
 ];
 
 /* ============================================================

@@ -725,9 +725,15 @@ function renderKpiSliders(group) {
 
 function toggleAbsenceReason(group) {
   const wrap = $id('absenceReasonWrap');
-  if (!wrap) return;
   const absent = isAbsenceGroup(group);
-  wrap.style.display = absent ? '' : 'none';
+  if (wrap) wrap.style.display = absent ? '' : 'none';
+  document.querySelectorAll('.training-only').forEach(el => {
+    if (el.id === 'freestyleSection') {
+      el.style.display = (!absent && isFreestyle(group)) ? '' : 'none';
+    } else {
+      el.style.display = absent ? 'none' : '';
+    }
+  });
   if (absent) {
     const topic = $id('trainingTopic');
     if (topic && !topic.value.trim()) topic.value = '未出席訓練';
@@ -1616,6 +1622,16 @@ function escapeHtml(s) {
 // 表單驗證
 function validateForm() {
   const group = $id('group').value;
+  if (isAbsenceGroup(group)) {
+    const required = [
+      ['name', '選手姓名'], ['gradeClass', '年級／班級'], ['group', '組別'], ['absenceReason', '未出席訓練原因']
+    ];
+    for (const [id, label] of required) {
+      const v = $id(id).value;
+      if (!v || !String(v).trim()) { toast(`請填寫：${label}`); $id(id).focus(); return false; }
+    }
+    return true;
+  }
   const required = [
     ['name', '選手姓名'], ['gradeClass', '年級／班級'], ['group', '組別'],
     ['trainingTopic', '今日訓練主題'], ['reflection', '今日心得'], ['tomorrowGoal', '明日目標'],
@@ -1627,14 +1643,6 @@ function validateForm() {
     const v = $id(id).value;
     if (!v || !String(v).trim()) { toast(`請填寫：${label}`); $id(id).focus(); return false; }
   }
-  if (isAbsenceGroup(group)) {
-    const reason = $id('absenceReason').value;
-    if (!reason || !String(reason).trim()) {
-      toast('請填寫：未出席訓練原因');
-      $id('absenceReason').focus();
-      return false;
-    }
-  }
   const h = parseFloat($id('heightCm').value);
   if (h < 100 || h > 220) { toast('身高似乎不合理，請確認（100–220 cm）'); $id('heightCm').focus(); return false; }
   const w = parseFloat($id('weightKg').value);
@@ -1645,9 +1653,14 @@ function validateForm() {
 
 // 收集整筆紀錄物件（每組 10 項 KPI；總分/50、平均決定燈號）
 function buildRecord() {
-  const { scores, aspectAvg, total, average } = collectScores();
-  const status = judgeStatus(average);
-  const lowItems = findLowItems(scores);
+  const groupValue = $id('group').value;
+  const absenceMode = isAbsenceGroup(groupValue);
+  const scoreData = absenceMode
+    ? { scores: {}, aspectAvg: {}, total: '', average: '', count: 0 }
+    : collectScores();
+  const { scores, aspectAvg, total, average } = scoreData;
+  const status = absenceMode ? '未出席訓練' : judgeStatus(average);
+  const lowItems = absenceMode ? [] : findLowItems(scores);
   const lowItemsStr = lowItems.map(l => `${l.item}：${l.score} 分`).join('｜');
 
   const heightCm = $id('heightCm').value;
@@ -1674,12 +1687,16 @@ function buildRecord() {
     trainingIntensity: $id('trainingIntensity').value,
     bmi: bmi, weightKg: weightKg, weightGap: weightGap, targetWeightKg: targetWeightKg
   };
-  const nutrition = analyzeNutrition(nutritionInput);
+  const nutrition = absenceMode
+    ? { risks: [], student: '', parent: '', coach: { advice: '' }, nextGoal: '' }
+    : analyzeNutrition(nutritionInput);
 
   // 恢復指數 + 紅燈原因分類
-  const recovery = computeRecovery({ sleepHours, sleepQuality, rpe, soreness, bodyStatus });
+  const recovery = absenceMode
+    ? { score: '', state: '' }
+    : computeRecovery({ sleepHours, sleepQuality, rpe, soreness, bodyStatus });
   const nutritionRisks = nutrition.risks.join('、') || '無明顯風險';
-  const redCats = redLightCategories(scores, nutritionRisks, recovery.state);
+  const redCats = absenceMode ? [] : redLightCategories(scores, nutritionRisks, recovery.state);
 
   const improveTargets = getCheckedImproveTargets().join('｜');
   const mainGoalToday = $id('mainGoalToday').value;
@@ -1691,7 +1708,7 @@ function buildRecord() {
     date: $id('date').value || todayStr(),
     name: $id('name').value,
     gradeClass: $id('gradeClass').value,
-    group: $id('group').value,
+    group: groupValue,
     trainingTopic: $id('trainingTopic').value,
     absenceReason: $id('absenceReason') ? $id('absenceReason').value.trim() : '',
     bodyStatus: bodyStatus,
@@ -1738,6 +1755,7 @@ function buildRecord() {
     rawScoresJson: JSON.stringify(scores),
     rawNutritionJson: JSON.stringify(nutrition)
   };
+  rec._isAbsence = absenceMode;
 
   // 自由品勢額外欄位（其他項目維持空白）
   if (isFreestyle(rec.group)) {
@@ -1823,6 +1841,7 @@ async function doSubmit(mode) {
 
 async function doSubmitInner(mode) {
   const rec = buildRecord();
+  if (rec._isAbsence) return await doSubmitAbsence(mode, rec);
 
   // 取得上一筆與歷史（並行），做比較與進步肯定
   const [last, history] = await Promise.all([
@@ -1848,7 +1867,7 @@ async function doSubmitInner(mode) {
   // 移除暫存欄位再送出
   const payload = Object.assign({}, rec);
   delete payload._lowItemsArr; delete payload._aspectAvg; delete payload._nutrition;
-  delete payload._recovery; delete payload._redCats;
+  delete payload._recovery; delete payload._redCats; delete payload._isAbsence;
 
   let saved = false;   // 是否真的存進後台（official）／本機（local）
 
@@ -1881,6 +1900,67 @@ async function doSubmitInner(mode) {
   $id('compareCard').scrollIntoView({ behavior: 'smooth' });
 
   return saved;
+}
+
+async function doSubmitAbsence(mode, rec) {
+  const lineTexts = buildAbsenceLineTexts(rec);
+  lastStudentLineText = lineTexts.student;
+  rec.studentLineText = lineTexts.student;
+  rec.parentLineText = lineTexts.parent;
+  rec.coachLineText = lineTexts.coach;
+  rec.nutritionLineText = '';
+
+  const payload = Object.assign({}, rec);
+  delete payload._lowItemsArr; delete payload._aspectAvg; delete payload._nutrition;
+  delete payload._recovery; delete payload._redCats; delete payload._isAbsence;
+
+  let saved = false;
+  if (mode === 'official') {
+    toast('送出未出席報告中...');
+    try {
+      const res = await postToWebApp({ action: 'addRecord', payload: payload });
+      if (res && res.ok) { toast('✅ 已送出未出席訓練報告'); clearDraft(); saved = true; }
+      else toast('⚠️ 送出失敗：' + (res && res.error ? res.error : '未知錯誤'));
+    } catch (e) {
+      toast('⚠️ 送出失敗，請檢查網路與 Web App 設定');
+    }
+    saveLocalRecord(payload);
+    upsertAttendanceReportFromKpi(payload);
+  } else {
+    saveLocalRecord(payload);
+    upsertAttendanceReportFromKpi(payload);
+    clearDraft();
+    saved = true;
+    toast('💾 已存入本機未出席報告');
+  }
+
+  renderAbsenceReportCard(rec);
+  $id('nutritionCard').style.display = 'none';
+  renderLineCard(lineTexts);
+  $id('compareCard').scrollIntoView({ behavior: 'smooth' });
+  return saved;
+}
+
+function buildAbsenceLineTexts(rec) {
+  const dateText = dateSlash(rec.date);
+  const reason = rec.absenceReason || '未填寫';
+  const student = `【未出席訓練報告】\n日期：${dateText}\n選手：${rec.name}\n原因：${reason}`;
+  const parent = `您好，${rec.name} 今日未出席訓練，系統已收到未出席訓練報告。原因：${reason}。`;
+  const coach = `【未出席訓練回報】\n日期：${dateText}\n選手：${rec.name}\n班級：${rec.gradeClass || '-'}\n原因：${reason}`;
+  return { student, parent, coach, nutrition: '未出席訓練，不需填寫飲食建議。' };
+}
+
+function renderAbsenceReportCard(rec) {
+  const card = $id('compareCard');
+  const box = $id('compareContent');
+  box.innerHTML = `
+    <div class="hint-box warn">
+      <b>未出席訓練報告已建立</b><br>
+      日期：${dateSlash(rec.date)}<br>
+      選手：${escapeHtml(rec.name)}<br>
+      原因：${escapeHtml(rec.absenceReason || '-')}
+    </div>`;
+  card.style.display = 'block';
 }
 
 /* ---- 進步肯定區塊 HTML（徽章＋具體肯定句）---- */

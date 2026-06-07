@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260607g" />
+  <link rel="stylesheet" href="style.css?v=20260607h" />
 </head>
 <body>
 
@@ -108,46 +108,49 @@
           <label class="field-label">組別 <span class="req">*</span></label>
           <select id="group" class="text-input"></select>
 
-          <label class="field-label">今日訓練主題 <span class="req">*</span></label>
-          <input type="text" id="trainingTopic" class="text-input" placeholder="例如：旋踢距離控制" />
-
           <div id="absenceReasonWrap" style="display:none;">
+            <div class="hint-box warn">未出席訓練只需填寫報告書，不需要填寫訓練 KPI。</div>
             <label class="field-label">未出席訓練原因 <span class="req">*</span></label>
             <textarea id="absenceReason" class="text-input" rows="2" placeholder="例如：身體不適、家中有事、學校活動、已向教練請假"></textarea>
           </div>
 
-          <label class="field-label">今日身體狀態</label>
-          <select id="bodyStatus" class="text-input">
-            <option value="很好">很好</option>
-            <option value="普通" selected>普通</option>
-            <option value="疲勞">疲勞</option>
-            <option value="不舒服">不舒服</option>
-            <option value="受傷中">受傷中</option>
-          </select>
+          <div class="training-only">
+            <label class="field-label">今日訓練主題 <span class="req">*</span></label>
+            <input type="text" id="trainingTopic" class="text-input" placeholder="例如：旋踢距離控制" />
 
-          <label class="field-label">昨晚睡眠時數</label>
-          <input type="number" id="sleepHours" class="text-input" step="0.5" min="0" max="12" placeholder="例如：7.5" />
+            <label class="field-label">今日身體狀態</label>
+            <select id="bodyStatus" class="text-input">
+              <option value="很好">很好</option>
+              <option value="普通" selected>普通</option>
+              <option value="疲勞">疲勞</option>
+              <option value="不舒服">不舒服</option>
+              <option value="受傷中">受傷中</option>
+            </select>
 
-          <label class="field-label">睡眠品質</label>
-          <select id="sleepQuality" class="text-input">
-            <option value="">未填</option>
-            <option value="好">好</option>
-            <option value="普通" selected>普通</option>
-            <option value="差">差</option>
-          </select>
+            <label class="field-label">昨晚睡眠時數</label>
+            <input type="number" id="sleepHours" class="text-input" step="0.5" min="0" max="12" placeholder="例如：7.5" />
 
-          <label class="field-label">肌肉痠痛程度（1–5）</label>
-          <input type="number" id="soreness" class="text-input" step="1" min="1" max="5" placeholder="1 不痠，5 很痠" />
+            <label class="field-label">睡眠品質</label>
+            <select id="sleepQuality" class="text-input">
+              <option value="">未填</option>
+              <option value="好">好</option>
+              <option value="普通" selected>普通</option>
+              <option value="差">差</option>
+            </select>
 
-          <label class="field-label">今日主觀強度 RPE（1–10）</label>
-          <input type="number" id="rpe" class="text-input" step="1" min="1" max="10" placeholder="1 很輕鬆，10 非常吃力" />
+            <label class="field-label">肌肉痠痛程度（1–5）</label>
+            <input type="number" id="soreness" class="text-input" step="1" min="1" max="5" placeholder="1 不痠，5 很痠" />
 
-          <label class="field-label">受傷／不適部位</label>
-          <input type="text" id="injuryArea" class="text-input" placeholder="沒有可留空，例如：右膝、腳踝" />
+            <label class="field-label">今日主觀強度 RPE（1–10）</label>
+            <input type="number" id="rpe" class="text-input" step="1" min="1" max="10" placeholder="1 很輕鬆，10 非常吃力" />
+
+            <label class="field-label">受傷／不適部位</label>
+            <input type="text" id="injuryArea" class="text-input" placeholder="沒有可留空，例如：右膝、腳踝" />
+          </div>
         </fieldset>
 
         <!-- 身體數據 -->
-        <fieldset class="form-section">
+        <fieldset class="form-section training-only">
           <legend>身體數據</legend>
 
           <label class="field-label">身高 (cm) <span class="req">*</span></label>
@@ -166,7 +169,7 @@
         </fieldset>
 
         <!-- 飲食紀錄 -->
-        <fieldset class="form-section">
+        <fieldset class="form-section training-only">
           <legend>飲食紀錄 🍱</legend>
 
           <label class="field-label">今日早餐 <span class="req">*</span></label>
@@ -192,7 +195,7 @@
         </fieldset>
 
         <!-- 自由品勢額外紀錄（選「自由品勢」才顯示） -->
-        <fieldset class="form-section" id="freestyleSection" style="display:none;">
+        <fieldset class="form-section training-only" id="freestyleSection" style="display:none;">
           <legend>自由品勢紀錄 🤸</legend>
 
           <label class="field-label">空中踢擊完成幾腳</label>
@@ -206,13 +209,13 @@
         </fieldset>
 
         <!-- KPI 紀錄（依組別顯示 10 項，總分 /50） -->
-        <fieldset class="form-section" id="standardKpiSection">
+        <fieldset class="form-section training-only" id="standardKpiSection">
           <legend>KPI 十項評分 📈</legend>
           <div id="kpiContainer"></div>
         </fieldset>
 
         <!-- 文字紀錄 -->
-        <fieldset class="form-section">
+        <fieldset class="form-section training-only">
           <legend>今日心得與目標</legend>
 
           <label class="field-label">今日心得 <span class="req">*</span></label>
@@ -615,6 +618,6 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260607g"></script>
+  <script src="app.js?v=20260607h"></script>
 </body>
 </html>
