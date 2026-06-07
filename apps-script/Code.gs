@@ -40,7 +40,7 @@ var ATTENDANCE_REPORT_HEADERS = [
 
 // Sheet 欄位順序（必須與前端 record 物件對應）
 var HEADERS = [
-  'timestamp', 'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'bodyStatus',
+  'timestamp', 'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'absenceReason', 'bodyStatus',
   'sleepHours', 'sleepQuality', 'soreness', 'rpe', 'injuryArea',
   'heightCm', 'weightKg', 'targetWeightKg', 'bmi', 'weightGap',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'lateNightSnack', 'trainingIntensity',

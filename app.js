@@ -64,8 +64,10 @@ const DEFAULT_PARENTS = DEFAULT_PLAYERS.map((name, index) => ({
 
 // 運動項目選單（組別）
 const GROUP_OPTIONS = [
-  '跆拳道對練', '跆拳道品勢', '自由品勢', '武術套路', '散打'
+  '跆拳道對練', '跆拳道品勢', '自由品勢', '武術套路', '散打', '未出席訓練'
 ];
+
+const ABSENCE_GROUP = '未出席訓練';
 
 /* ============================================================
    自由品勢（Freestyle Poomsae）
@@ -89,6 +91,7 @@ const FREESTYLE_EXTRA_FIELDS = [
 const FREESTYLE_EXTRA_IDS = FREESTYLE_EXTRA_FIELDS.map(f => f.id);
 
 function isFreestyle(group) { return group === FREESTYLE_GROUP; }
+function isAbsenceGroup(group) { return group === ABSENCE_GROUP; }
 
 // 訓練強度選項
 const INTENSITY_OPTIONS = ['恢復日', '低', '中', '高', '比賽日'];
@@ -686,6 +689,7 @@ function renderKpiSliders(group) {
   currentGroup = group;
   const fsSection = $id('freestyleSection');
   if (fsSection) fsSection.style.display = isFreestyle(group) ? '' : 'none';
+  toggleAbsenceReason(group);
 
   const container = $id('kpiContainer');
   container.innerHTML = '';
@@ -717,6 +721,17 @@ function renderKpiSliders(group) {
     slider.addEventListener('input', onSliderChange);
   });
   recalcKpiSummary();
+}
+
+function toggleAbsenceReason(group) {
+  const wrap = $id('absenceReasonWrap');
+  if (!wrap) return;
+  const absent = isAbsenceGroup(group);
+  wrap.style.display = absent ? '' : 'none';
+  if (absent) {
+    const topic = $id('trainingTopic');
+    if (topic && !topic.value.trim()) topic.value = '未出席訓練';
+  }
 }
 
 function onSliderChange(e) {
@@ -1600,6 +1615,7 @@ function escapeHtml(s) {
 
 // 表單驗證
 function validateForm() {
+  const group = $id('group').value;
   const required = [
     ['name', '選手姓名'], ['gradeClass', '年級／班級'], ['group', '組別'],
     ['trainingTopic', '今日訓練主題'], ['reflection', '今日心得'], ['tomorrowGoal', '明日目標'],
@@ -1610,6 +1626,14 @@ function validateForm() {
   for (const [id, label] of required) {
     const v = $id(id).value;
     if (!v || !String(v).trim()) { toast(`請填寫：${label}`); $id(id).focus(); return false; }
+  }
+  if (isAbsenceGroup(group)) {
+    const reason = $id('absenceReason').value;
+    if (!reason || !String(reason).trim()) {
+      toast('請填寫：未出席訓練原因');
+      $id('absenceReason').focus();
+      return false;
+    }
   }
   const h = parseFloat($id('heightCm').value);
   if (h < 100 || h > 220) { toast('身高似乎不合理，請確認（100–220 cm）'); $id('heightCm').focus(); return false; }
@@ -1669,6 +1693,7 @@ function buildRecord() {
     gradeClass: $id('gradeClass').value,
     group: $id('group').value,
     trainingTopic: $id('trainingTopic').value,
+    absenceReason: $id('absenceReason') ? $id('absenceReason').value.trim() : '',
     bodyStatus: bodyStatus,
     sleepHours: sleepHours,
     sleepQuality: sleepQuality,
@@ -2229,14 +2254,16 @@ function normalizeAttendanceReports(rows) {
 }
 
 function attendanceReportFromRecord(rec) {
+  const absent = isAbsenceGroup(rec.group);
+  const reason = String(rec.absenceReason || '').trim();
   return {
     timestamp: rec.timestamp || rec.date || '',
     date: normDate(rec.date),
     studentName: rec.name,
-    attendanceStatus: '已訓練',
+    attendanceStatus: absent ? (reason ? '未出席已請假' : '未出席未請假') : '已訓練',
     checkInTime: '',
     checkOutTime: '',
-    absenceReason: '',
+    absenceReason: reason,
     informedCoach: '是',
     parentConfirmed: yesNo(rec.parentNote ? '是' : ''),
     kpiSubmitted: '是',
@@ -4372,12 +4399,13 @@ function fallbackCopy(text) {
 
 // 清空表單
 function clearForm() {
-  ['gradeClass', 'trainingTopic', 'heightCm', 'weightKg', 'targetWeightKg',
+  ['gradeClass', 'trainingTopic', 'absenceReason', 'heightCm', 'weightKg', 'targetWeightKg',
    'breakfast', 'lunch', 'dinner', 'snacksDrinks',
    'reflection', 'tomorrowGoal', 'encouragementToTeammate', 'mainGoalToday'].forEach(id => $id(id).value = '');
   $id('date').value = todayStr();
   $id('bodyStatus').value = '普通';
   ['group', 'waterIntake', 'trainingIntensity'].forEach(id => $id(id).selectedIndex = 0);
+  toggleAbsenceReason($id('group').value);
   if ($id('encourageTeammate')) $id('encourageTeammate').selectedIndex = 0;
   $id('lateNightSnack').value = '無';
   // 清空自由品勢額外欄位
@@ -4402,7 +4430,7 @@ function clearForm() {
 
 // 草稿要保存的欄位（簡單欄位，KPI 拉桿另外處理）
 const DRAFT_FIELDS = [
-  'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'bodyStatus',
+  'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'absenceReason', 'bodyStatus',
   'heightCm', 'weightKg', 'targetWeightKg',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'lateNightSnack', 'trainingIntensity',
   'reflection', 'tomorrowGoal', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday'

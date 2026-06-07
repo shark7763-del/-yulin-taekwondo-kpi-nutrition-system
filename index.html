@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260607f" />
+  <link rel="stylesheet" href="style.css?v=20260607g" />
 </head>
 <body>
 
@@ -110,6 +110,11 @@
 
           <label class="field-label">今日訓練主題 <span class="req">*</span></label>
           <input type="text" id="trainingTopic" class="text-input" placeholder="例如：旋踢距離控制" />
+
+          <div id="absenceReasonWrap" style="display:none;">
+            <label class="field-label">未出席訓練原因 <span class="req">*</span></label>
+            <textarea id="absenceReason" class="text-input" rows="2" placeholder="例如：身體不適、家中有事、學校活動、已向教練請假"></textarea>
+          </div>
 
           <label class="field-label">今日身體狀態</label>
           <select id="bodyStatus" class="text-input">
@@ -610,6 +615,6 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260607f"></script>
+  <script src="app.js?v=20260607g"></script>
 </body>
 </html>
