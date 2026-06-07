@@ -118,6 +118,26 @@
             <option value="不舒服">不舒服</option>
             <option value="受傷中">受傷中</option>
           </select>
+
+          <label class="field-label">昨晚睡眠時數</label>
+          <input type="number" id="sleepHours" class="text-input" step="0.5" min="0" max="12" placeholder="例如：7.5" />
+
+          <label class="field-label">睡眠品質</label>
+          <select id="sleepQuality" class="text-input">
+            <option value="">未填</option>
+            <option value="好">好</option>
+            <option value="普通" selected>普通</option>
+            <option value="差">差</option>
+          </select>
+
+          <label class="field-label">肌肉痠痛程度（1–5）</label>
+          <input type="number" id="soreness" class="text-input" step="1" min="1" max="5" placeholder="1 不痠，5 很痠" />
+
+          <label class="field-label">今日主觀強度 RPE（1–10）</label>
+          <input type="number" id="rpe" class="text-input" step="1" min="1" max="10" placeholder="1 很輕鬆，10 非常吃力" />
+
+          <label class="field-label">受傷／不適部位</label>
+          <input type="text" id="injuryArea" class="text-input" placeholder="沒有可留空，例如：右膝、腳踝" />
         </fieldset>
 
         <!-- 身體數據 -->
@@ -165,7 +185,7 @@
           <select id="trainingIntensity" class="text-input"></select>
         </fieldset>
 
-        <!-- 自由品勢額外紀錄（選「跆拳道自由品勢」才顯示） -->
+        <!-- 自由品勢額外紀錄（選「自由品勢」才顯示） -->
         <fieldset class="form-section" id="freestyleSection" style="display:none;">
           <legend>自由品勢紀錄 🤸</legend>
 
@@ -179,9 +199,9 @@
           <input type="text" id="unlockedMoves" class="text-input" placeholder="例如：540 旋風踢、空中側踢" />
         </fieldset>
 
-        <!-- KPI 紀錄（所有項目共用標準 6 面向 /30） -->
+        <!-- KPI 紀錄（依組別顯示 10 項，總分 /50） -->
         <fieldset class="form-section" id="standardKpiSection">
-          <legend>KPI 六大面向 📈</legend>
+          <legend>KPI 十項評分 📈</legend>
           <div id="kpiContainer"></div>
         </fieldset>
 

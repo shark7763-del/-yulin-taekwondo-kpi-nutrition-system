@@ -6,7 +6,7 @@
 2. 在第一個工作表，把名稱改成 `records`（小寫，與 `Code.gs` 的 `SHEET_NAME` 一致）。
 3. 點選 **A1 儲存格**。
 4. 複製下面「一行 tab 分隔」的表頭，貼到 A1。
-   - Google Sheet 會自動把 tab 分隔的內容拆成一欄一欄，剛好填滿 A1 到 AR1。
+   - Google Sheet 會自動把 tab 分隔的內容拆成一欄一欄，剛好填滿 A1 到 CR1。
 5. 完成後第一列就是正確的欄位順序。
 
 > 也可以不手動貼，直接在 Apps Script 編輯器執行一次 `setupSheet()`，系統會自動建立 `records` 工作表與表頭。
@@ -16,10 +16,10 @@
 ## 一行 tab 分隔表頭（複製這一整行）
 
 ```
-timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	targetWeightKg	bmi	weightGap	breakfast	lunch	dinner	snacksDrinks	waterIntake	lateNightSnack	trainingIntensity	physicalAvg	technicalAvg	focusAvg	disciplineAvg	emotionAvg	tacticalAvg	totalScore	averageScore	status	lowItems	improveTargets	mainGoalToday	reflection	tomorrowGoal	encouragementToTeammate	nutritionRisks	nutritionAdviceStudent	nutritionAdviceParent	nutritionAdviceCoach	studentLineText	parentLineText	coachLineText	nutritionLineText	rawScoresJson	rawNutritionJson	recordId	coachPhysicalAvg	coachTechnicalAvg	coachFocusAvg	coachDisciplineAvg	coachEmotionAvg	coachTacticalAvg	coachTotalScore	coachAverageScore	coachStatus	coachComment	studentResponse	coachReply	reviewUpdatedAt	encourageTeammateName	parentNote	mode	freestyleTotal	freestyleStatus	freestyleDifficulty	freestyleCompletion	freestyleMusic	freestyleCreativity	freestyleExpression	freestyleSafety	rawFreestyleScoresJson	freestyleLineText	musicName	musicSeconds	freestyleTheme	practiceSection	aerialSuccessRate	spinSuccessRate	acroSuccessRate	comboKickCount	landingErrors	breakCount	needVideoFix	focusEightCount	aerialKickCount	unlockedMoves
+timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	sleepHours	sleepQuality	soreness	rpe	injuryArea	heightCm	weightKg	targetWeightKg	bmi	weightGap	breakfast	lunch	dinner	snacksDrinks	waterIntake	lateNightSnack	trainingIntensity	physicalAvg	technicalAvg	focusAvg	disciplineAvg	emotionAvg	tacticalAvg	totalScore	averageScore	status	recoveryScore	recoveryState	redLightCategories	lowItems	improveTargets	mainGoalToday	reflection	tomorrowGoal	encouragementToTeammate	nutritionRisks	nutritionAdviceStudent	nutritionAdviceParent	nutritionAdviceCoach	studentLineText	parentLineText	coachLineText	nutritionLineText	rawScoresJson	rawNutritionJson	recordId	coachPhysicalAvg	coachTechnicalAvg	coachFocusAvg	coachDisciplineAvg	coachEmotionAvg	coachTacticalAvg	coachTotalScore	coachAverageScore	coachStatus	coachComment	studentResponse	coachReply	reviewUpdatedAt	encourageTeammateName	parentNote	mode	freestyleTotal	freestyleStatus	freestyleDifficulty	freestyleCompletion	freestyleMusic	freestyleCreativity	freestyleExpression	freestyleSafety	rawFreestyleScoresJson	freestyleLineText	musicName	musicSeconds	freestyleTheme	practiceSection	aerialSuccessRate	spinSuccessRate	acroSuccessRate	comboKickCount	landingErrors	breakCount	needVideoFix	focusEightCount	aerialKickCount	unlockedMoves	redLightReason	redLightHandling	redLightNote
 ```
 
-> 💡 後面 14 個欄位（`recordId` 起）是「交叉辯論／教練複評」功能用的，**不用手動補**——只要在 Apps Script 編輯器重新執行一次 `setupSheet()`，系統會自動把工作表補到最新欄位。
+> 💡 `recordId` 起是「交叉辯論／教練複評」、自由品勢與紅燈處理紀錄功能用的欄位，**不用手動補**——只要在 Apps Script 編輯器重新執行一次 `setupSheet()`，系統會自動把工作表補到最新欄位。
 
 ---
 
@@ -34,6 +34,8 @@ timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	
 | group | 組別 |
 | trainingTopic | 今日訓練主題 |
 | bodyStatus | 今日身體狀態 |
+| sleepHours / sleepQuality | 睡眠時數／睡眠品質 |
+| soreness / rpe / injuryArea | 痠痛程度／主觀強度 RPE／受傷部位 |
 | heightCm | 身高 cm |
 | weightKg | 今日體重 kg |
 | targetWeightKg | 目標體重 kg |
@@ -52,9 +54,11 @@ timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	
 | disciplineAvg | 自律態度平均 |
 | emotionAvg | 情緒控制平均 |
 | tacticalAvg | 戰術執行力平均 |
-| totalScore | 總分（六大面向平均加總，滿分 30） |
-| averageScore | 平均分數（總分 / 6） |
+| totalScore | 總分（新紀錄為 10 項加總，滿分 50；舊紀錄保留滿分 30） |
+| averageScore | 平均分數（新紀錄為總分 / 10；舊紀錄為總分 / 6） |
 | status | 🟢/🟡/🔴 燈號狀態 |
+| recoveryScore / recoveryState | 疲勞與恢復指數／恢復狀態 |
+| redLightCategories | AI 紅燈原因分類 |
 | lowItems | 最低三項（以｜分隔） |
 | improveTargets | 今天我要改善（勾選項，以｜分隔） |
 | mainGoalToday | 今天我最想做到的一件事 |
@@ -94,7 +98,8 @@ timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	heightCm	weightKg	
 | focusEightCount | 今日最需要修正的 8 拍｜目前前端未使用 |
 | aerialKickCount | 空中踢擊完成幾腳 |
 | unlockedMoves | 解鎖哪些高難度動作 |
+| redLightReason / redLightHandling / redLightNote | 教練後台紅燈處理紀錄：原因、處理方式、備註 |
 
-共 **85 欄**。前 44 欄為原始紀錄，接著 14 欄交叉辯論、2 欄（隊友鼓勵名／家長留言），最後 25 欄為自由品勢功能。新增欄位皆在最後，**舊資料位置不變**——重新部署後在 Apps Script 編輯器執行一次 `setupSheet()` 即可自動補欄。
+共 **96 欄**。前 52 欄為學生紀錄、KPI、恢復指數、飲食與 LINE 文字，接著為交叉辯論／教練複評、隊友鼓勵名／家長留言、自由品勢與紅燈處理紀錄。重新部署後在 Apps Script 編輯器執行一次 `setupSheet()` 即可自動補欄。
 
 > 註：自由品勢前端目前只填「主題、空中踢擊完成幾腳、落地失誤幾次、解鎖哪些高難度動作」＋10 項評分拉桿；其餘 freestyle 欄位（成功率、練習段落、影片修正、8 拍…）保留在表頭但不寫入，作日後擴充用。

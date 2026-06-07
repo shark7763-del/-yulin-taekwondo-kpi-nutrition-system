@@ -31,10 +31,12 @@ var ROSTER_SHEET = 'roster';
 // Sheet 欄位順序（必須與前端 record 物件對應）
 var HEADERS = [
   'timestamp', 'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'bodyStatus',
+  'sleepHours', 'sleepQuality', 'soreness', 'rpe', 'injuryArea',
   'heightCm', 'weightKg', 'targetWeightKg', 'bmi', 'weightGap',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'lateNightSnack', 'trainingIntensity',
   'physicalAvg', 'technicalAvg', 'focusAvg', 'disciplineAvg', 'emotionAvg', 'tacticalAvg',
-  'totalScore', 'averageScore', 'status', 'lowItems', 'improveTargets', 'mainGoalToday',
+  'totalScore', 'averageScore', 'status', 'recoveryScore', 'recoveryState', 'redLightCategories',
+  'lowItems', 'improveTargets', 'mainGoalToday',
   'reflection', 'tomorrowGoal', 'encouragementToTeammate',
   'nutritionRisks', 'nutritionAdviceStudent', 'nutritionAdviceParent', 'nutritionAdviceCoach',
   'studentLineText', 'parentLineText', 'coachLineText', 'nutritionLineText',

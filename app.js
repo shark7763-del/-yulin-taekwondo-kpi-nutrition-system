@@ -47,16 +47,16 @@ const DEFAULT_PLAYERS = [
 
 // 運動項目選單（組別）
 const GROUP_OPTIONS = [
-  '跆拳道對練', '跆拳道品勢', '跆拳道自由品勢', '散打', '武術套路', '體能訓練'
+  '跆拳道對練', '跆拳道品勢', '自由品勢', '武術套路', '散打'
 ];
 
 /* ============================================================
    自由品勢（Freestyle Poomsae）
    ------------------------------------------------------------
-   採標準 6 面向 /30 模型（細項見 KPI_ASPECTS 的 freestyle 變體），
+   採各組 10 項 /50 模型（細項見 KPI_GROUPS 的 freestyle 變體），
    另外多 3 個額外紀錄欄位（空中踢擊完成幾腳/落地失誤幾次/解鎖動作）。
    ============================================================ */
-const FREESTYLE_GROUP = '跆拳道自由品勢';
+const FREESTYLE_GROUP = '自由品勢';
 
 /*
    自由品勢額外紀錄欄位。type：text / number。
@@ -139,6 +139,58 @@ const COACH_ASPECT_FIELD = {
   physical: 'coachPhysicalAvg', technical: 'coachTechnicalAvg', focus: 'coachFocusAvg',
   discipline: 'coachDisciplineAvg', emotion: 'coachEmotionAvg', tactical: 'coachTacticalAvg'
 };
+
+// 面向 -> 紅燈原因分類名稱（給 AI 紅燈原因分析用）
+const ASPECT_REDLABEL = {
+  physical: '體能', technical: '技術', tactical: '戰術',
+  focus: '專注', discipline: '自律', emotion: '情緒', overall: '整體'
+};
+
+/*
+   各組別 KPI（每組 10 項，1–5 分制）。
+   n=項目名稱，a=歸屬面向（用於六面向彙總、雷達、紅燈原因分析）。
+   a 可為 physical/technical/tactical/focus/discipline/emotion/overall。
+*/
+const KPI_GROUPS = {
+  '跆拳道對練': [
+    { n: '體能維持', a: 'physical' }, { n: '距離控制', a: 'technical' },
+    { n: '主動攻擊', a: 'tactical' }, { n: '反擊能力', a: 'tactical' },
+    { n: '邊線處理', a: 'tactical' }, { n: '戰術執行', a: 'tactical' },
+    { n: '情緒穩定', a: 'emotion' }, { n: '專注力', a: 'focus' },
+    { n: '自律態度', a: 'discipline' }, { n: '今日整體表現', a: 'overall' }
+  ],
+  '跆拳道品勢': [
+    { n: '動作準確度', a: 'technical' }, { n: '重心穩定', a: 'technical' },
+    { n: '力道速度', a: 'technical' }, { n: '節奏掌握', a: 'technical' },
+    { n: '眼神氣勢', a: 'emotion' }, { n: '柔軟度', a: 'physical' },
+    { n: '平衡控制', a: 'technical' }, { n: '專注力', a: 'focus' },
+    { n: '自律態度', a: 'discipline' }, { n: '今日整體表現', a: 'overall' }
+  ],
+  '自由品勢': [
+    { n: '空中踢擊完成度', a: 'technical' }, { n: '高難度動作完成度', a: 'technical' },
+    { n: '落地穩定', a: 'technical' }, { n: '連接流暢', a: 'technical' },
+    { n: '創意編排', a: 'tactical' }, { n: '音樂節奏', a: 'tactical' },
+    { n: '表現張力', a: 'emotion' }, { n: '動作安全性', a: 'physical' },
+    { n: '專注力', a: 'focus' }, { n: '今日整體表現', a: 'overall' }
+  ],
+  '武術套路': [
+    { n: '步法穩定', a: 'technical' }, { n: '身法協調', a: 'technical' },
+    { n: '爆發力', a: 'physical' }, { n: '套路熟練度', a: 'technical' },
+    { n: '節奏與停頓', a: 'tactical' }, { n: '精氣神', a: 'emotion' },
+    { n: '柔軟度', a: 'physical' }, { n: '器械控制', a: 'technical' },
+    { n: '專注力', a: 'focus' }, { n: '今日整體表現', a: 'overall' }
+  ],
+  '散打': [
+    { n: '拳法命中', a: 'technical' }, { n: '腿法命中', a: 'technical' },
+    { n: '摔法銜接', a: 'technical' }, { n: '防守反應', a: 'tactical' },
+    { n: '距離掌控', a: 'tactical' }, { n: '體能抗壓', a: 'physical' },
+    { n: '臨場判斷', a: 'tactical' }, { n: '情緒穩定', a: 'emotion' },
+    { n: '專注力', a: 'focus' }, { n: '今日整體表現', a: 'overall' }
+  ]
+};
+
+// 取某組別的 KPI 項目（找不到回對練）
+function groupKpiItems(group) { return KPI_GROUPS[group] || KPI_GROUPS['跆拳道對練']; }
 
 // 飲食關鍵字
 const NUTRITION_KEYWORDS = {
@@ -433,30 +485,8 @@ function round2(n) { return Math.round(n * 100) / 100; }
    4. 表單初始化
    ============================================================ */
 
-// 目前使用的 KPI 細項結構（依組別動態決定），用於計算
-let currentKpiStructure = buildKpiStructure('跆拳道對練');
-
-// 依組別決定 technical / tactical 細項變體：
-//   跆拳道品勢 -> poomsae、武術套路 -> wushu、跆拳道自由品勢 -> freestyle、
-//   其餘（對練/散打/體能訓練）-> spar。
-function buildKpiStructure(group) {
-  let variant = 'spar';
-  if (group === '跆拳道品勢') variant = 'poomsae';
-  else if (group === '武術套路') variant = 'wushu';
-  else if (group === FREESTYLE_GROUP) variant = 'freestyle';
-  const struct = {};
-  ASPECT_ORDER.forEach(key => {
-    const aspect = KPI_ASPECTS[key];
-    let items;
-    if (key === 'technical' || key === 'tactical') {
-      items = aspect[variant] || aspect.spar;
-    } else {
-      items = aspect.items;
-    }
-    struct[key] = { label: aspect.label, items: items.slice() };
-  });
-  return struct;
-}
+// 目前使用的組別（KPI 依組別決定）
+let currentGroup = '跆拳道對練';
 
 // 把選項塞進 select
 function fillSelect(el, options, placeholder) {
@@ -613,74 +643,63 @@ function softenForParent(text) {
   return t;
 }
 
-// 建立 KPI 拉桿 UI（所有項目都用標準 6 面向 /30）。
+// 建立 KPI 拉桿 UI（依組別顯示該組 10 項；1–5 分制）。
 // 自由品勢另外顯示 3 個額外欄位區塊。
 function renderKpiSliders(group) {
+  currentGroup = group;
   const fsSection = $id('freestyleSection');
   if (fsSection) fsSection.style.display = isFreestyle(group) ? '' : 'none';
 
-  currentKpiStructure = buildKpiStructure(group);
   const container = $id('kpiContainer');
   container.innerHTML = '';
 
-  ASPECT_ORDER.forEach(aspectKey => {
-    const aspect = currentKpiStructure[aspectKey];
-    const box = document.createElement('div');
-    box.className = 'kpi-aspect';
-    box.dataset.aspect = aspectKey;
+  const box = document.createElement('div');
+  box.className = 'kpi-aspect';
+  const head = document.createElement('div');
+  head.className = 'kpi-aspect-head';
+  head.innerHTML = `<span>${escapeHtml(group)} KPI（10 項）</span><span class="kpi-aspect-avg" id="kpiSummary">總分 30 / 50・平均 3・🟡 黃燈</span>`;
+  box.appendChild(head);
 
-    const head = document.createElement('div');
-    head.className = 'kpi-aspect-head';
-    head.innerHTML = `<span>${aspect.label}</span><span class="kpi-aspect-avg" id="avg-${aspectKey}">平均 3.0</span>`;
-    box.appendChild(head);
-
-    aspect.items.forEach((itemName, idx) => {
-      const item = document.createElement('div');
-      item.className = 'kpi-item';
-      const sliderId = `slider-${aspectKey}-${idx}`;
-      item.innerHTML = `
-        <div class="kpi-item-row">
-          <span class="kpi-item-name">${itemName}</span>
-          <span class="kpi-item-score" id="score-${aspectKey}-${idx}">3 分 · 普通</span>
-        </div>
-        <input type="range" min="1" max="5" step="1" value="3"
-               class="kpi-slider" id="${sliderId}"
-               data-aspect="${aspectKey}" data-item="${itemName}" />
-      `;
-      box.appendChild(item);
-    });
-
-    container.appendChild(box);
+  groupKpiItems(group).forEach((it, idx) => {
+    const item = document.createElement('div');
+    item.className = 'kpi-item';
+    item.innerHTML = `
+      <div class="kpi-item-row">
+        <span class="kpi-item-name">${it.n}</span>
+        <span class="kpi-item-score" id="score-${idx}">3 分 · 普通</span>
+      </div>
+      <input type="range" min="1" max="5" step="1" value="3"
+             class="kpi-slider" id="slider-${idx}"
+             data-aspect="${it.a}" data-item="${it.n}" data-idx="${idx}" />
+    `;
+    box.appendChild(item);
   });
+  container.appendChild(box);
 
-  // 綁定拉桿事件
   container.querySelectorAll('.kpi-slider').forEach(slider => {
     slider.addEventListener('input', onSliderChange);
   });
-  recalcAllAspects();
+  recalcKpiSummary();
 }
 
 function onSliderChange(e) {
   const slider = e.target;
   const val = parseInt(slider.value, 10);
-  const [, aspectKey, idx] = slider.id.split('-');
-  $id(`score-${aspectKey}-${idx}`).textContent = `${val} 分 · ${SCORE_LABELS[val]}`;
-  recalcAspectAvg(aspectKey);
+  const idx = slider.dataset.idx;
+  const el = $id(`score-${idx}`);
+  if (el) el.textContent = `${val} 分 · ${SCORE_LABELS[val]}`;
+  recalcKpiSummary();
 }
 
-function recalcAspectAvg(aspectKey) {
-  const sliders = document.querySelectorAll(`.kpi-slider[data-aspect="${aspectKey}"]`);
-  if (!sliders.length) return 0;
+// 即時更新總分/平均/燈號摘要
+function recalcKpiSummary() {
+  const sliders = document.querySelectorAll('#kpiContainer .kpi-slider');
+  if (!sliders.length) return;
   let sum = 0;
   sliders.forEach(s => sum += parseInt(s.value, 10));
-  const avg = sum / sliders.length;
-  const avgEl = $id(`avg-${aspectKey}`);
-  if (avgEl) avgEl.textContent = `平均 ${round1(avg)}`;
-  return avg;
-}
-
-function recalcAllAspects() {
-  ASPECT_ORDER.forEach(k => recalcAspectAvg(k));
+  const avg = round2(sum / sliders.length);
+  const el = $id('kpiSummary');
+  if (el) el.textContent = `總分 ${sum} / ${sliders.length * 5}・平均 ${avg}・${judgeStatus(avg)}`;
 }
 
 // 自由品勢額外欄位顯示用：有值才回傳一列 review-row
@@ -698,30 +717,36 @@ function freestyleExtraHtml(rec) {
    5. 分數計算、狀態、最低三項
    ============================================================ */
 
-// 從目前表單拉桿收集分數
+// 從目前表單拉桿收集分數（10 項扁平模型）
+// 回傳：scores 仍依面向分桶（給 findLowItems / rawScoresJson 相容）、
+//       aspectAvg（各面向平均，只含有項目的面向）、total（10 項加總 /50）、
+//       average（total / 項目數）、count。
 function collectScores() {
-  const scores = {};      // { aspectKey: { itemName: value } }
-  const aspectAvg = {};   // { aspectKey: avg }
-  ASPECT_ORDER.forEach(aspectKey => {
-    const sliders = document.querySelectorAll(`.kpi-slider[data-aspect="${aspectKey}"]`);
-    scores[aspectKey] = {};
-    let sum = 0;
-    sliders.forEach(s => {
-      const v = parseInt(s.value, 10);
-      scores[aspectKey][s.dataset.item] = v;
-      sum += v;
-    });
-    aspectAvg[aspectKey] = sliders.length ? round1(sum / sliders.length) : 0;
+  const sliders = Array.from(document.querySelectorAll('#kpiContainer .kpi-slider'));
+  const scores = {};        // { aspectKey: { itemName: value } }
+  const sums = {}, counts = {};
+  let total = 0;
+  sliders.forEach(s => {
+    const v = parseInt(s.value, 10);
+    const a = s.dataset.aspect, item = s.dataset.item;
+    if (!scores[a]) { scores[a] = {}; sums[a] = 0; counts[a] = 0; }
+    scores[a][item] = v;
+    sums[a] += v; counts[a] += 1;
+    total += v;
   });
-  return { scores, aspectAvg };
+  const aspectAvg = {};
+  Object.keys(sums).forEach(a => { aspectAvg[a] = round1(sums[a] / counts[a]); });
+  const count = sliders.length || 1;
+  const average = round2(total / count);
+  return { scores, aspectAvg, total: round2(total), average, count };
 }
 
-// 總分 = 六大面向平均加總；平均 = 總分 / 6
+// 保留相容：由 aspectAvg 估總分（舊呼叫用；新流程直接用 collectScores 的 total）
 function computeTotals(aspectAvg) {
-  let total = 0;
-  ASPECT_ORDER.forEach(k => total += aspectAvg[k]);
+  let total = 0, n = 0;
+  Object.keys(aspectAvg || {}).forEach(k => { total += aspectAvg[k]; n++; });
   total = round2(total);
-  const average = round2(total / 6);
+  const average = round2(n ? total / n : 0);
   return { total, average };
 }
 
@@ -732,11 +757,55 @@ function judgeStatus(average) {
   return '🔴 紅燈';
 }
 
+/*
+   疲勞與恢復指數：100 起扣分 → 對應五級恢復狀態。
+   input: { sleepHours, sleepQuality, rpe, soreness, bodyStatus }
+*/
+function computeRecovery(input) {
+  let score = 100;
+  const sh = parseFloat(input.sleepHours);
+  const rpe = parseFloat(input.rpe);
+  const sore = parseFloat(input.soreness);
+  if (!isNaN(sh) && sh < 6) score -= 25;
+  if (input.sleepQuality === '差') score -= 20;
+  if (!isNaN(rpe) && rpe > 8) score -= 20;
+  if (!isNaN(sore) && sore >= 4) score -= 20;
+  if (input.bodyStatus === '疲勞') score -= 15;
+  else if (input.bodyStatus === '不舒服') score -= 25;
+  else if (input.bodyStatus === '受傷中') score -= 40;
+  if (score < 0) score = 0;
+
+  let state;
+  if (score >= 80) state = '恢復良好';
+  else if (score >= 60) state = '可正常訓練';
+  else if (score >= 40) state = '注意疲勞';
+  else if (score >= 20) state = '建議降低強度';
+  else state = '建議教練關懷';
+  return { score: score, state: state };
+}
+
+// 紅燈原因分類：回傳如 ['技術紅燈','戰術紅燈','恢復紅燈']
+function redLightCategories(scores, nutritionRisks, recoveryState) {
+  const cats = [];
+  const seen = {};
+  Object.keys(scores || {}).forEach(aspectKey => {
+    const items = scores[aspectKey] || {};
+    const low = Object.keys(items).some(it => items[it] < 3);
+    if (low) {
+      const label = ASPECT_REDLABEL[aspectKey];
+      if (label && label !== '整體' && !seen[label]) { seen[label] = true; cats.push(label + '紅燈'); }
+    }
+  });
+  if (nutritionRisks && nutritionRisks !== '無明顯風險') cats.push('飲食紅燈');
+  if (recoveryState === '建議降低強度' || recoveryState === '建議教練關懷') cats.push('恢復紅燈');
+  return cats;
+}
+
 // 找出所有低於 3 分的細項，取最低三項（同分依出現順序）
 function findLowItems(scores) {
   const list = [];
-  ASPECT_ORDER.forEach(aspectKey => {
-    const items = scores[aspectKey];
+  Object.keys(scores || {}).forEach(aspectKey => {
+    const items = scores[aspectKey] || {};
     Object.keys(items).forEach(itemName => {
       const v = items[itemName];
       if (v < 3) list.push({ item: itemName, score: v, aspect: aspectKey });
@@ -886,7 +955,36 @@ function analyzeNutrition(data) {
   else if (hasSugary) nextGoal = '把一杯含糖飲料換成水或無糖飲品。';
   else if (hasLateNight) nextGoal = '今晚減少宵夜，讓身體好好恢復。';
 
-  return { risks, student, parent, coach, nextGoal };
+  // ---- 今日飲食優點 / 問題（青少年安全語氣）----
+  const pros = [];
+  if (hasProtein) pros.push('有吃到蛋白質，對肌肉修復很好');
+  if (hasVegetable) pros.push('有攝取蔬菜，幫助消化與恢復');
+  if (hasStaple) pros.push('有補充主食，訓練才有能量');
+  if (!hasSugary) pros.push('沒有過多含糖飲料，很棒');
+  if (!hasLateNight) pros.push('沒有吃宵夜，有助睡眠恢復');
+  if (!pros.length) pros.push('今天有完成飲食紀錄，這就是好的開始');
+
+  const problems = [];
+  if (!hasProtein) problems.push('蛋白質偏少（蛋、豆漿、雞肉、魚、豆腐可補）');
+  if (!hasVegetable) problems.push('蔬菜偏少');
+  if (lowWater) problems.push('水量偏少');
+  if (hasSugary) problems.push('含糖飲料偏多');
+  if (heavyLateNight) problems.push('宵夜偏多');
+  if (noBreakfast) problems.push('早餐不足');
+
+  // ---- 賽前控重提醒（只在距目標過遠才顯示；青少年安全語氣，不提脫水/節食）----
+  let weightControl = '';
+  const gap = parseFloat(data.weightGap);
+  if (!isNaN(gap) && gap >= 2) {
+    weightControl = `目前體重距目標約 ${round1(gap)} kg。請用「規律三餐＋少含糖飲料與油炸、訓練量穩定」的方式慢慢調整，不要不吃飯、也不要脫水減重，安全最重要。如接近比賽再請教練協助安排。`;
+  }
+
+  // ---- 補水提醒 ----
+  const hydration = lowWater
+    ? '今天水分偏少，明天起訓練前先喝水，訓練中小口補水，訓練後也要補回流失的水分。'
+    : '水分維持得不錯，繼續保持訓練前中後都有補水。';
+
+  return { risks, student, parent, coach, nextGoal, pros, problems, weightControl, hydration };
 }
 
 /* ============================================================
@@ -900,6 +998,33 @@ function aspectAvgFromRecord(rec) {
     out[k] = parseFloat(rec[ASPECT_AVG_FIELD[k]]) || 0;
   });
   return out;
+}
+
+function recordScoreMax(rec) {
+  const total = parseFloat(rec && rec.totalScore);
+  return total > 30 ? 50 : 30;
+}
+
+function presentAspectKeys(avg) {
+  return ASPECT_ORDER.filter(k => avg && avg[k] !== undefined && avg[k] !== null && avg[k] !== '' && !isNaN(parseFloat(avg[k])));
+}
+
+function presentAspectKeysFromRecord(rec) {
+  return ASPECT_ORDER.filter(k => {
+    const v = rec && rec[ASPECT_AVG_FIELD[k]];
+    return v !== undefined && v !== null && String(v) !== '' && !isNaN(parseFloat(v));
+  });
+}
+
+function scoreMaxText(rec) {
+  return `${rec.totalScore || 0} / ${recordScoreMax(rec)}`;
+}
+
+function scoreCountFromRecord(rec, scores) {
+  let count = 0;
+  Object.keys(scores || {}).forEach(k => { count += Object.keys(scores[k] || {}).length; });
+  if (count) return count;
+  return recordScoreMax(rec) === 50 ? 10 : 6;
 }
 
 // 解析 lowItems 欄位（字串）成陣列文字
@@ -938,12 +1063,13 @@ function renderLastReview(rec, containerId, cardId) {
 
   let html = '';
   html += `<div class="review-row"><span class="review-label">上次日期</span><span class="review-value">${dateSlash(rec.date)}</span></div>`;
-  html += `<div class="review-row"><span class="review-label">總分</span><span class="review-value">${rec.totalScore} / 30</span></div>`;
+  html += `<div class="review-row"><span class="review-label">總分</span><span class="review-value">${scoreMaxText(rec)}</span></div>`;
   html += `<div class="review-row"><span class="review-label">平均</span><span class="review-value">${rec.averageScore} / 5</span></div>`;
   html += `<div class="review-row"><span class="review-label">狀態</span><span class="review-value">${status}</span></div>`;
 
-  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">六大面向</h4><div class="aspect-grid">`;
-  ASPECT_ORDER.forEach(k => {
+  const presentKeys = presentAspectKeysFromRecord(rec);
+  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">面向平均</h4><div class="aspect-grid">`;
+  presentKeys.forEach(k => {
     html += `<div class="aspect-cell">${KPI_ASPECTS[k].label}<br><span class="num">${avg[k]}</span></div>`;
   });
   html += `</div>`;
@@ -1185,15 +1311,17 @@ function explainStatusFromRecord(rec) {
   let scores = {};
   try { scores = JSON.parse(rec.rawScoresJson || '{}'); } catch (e) { /* */ }
   const avg = aspectAvgFromRecord(rec);
-  const lowAspects = ASPECT_ORDER.filter(k => avg[k] < 3).map(k => `${KPI_ASPECTS[k].label}（${avg[k]}）`);
+  const presentKeys = presentAspectKeysFromRecord(rec);
+  const lowAspects = presentKeys.filter(k => avg[k] < 3).map(k => `${KPI_ASPECTS[k].label}（${avg[k]}）`);
   const low = findLowItems(scores);
+  const count = scoreCountFromRecord(rec, scores);
 
   let inner = '';
-  inner += `<div class="explain-line">平均 <b>${rec.averageScore}</b> ＝ 總分 <b>${rec.totalScore}</b> ÷ 6</div>`;
+  inner += `<div class="explain-line">平均 <b>${rec.averageScore}</b> ＝ 總分 <b>${rec.totalScore}</b> ÷ ${count}</div>`;
   inner += `<div class="explain-line">門檻：平均 ≥ 4.0 🟢　≥ 3.0 🟡　&lt; 3.0 🔴</div>`;
   if (lowAspects.length) inner += `<div class="explain-line">拉低的面向：${lowAspects.join('、')}</div>`;
   if (low.length) inner += `<div class="explain-line">最低細項：${low.map(l => `${l.item} ${l.score}分`).join('、')}</div>`;
-  inner += `<div class="explain-line" style="color:var(--text-soft)">每一面向＝該面向 5 個細項平均；六面向平均加總＝總分（滿分 30）。</div>`;
+  inner += `<div class="explain-line" style="color:var(--text-soft)">新紀錄為每組 10 項 KPI（滿分 50），平均分決定燈號；舊紀錄仍保留滿分 30 顯示。</div>`;
 
   return `<details class="explain"><summary>🔎 為什麼是「${rec.status}」？</summary><div class="explain-body">${inner}</div></details>`;
 }
@@ -1203,11 +1331,12 @@ function renderSelfVsCoach(rec) {
   if (!hasCoachReview(rec)) return '';
   const self = aspectAvgFromRecord(rec);
   const coach = coachAspectAvgFromRecord(rec);
+  const keys = presentAspectKeysFromRecord(rec).length ? presentAspectKeysFromRecord(rec) : ASPECT_ORDER;
 
   let html = `<h4 style="margin:12px 0 6px;color:var(--blue)">⚖️ 自評 vs 教練評</h4>`;
   html += `<div class="table-scroll"><table class="record-table"><thead><tr><th>面向</th><th>自評</th><th>教練</th><th>差距</th></tr></thead><tbody>`;
   let bigGap = [];
-  ASPECT_ORDER.forEach(k => {
+  keys.forEach(k => {
     const s = self[k], c = coach[k];
     const gap = round1(c - s);
     let cls = 'tag-yellow';
@@ -1217,7 +1346,7 @@ function renderSelfVsCoach(rec) {
     html += `<tr><td>${KPI_ASPECTS[k].label}</td><td>${s}</td><td>${c}</td><td><span class="tag ${cls}">${gap > 0 ? '+' : ''}${gap}${flag}</span></td></tr>`;
   });
   html += `</tbody></table></div>`;
-  html += `<div class="review-row"><span class="review-label">教練總分</span><span class="review-value">${rec.coachTotalScore} / 30（${rec.coachStatus || '-'}）</span></div>`;
+  html += `<div class="review-row"><span class="review-label">教練總分</span><span class="review-value">${rec.coachTotalScore} / ${keys.length * 5 || 30}（${rec.coachStatus || '-'}）</span></div>`;
   if (rec.coachComment) html += `<div class="hint-box">📣 教練評語：${escapeHtml(rec.coachComment)}</div>`;
   if (bigGap.length) html += `<div class="hint-box warn">💬 「${bigGap.join('、')}」你和教練看法差距較大，值得一起討論。<br><span style="color:var(--text-soft)">這裡是讓你說明想法，不是改分數，最終由教練綜合判斷。</span></div>`;
   return html;
@@ -1341,7 +1470,7 @@ function renderTrendSection(box, records, days) {
   }
 
   const METRICS = [
-    { key: 'totalScore', label: '總分', max: 30, min: 0 },
+    { key: 'totalScore', label: '總分', max: 50, min: 0 },
     { key: 'averageScore', label: '平均', max: 5, min: 0 },
     { key: 'physicalAvg', label: '體能', max: 5, min: 0 },
     { key: 'technicalAvg', label: '技術', max: 5, min: 0 },
@@ -1416,10 +1545,9 @@ function validateForm() {
   return true;
 }
 
-// 收集整筆紀錄物件（所有項目皆走標準 6 面向 /30）
+// 收集整筆紀錄物件（每組 10 項 KPI；總分/50、平均決定燈號）
 function buildRecord() {
-  const { scores, aspectAvg } = collectScores();
-  const { total, average } = computeTotals(aspectAvg);
+  const { scores, aspectAvg, total, average } = collectScores();
   const status = judgeStatus(average);
   const lowItems = findLowItems(scores);
   const lowItemsStr = lowItems.map(l => `${l.item}：${l.score} 分`).join('｜');
@@ -1429,6 +1557,14 @@ function buildRecord() {
   const targetWeightKg = $id('targetWeightKg').value;
   const bmi = computeBmi(heightCm, weightKg);
   const weightGap = computeWeightGap(weightKg, targetWeightKg);
+  const bodyStatus = $id('bodyStatus').value;
+
+  // 新增：睡眠 / RPE / 痠痛 / 受傷部位
+  const sleepHours = $id('sleepHours') ? $id('sleepHours').value : '';
+  const sleepQuality = $id('sleepQuality') ? $id('sleepQuality').value : '';
+  const soreness = $id('soreness') ? $id('soreness').value : '';
+  const rpe = $id('rpe') ? $id('rpe').value : '';
+  const injuryArea = $id('injuryArea') ? $id('injuryArea').value : '';
 
   const nutritionInput = {
     breakfast: $id('breakfast').value,
@@ -1438,9 +1574,14 @@ function buildRecord() {
     waterIntake: $id('waterIntake').value,
     lateNightSnack: $id('lateNightSnack').value,
     trainingIntensity: $id('trainingIntensity').value,
-    bmi: bmi, weightKg: weightKg
+    bmi: bmi, weightKg: weightKg, weightGap: weightGap, targetWeightKg: targetWeightKg
   };
   const nutrition = analyzeNutrition(nutritionInput);
+
+  // 恢復指數 + 紅燈原因分類
+  const recovery = computeRecovery({ sleepHours, sleepQuality, rpe, soreness, bodyStatus });
+  const nutritionRisks = nutrition.risks.join('、') || '無明顯風險';
+  const redCats = redLightCategories(scores, nutritionRisks, recovery.state);
 
   const improveTargets = getCheckedImproveTargets().join('｜');
   const mainGoalToday = $id('mainGoalToday').value;
@@ -1454,7 +1595,12 @@ function buildRecord() {
     gradeClass: $id('gradeClass').value,
     group: $id('group').value,
     trainingTopic: $id('trainingTopic').value,
-    bodyStatus: $id('bodyStatus').value,
+    bodyStatus: bodyStatus,
+    sleepHours: sleepHours,
+    sleepQuality: sleepQuality,
+    soreness: soreness,
+    rpe: rpe,
+    injuryArea: injuryArea,
     heightCm: heightCm,
     weightKg: weightKg,
     targetWeightKg: targetWeightKg,
@@ -1467,15 +1613,18 @@ function buildRecord() {
     waterIntake: $id('waterIntake').value,
     lateNightSnack: $id('lateNightSnack').value,
     trainingIntensity: $id('trainingIntensity').value,
-    physicalAvg: aspectAvg.physical,
-    technicalAvg: aspectAvg.technical,
-    focusAvg: aspectAvg.focus,
-    disciplineAvg: aspectAvg.discipline,
-    emotionAvg: aspectAvg.emotion,
-    tacticalAvg: aspectAvg.tactical,
+    physicalAvg: aspectAvg.physical != null ? aspectAvg.physical : '',
+    technicalAvg: aspectAvg.technical != null ? aspectAvg.technical : '',
+    focusAvg: aspectAvg.focus != null ? aspectAvg.focus : '',
+    disciplineAvg: aspectAvg.discipline != null ? aspectAvg.discipline : '',
+    emotionAvg: aspectAvg.emotion != null ? aspectAvg.emotion : '',
+    tacticalAvg: aspectAvg.tactical != null ? aspectAvg.tactical : '',
     totalScore: total,
     averageScore: average,
     status: status,
+    recoveryScore: recovery.score,
+    recoveryState: recovery.state,
+    redLightCategories: redCats.join('、'),
     lowItems: lowItemsStr,
     improveTargets: improveTargets,
     mainGoalToday: mainGoalToday,
@@ -1483,7 +1632,7 @@ function buildRecord() {
     tomorrowGoal: $id('tomorrowGoal').value,
     encourageTeammateName: $id('encourageTeammate') ? $id('encourageTeammate').value : '',
     encouragementToTeammate: $id('encouragementToTeammate').value,
-    nutritionRisks: nutrition.risks.join('、') || '無明顯風險',
+    nutritionRisks: nutritionRisks,
     nutritionAdviceStudent: nutrition.student,
     nutritionAdviceParent: nutrition.parent,
     nutritionAdviceCoach: JSON.stringify(nutrition.coach),
@@ -1496,10 +1645,12 @@ function buildRecord() {
     FREESTYLE_EXTRA_IDS.forEach(id => { const el = $id(id); rec[id] = el ? el.value : ''; });
   }
 
-  // 產生 LINE 四版本（需要上一筆做比較，稍後在 submit 時補上）
+  // 暫存（送出時補 LINE / 比較卡用）
   rec._lowItemsArr = lowItems;
   rec._aspectAvg = aspectAvg;
   rec._nutrition = nutrition;
+  rec._recovery = recovery;
+  rec._redCats = redCats;
   return rec;
 }
 
@@ -1598,6 +1749,7 @@ async function doSubmitInner(mode) {
   // 移除暫存欄位再送出
   const payload = Object.assign({}, rec);
   delete payload._lowItemsArr; delete payload._aspectAvg; delete payload._nutrition;
+  delete payload._recovery; delete payload._redCats;
 
   let saved = false;   // 是否真的存進後台（official）／本機（local）
 
@@ -1658,34 +1810,41 @@ function renderCompareCard(rec, last, affirm) {
   const diff = round1(rec.totalScore - lastTotal);
   const lastAvg = aspectAvgFromRecord(last);
 
-  // 各面向差異
-  const aspectDiffs = ASPECT_ORDER.map(k => ({
-    label: KPI_ASPECTS[k].label,
-    diff: round1(rec._aspectAvg[k] - lastAvg[k])
-  }));
-  const sortedUp = aspectDiffs.slice().sort((a, b) => b.diff - a.diff);
-  const bestUp = sortedUp[0];
-  const worstDown = sortedUp[sortedUp.length - 1];
-
   let html = affirmHtml(affirm);   // 進步肯定放最上面
-  html += `<div class="review-row"><span class="review-label">今日總分</span><span class="review-value">${rec.totalScore}</span></div>`;
-  html += `<div class="review-row"><span class="review-label">上次總分</span><span class="review-value">${lastTotal}</span></div>`;
-  const diffTag = diff >= 0 ? `<span class="tag tag-green">${diff >= 0 ? '+' : ''}${diff}</span>` : `<span class="tag tag-red">${diff}</span>`;
-  html += `<div class="review-row"><span class="review-label">總分差異</span><span class="review-value">${diffTag}</span></div>`;
 
-  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">六大面向差異</h4><div class="aspect-grid">`;
-  aspectDiffs.forEach(a => {
-    const cls = a.diff > 0 ? 'tag-green' : (a.diff < 0 ? 'tag-red' : 'tag-yellow');
-    const sign = a.diff > 0 ? '+' : '';
-    html += `<div class="aspect-cell">${a.label}<br><span class="tag ${cls}">${sign}${a.diff}</span></div>`;
-  });
-  html += `</div>`;
+  // AI 分析：總分/平均/燈號
+  html += `<div class="review-row"><span class="review-label">今日總分</span><span class="review-value">${rec.totalScore} / ${(rec._lowItemsArr ? '' : '')}50</span></div>`;
+  html += `<div class="review-row"><span class="review-label">平均分</span><span class="review-value">${rec.averageScore} / 5</span></div>`;
+  html += `<div class="review-row"><span class="review-label">狀態</span><span class="review-value">${rec.status}</span></div>`;
+  const diffTag = diff >= 0 ? `<span class="tag tag-green">+${diff}</span>` : `<span class="tag tag-red">${diff}</span>`;
+  html += `<div class="review-row"><span class="review-label">總分 vs 上次</span><span class="review-value">${lastTotal} → ${rec.totalScore}　${diffTag}</span></div>`;
 
-  // 今日六大面向雷達圖
-  html += radarChartSVG(rec._aspectAvg);
+  // 面向差異（只顯示本組有的面向）
+  const presentKeys = ASPECT_ORDER.filter(k => rec._aspectAvg[k] != null);
+  if (presentKeys.length) {
+    html += `<h4 style="margin:12px 0 6px;color:var(--blue)">面向差異</h4><div class="aspect-grid">`;
+    presentKeys.forEach(k => {
+      const d = round1((rec._aspectAvg[k] || 0) - (lastAvg[k] || 0));
+      const cls = d > 0 ? 'tag-green' : (d < 0 ? 'tag-red' : 'tag-yellow');
+      html += `<div class="aspect-cell">${KPI_ASPECTS[k].label}<br><span class="tag ${cls}">${d > 0 ? '+' : ''}${d}</span></div>`;
+    });
+    html += `</div>`;
+  }
 
-  if (bestUp.diff > 0) html += `<div class="hint-box good">📈 進步最多：${bestUp.label} +${bestUp.diff}</div>`;
-  if (worstDown.diff < 0) html += `<div class="hint-box warn">📉 需要注意：${worstDown.label} ${worstDown.diff}</div>`;
+  // 紅燈原因分析
+  if (rec._redCats && rec._redCats.length) {
+    html += `<div class="hint-box warn">🚩 今日紅燈原因：${rec._redCats.join('、')}</div>`;
+  }
+
+  // 疲勞與恢復指數
+  if (rec._recovery) {
+    const rv = rec._recovery;
+    const cls = (rv.state === '恢復良好' || rv.state === '可正常訓練') ? 'good' : 'warn';
+    html += `<div class="hint-box ${cls}">🔋 恢復指數 ${rv.score}／100 → <b>${rv.state}</b></div>`;
+  }
+
+  // 今日訓練建議（最低 1–3 項，教練口吻）
+  html += aiTrainingAdviceHtml(rec);
 
   // 體重變化
   const wDiff = round1(parseFloat(rec.weightKg) - parseFloat(last.weightKg));
@@ -1729,13 +1888,25 @@ function renderNutritionCard(rec) {
   html += `<div class="review-row"><span class="review-label">BMI</span><span class="review-value">${rec.bmi}</span></div>`;
   html += `<div class="review-row"><span class="review-label">距離目標體重</span><span class="review-value">${gapText}</span></div>`;
 
-  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">今日觀察</h4><div>`;
-  if (n.risks.length) n.risks.forEach(r => html += `<span class="tag tag-orange">${r}</span>`);
-  else html += `<span class="tag tag-green">飲食大致均衡</span>`;
+  // 今日飲食優點
+  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">✅ 今日飲食優點</h4><div>`;
+  (n.pros || []).forEach(p => html += `<span class="tag tag-green">${p}</span>`);
   html += `</div>`;
 
-  html += `<div class="hint-box">${n.student.replace(/\n/g, '<br>')}</div>`;
-  html += `<div class="hint-box good">🎯 明日飲食小目標：${n.nextGoal}</div>`;
+  // 今日飲食問題
+  html += `<h4 style="margin:12px 0 6px;color:var(--blue)">⚠️ 今日飲食問題</h4><div>`;
+  if (n.problems && n.problems.length) n.problems.forEach(p => html += `<span class="tag tag-orange">${p}</span>`);
+  else html += `<span class="tag tag-green">今天飲食大致均衡，繼續保持</span>`;
+  html += `</div>`;
+
+  // 明日建議
+  html += `<div class="hint-box good">🎯 明日建議：${n.nextGoal}</div>`;
+
+  // 補水提醒
+  if (n.hydration) html += `<div class="hint-box">💧 ${n.hydration}</div>`;
+
+  // 賽前控重提醒（距目標過遠才顯示）
+  if (n.weightControl) html += `<div class="hint-box warn">⚖️ ${n.weightControl}</div>`;
 
   // 青少年提醒
   if (rec.bmi && parseFloat(rec.bmi) >= 27) {
@@ -1787,7 +1958,7 @@ function buildLineTexts(rec, weightNote, affirm) {
 姓名：${rec.name}
 日期：${dateSlash(rec.date)}
 今日狀態：${rec.status}
-今日總分：${rec.totalScore} / 30
+今日總分：${scoreMaxText(rec)}
 平均分數：${rec.averageScore} / 5
 ${affirmBlock}
 今天最低三項：
@@ -1826,7 +1997,7 @@ ${weightNote ? '\n⚖️ ' + weightNote + '\n' : ''}
 只要願意每天修正一點，孩子的穩定度就會慢慢提升。`;
 
   // 教練版
-  const aspectLines = ASPECT_ORDER.map(k => `${KPI_ASPECTS[k].label}：${rec._aspectAvg[k]}`).join('\n');
+  const aspectLines = presentAspectKeys(rec._aspectAvg).map(k => `${KPI_ASPECTS[k].label}：${rec._aspectAvg[k]}`).join('\n');
   const coachAdvice = lowArr.length
     ? `明日安排「${lowArr.map(l => l.item).join('、')}」個別修正。`
     : '明日維持訓練節奏，挑戰更高目標。';
@@ -1846,10 +2017,10 @@ ${weightNote ? '\n⚖️ ' + weightNote + '\n' : ''}
 日期：${dateSlash(rec.date)}
 組別：${rec.group}${fsBlock}
 狀態：${rec.status}
-總分：${rec.totalScore} / 30
+總分：${scoreMaxText(rec)}
 平均：${rec.averageScore} / 5
 
-六大面向：
+面向平均：
 
 ${aspectLines}
 
@@ -2798,9 +2969,10 @@ function renderCoachReviewBlock(rec) {
   }
   const self = aspectAvgFromRecord(rec);
   const coach = hasCoachReview(rec) ? coachAspectAvgFromRecord(rec) : null;
+  const reviewKeys = presentAspectKeysFromRecord(rec).length ? presentAspectKeysFromRecord(rec) : ASPECT_ORDER;
 
   let html = `<div class="review-card" data-rid="${rec.recordId}">`;
-  html += `<div class="review-row"><span class="review-label">${dateSlash(rec.date)}</span><span class="review-value">${rec.status}　${rec.totalScore}/30</span></div>`;
+  html += `<div class="review-row"><span class="review-label">${dateSlash(rec.date)}</span><span class="review-value">${rec.status}　${scoreMaxText(rec)}</span></div>`;
 
   // 六大面向雷達圖（自評＋教練評疊圖）
   html += radarFromRecord(rec);
@@ -2817,7 +2989,7 @@ function renderCoachReviewBlock(rec) {
 
   // 教練評分表單
   html += `<details class="explain"${coach ? '' : ' open'}><summary>✍️ ${coach ? '修改' : '填寫'}教練評分</summary><div class="explain-body">`;
-  ASPECT_ORDER.forEach(k => {
+  reviewKeys.forEach(k => {
     const def = coach ? coach[k] : Math.round(self[k]);
     html += `<div class="kpi-item" style="border:none;padding:6px 0">
       <div class="kpi-item-row"><span class="kpi-item-name">${KPI_ASPECTS[k].label}<span style="color:var(--text-soft)">（自評 ${self[k]}）</span></span>
@@ -2843,8 +3015,9 @@ function renderCoachReviewBlock(rec) {
 // 綁定教練評分卡事件
 function wireCoachReviewBlock(rec) {
   if (!rec.recordId) return;
+  const reviewKeys = presentAspectKeysFromRecord(rec).length ? presentAspectKeysFromRecord(rec) : ASPECT_ORDER;
   // 拉桿即時更新數字
-  ASPECT_ORDER.forEach(k => {
+  reviewKeys.forEach(k => {
     const s = $id(`crv-${rec.recordId}-${k}`);
     if (s) s.addEventListener('input', () => { $id(`crvlbl-${rec.recordId}-${k}`).textContent = s.value; });
   });
@@ -2853,13 +3026,13 @@ function wireCoachReviewBlock(rec) {
   if (saveBtn) saveBtn.addEventListener('click', async () => {
     const fields = {};
     let total = 0;
-    ASPECT_ORDER.forEach(k => {
+    reviewKeys.forEach(k => {
       const v = parseFloat($id(`crv-${rec.recordId}-${k}`).value) || 0;
       fields[COACH_ASPECT_FIELD[k]] = v; total += v;
     });
     fields.coachTotalScore = round2(total);
-    fields.coachAverageScore = round2(total / 6);
-    fields.coachStatus = judgeStatus(total / 6);
+    fields.coachAverageScore = round2(total / reviewKeys.length);
+    fields.coachStatus = judgeStatus(total / reviewKeys.length);
     fields.coachComment = $id(`crvcomment-${rec.recordId}`).value.trim();
     saveBtn.disabled = true; saveBtn.textContent = '儲存中...';
     const ok = await updateRecordRemote(rec.recordId, fields);
@@ -2916,11 +3089,11 @@ function renderLastReviewInto(rec, box) {
   const lowItems = parseLowItems(rec);
   let html = `<h3 class="card-title">📌 上次表現回顧</h3>`;
   html += `<div class="review-row"><span class="review-label">上次日期</span><span class="review-value">${dateSlash(rec.date)}</span></div>`;
-  html += `<div class="review-row"><span class="review-label">總分</span><span class="review-value">${rec.totalScore} / 30</span></div>`;
+  html += `<div class="review-row"><span class="review-label">總分</span><span class="review-value">${scoreMaxText(rec)}</span></div>`;
   html += `<div class="review-row"><span class="review-label">平均</span><span class="review-value">${rec.averageScore} / 5</span></div>`;
   html += `<div class="review-row"><span class="review-label">狀態</span><span class="review-value">${rec.status}</span></div>`;
   html += `<div class="aspect-grid" style="margin-top:10px">`;
-  ASPECT_ORDER.forEach(k => html += `<div class="aspect-cell">${KPI_ASPECTS[k].label}<br><span class="num">${avg[k]}</span></div>`);
+  presentAspectKeysFromRecord(rec).forEach(k => html += `<div class="aspect-cell">${KPI_ASPECTS[k].label}<br><span class="num">${avg[k]}</span></div>`);
   html += `</div>`;
   html += radarFromRecord(rec);  // 六大面向雷達圖
   html += `<div class="review-row"><span class="review-label">體重</span><span class="review-value">${rec.weightKg || '--'} kg</span></div>`;
