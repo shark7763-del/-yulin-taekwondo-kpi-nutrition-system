@@ -4105,15 +4105,9 @@ function loginStep2(role) {
     const who = role === 'student' ? '選手' : '孩子';
     const players = getPlayers();
     let opts = players.map(p => `<option value="${p}">${p}</option>`).join('');
-    const codeField = role === 'parent'
-      ? `<label class="field-label" style="margin-top:10px">家長登入碼</label>
-         <input type="password" id="loginParentCode" class="text-input" placeholder="請輸入 parents 工作表 loginCode" />
-         <p class="login-sub" style="margin-top:8px">示範登入碼：P012026、P022026...</p>`
-      : '';
     s2.innerHTML = `
       <p class="login-hint">請選擇${who}姓名</p>
       <select id="loginName" class="text-input"><option value="" disabled selected>請選擇${who}</option>${opts}</select>
-      ${codeField}
       <div class="login-step2-actions">
         <button class="login-back" id="loginBack">返回</button>
         <button class="btn btn-primary" id="loginNameGo" style="flex:1">進入</button>
@@ -4123,29 +4117,9 @@ function loginStep2(role) {
     $id('loginNameGo').addEventListener('click', async () => {
       const name = $id('loginName').value;
       if (!name) { toast('請選擇姓名'); return; }
-      if (role === 'parent') {
-        const code = ($id('loginParentCode').value || '').trim();
-        const ok = await verifyParentLogin(name, code);
-        if (!ok) {
-          const errEl = $id('loginErr');
-          errEl.style.display = 'block';
-          errEl.textContent = '家長登入碼錯誤，或此家長帳號尚未啟用。';
-          return;
-        }
-      }
       finishLogin(role, name);
     });
   }
-}
-
-async function verifyParentLogin(studentName, loginCode) {
-  if (!loginCode) return false;
-  const parents = await fetchParents();
-  return parents.some(p =>
-    String(p.studentName || '').trim() === String(studentName || '').trim() &&
-    String(p.loginCode || '').trim() === String(loginCode || '').trim() &&
-    String(p.status || 'active').toLowerCase() !== 'disabled'
-  );
 }
 
 // 教練登入：用後端 ADMIN_KEY 驗證
