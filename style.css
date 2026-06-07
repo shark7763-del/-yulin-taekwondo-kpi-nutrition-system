@@ -455,3 +455,39 @@ textarea.text-input { resize: vertical; }
 .trend-summary { margin-top: 8px; font-size: 0.95rem; color: var(--text-main); }
 .trend-summary .up { color: var(--green); font-weight: 700; }
 .trend-summary .down { color: var(--red); font-weight: 700; }
+
+/* ===================== 家長後台 ===================== */
+.parent-status-card {
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--blue);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--bg-card-2);
+}
+.parent-status-card strong {
+  display: block;
+  font-size: 1.25rem;
+  margin-bottom: 4px;
+}
+.parent-status-green { border-left-color: var(--green); background: rgba(46,204,113,0.12); }
+.parent-status-blue { border-left-color: var(--blue); background: rgba(46,125,209,0.12); }
+.parent-status-yellow { border-left-color: var(--yellow); background: rgba(241,196,15,0.12); }
+.parent-status-orange { border-left-color: var(--orange); background: rgba(230,126,34,0.12); }
+.parent-status-red { border-left-color: var(--red); background: rgba(226,59,59,0.12); }
+.parent-status-gray { border-left-color: #8b95a5; background: rgba(139,149,165,0.12); }
+.status-dot {
+  display: inline-flex;
+  min-width: 76px;
+  justify-content: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.status-dot.green { color: #5fe39a; background: rgba(46,204,113,0.12); }
+.status-dot.blue { color: #7db8ec; background: rgba(46,125,209,0.12); }
+.status-dot.yellow { color: #ffe066; background: rgba(241,196,15,0.12); }
+.status-dot.orange { color: #ffb066; background: rgba(230,126,34,0.12); }
+.status-dot.red { color: #ff7b7b; background: rgba(226,59,59,0.12); }
+.status-dot.gray { color: #c4cad4; background: rgba(139,149,165,0.12); }

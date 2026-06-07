@@ -27,6 +27,16 @@
 var SHEET_NAME = 'records';
 // 選手名單工作表（全裝置共用名單）
 var ROSTER_SHEET = 'roster';
+// 家長後台工作表
+var PARENTS_SHEET = 'parents';
+var ATTENDANCE_REPORTS_SHEET = 'attendance_reports';
+
+var PARENT_HEADERS = ['parentId', 'parentName', 'phone', 'lineId', 'studentName', 'loginCode', 'status'];
+var ATTENDANCE_REPORT_HEADERS = [
+  'timestamp', 'date', 'studentName', 'attendanceStatus', 'checkInTime', 'checkOutTime',
+  'absenceReason', 'informedCoach', 'parentConfirmed', 'kpiSubmitted', 'makeupTask',
+  'makeupStatus', 'coachPublicNote', 'coachPrivateNote'
+];
 
 // Sheet 欄位順序（必須與前端 record 物件對應）
 var HEADERS = [
@@ -119,6 +129,12 @@ function handleAction(action, data) {
       return jsonOut({ ok: true, data: getRecordsByDate(data.date) });
     case 'getAllRecords':
       return jsonOut({ ok: true, data: getAllRecords() });
+    case 'getParents':
+      return jsonOut({ ok: true, data: getParents() });
+    case 'getAttendanceReportsByName':
+      return jsonOut({ ok: true, data: getAttendanceReportsByName(data.studentName || data.name, data.limit || 60) });
+    case 'getAllAttendanceReports':
+      return jsonOut({ ok: true, data: getAllAttendanceReports() });
     case 'updateRecord':
       return jsonOut(updateRecord(data.recordId, data.fields || {}));
     // ---- 通用同步儲存（任務、個人檔案目標/備註等）----
@@ -206,7 +222,9 @@ function ensureSchema(sheet) {
 function setupSheet() {
   var sheet = getSheet();
   ensureSchema(sheet);
-  return 'setupSheet 完成，表頭已建立／更新為最新版（含 recordId、教練複評欄位）。';
+  getParentsSheet();
+  getAttendanceReportsSheet();
+  return 'setupSheet 完成，表頭已建立／更新為最新版（含 parents、attendance_reports）。';
 }
 
 // 今天日期字串 yyyy-MM-dd
@@ -430,6 +448,76 @@ function setRoster(players, data) {
     sh.getRange(2, 1, players.length, 1).setValues(players.map(function (n) { return [String(n)]; }));
   }
   return { ok: true, count: players.length };
+}
+
+/* ============================================================
+   家長後台：parents / attendance_reports
+   ============================================================ */
+
+function getSheetWithHeaders(sheetName, headers) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(sheetName);
+  if (!sh) {
+    sh = ss.insertSheet(sheetName);
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+    return sh;
+  }
+  if (sh.getMaxColumns() < headers.length) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), headers.length - sh.getMaxColumns());
+  }
+  if (sh.getLastRow() === 0 || sh.getLastColumn() < headers.length || sh.getRange(1, 1).getValue() !== headers[0]) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function getParentsSheet() {
+  return getSheetWithHeaders(PARENTS_SHEET, PARENT_HEADERS);
+}
+
+function getAttendanceReportsSheet() {
+  return getSheetWithHeaders(ATTENDANCE_REPORTS_SHEET, ATTENDANCE_REPORT_HEADERS);
+}
+
+function readSheetObjects(sh, headers) {
+  var last = sh.getLastRow();
+  if (last < 2) return [];
+  var values = sh.getRange(2, 1, last - 1, headers.length).getValues();
+  var out = [];
+  for (var i = 0; i < values.length; i++) {
+    var obj = rowToObject(headers, values[i]);
+    if (obj.date) obj.date = formatDateCell(obj.date);
+    out.push(obj);
+  }
+  return out;
+}
+
+function getParents() {
+  var rows = readSheetObjects(getParentsSheet(), PARENT_HEADERS);
+  return rows.filter(function (r) {
+    return String(r.studentName || '').trim() && String(r.loginCode || '').trim();
+  });
+}
+
+function getAllAttendanceReports() {
+  var rows = readSheetObjects(getAttendanceReportsSheet(), ATTENDANCE_REPORT_HEADERS);
+  rows.sort(function (a, b) {
+    var da = formatDateCell(a.date || a.timestamp || '');
+    var db = formatDateCell(b.date || b.timestamp || '');
+    if (db !== da) return String(db).localeCompare(String(da));
+    return String(b.timestamp || '').localeCompare(String(a.timestamp || ''));
+  });
+  return rows;
+}
+
+function getAttendanceReportsByName(studentName, limit) {
+  if (!studentName) return [];
+  var rows = getAllAttendanceReports().filter(function (r) {
+    return String(r.studentName || '').trim() === String(studentName).trim();
+  });
+  return rows.slice(0, limit || 60);
 }
 
 /* ============================================================

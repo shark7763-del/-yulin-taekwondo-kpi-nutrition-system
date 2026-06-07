@@ -45,6 +45,23 @@ const DEFAULT_PLAYERS = [
   '陳希恩', '黃粲益', '黃粲祐', '林晏合', '王瀚忠', '許晨熙'
 ];
 
+const PARENT_FIELDS = ['parentId', 'parentName', 'phone', 'lineId', 'studentName', 'loginCode', 'status'];
+const ATTENDANCE_REPORT_FIELDS = [
+  'timestamp', 'date', 'studentName', 'attendanceStatus', 'checkInTime', 'checkOutTime',
+  'absenceReason', 'informedCoach', 'parentConfirmed', 'kpiSubmitted', 'makeupTask',
+  'makeupStatus', 'coachPublicNote', 'coachPrivateNote'
+];
+
+const DEFAULT_PARENTS = DEFAULT_PLAYERS.map((name, index) => ({
+  parentId: 'P' + String(index + 1).padStart(3, '0'),
+  parentName: name + '家長',
+  phone: '',
+  lineId: '',
+  studentName: name,
+  loginCode: 'P' + String(index + 1).padStart(2, '0') + '2026',
+  status: 'active'
+}));
+
 // 運動項目選單（組別）
 const GROUP_OPTIONS = [
   '跆拳道對練', '跆拳道品勢', '自由品勢', '武術套路', '散打'
@@ -401,7 +418,9 @@ const LS_KEYS = {
   players: 'yulin_players',
   webAppUrl: 'yulin_webapp_url',
   localRecords: 'yulin_local_records',
-  formDraft: 'yulin_form_draft'
+  formDraft: 'yulin_form_draft',
+  parents: 'yulin_parents',
+  attendanceReports: 'yulin_attendance_reports'
 };
 
 function getPlayers() {
@@ -428,6 +447,24 @@ function saveLocalRecord(record) {
   arr.push(record);
   localStorage.setItem(LS_KEYS.localRecords, JSON.stringify(arr));
 }
+
+function getParentsLocal() {
+  try {
+    const raw = localStorage.getItem(LS_KEYS.parents);
+    const arr = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(arr) && arr.length) return arr;
+  } catch (e) { /* */ }
+  return DEFAULT_PARENTS.slice();
+}
+
+function saveParentsLocal(arr) { localStorage.setItem(LS_KEYS.parents, JSON.stringify(arr)); }
+
+function getAttendanceReportsLocal() {
+  try { return JSON.parse(localStorage.getItem(LS_KEYS.attendanceReports)) || []; }
+  catch (e) { return []; }
+}
+
+function saveAttendanceReportsLocal(arr) { localStorage.setItem(LS_KEYS.attendanceReports, JSON.stringify(arr)); }
 
 /* ============================================================
    3. 通用小工具
@@ -1183,6 +1220,43 @@ async function fetchRecentRecords(name, limit) {
   return localRecentRecords(name, limit || 60);
 }
 
+async function fetchParents() {
+  const url = getWebAppUrl();
+  if (url) {
+    try {
+      const res = await postToWebApp({ action: 'getParents' });
+      if (res && res.ok && Array.isArray(res.data)) {
+        saveParentsLocal(res.data);
+        return res.data;
+      }
+    } catch (e) { /* 落回本機 */ }
+  }
+  return getParentsLocal();
+}
+
+async function fetchAttendanceReports(name, limit) {
+  const url = getWebAppUrl();
+  if (url) {
+    try {
+      const res = await postToWebApp({ action: 'getAttendanceReportsByName', studentName: name, name: name, limit: limit || 60 });
+      if (res && res.ok && Array.isArray(res.data)) return normalizeAttendanceReports(res.data);
+    } catch (e) { /* 落回本機 */ }
+  }
+  const local = getAttendanceReportsLocal().filter(r => String(r.studentName || r.name || '').trim() === String(name).trim());
+  return normalizeAttendanceReports(local).slice(0, limit || 60);
+}
+
+async function fetchAllAttendanceReports() {
+  const url = getWebAppUrl();
+  if (url) {
+    try {
+      const res = await postToWebApp({ action: 'getAllAttendanceReports' });
+      if (res && res.ok && Array.isArray(res.data)) return normalizeAttendanceReports(res.data);
+    } catch (e) { /* 落回本機 */ }
+  }
+  return normalizeAttendanceReports(getAttendanceReportsLocal());
+}
+
 /* ============================================================
    9.6 進步肯定（跟昨天的自己比 / 成長型思維）
    ------------------------------------------------------------
@@ -1764,8 +1838,10 @@ async function doSubmitInner(mode) {
     }
     // 同時也存一份本機，方便離線查看
     saveLocalRecord(payload);
+    upsertAttendanceReportFromKpi(payload);
   } else {
     saveLocalRecord(payload);
+    upsertAttendanceReportFromKpi(payload);
     clearDraft();
     saved = true;
     toast('💾 已存入本機測試資料');
@@ -2096,6 +2172,273 @@ async function fetchAllRecords() {
   return getLocalRecords();
 }
 
+function yesNo(value) {
+  if (value === true) return '是';
+  if (value === false) return '否';
+  const s = String(value || '').trim();
+  if (!s) return '否';
+  return ['是', 'yes', 'true', '1', '已', '有'].indexOf(s.toLowerCase()) !== -1 ? '是' : s;
+}
+
+function normalizeAttendanceStatus(status, row) {
+  const s = String(status || '').trim();
+  if (s.indexOf('補訓完成') !== -1) return '補訓完成';
+  if (s.indexOf('早退') !== -1) return '早退';
+  if (s.indexOf('遲到') !== -1) return '遲到';
+  if (s.indexOf('休息') !== -1) return '休息日';
+  if (s.indexOf('請假') !== -1) return '未出席已請假';
+  if (s.indexOf('缺席') !== -1 || s.indexOf('未出席未請假') !== -1) return '未出席未請假';
+  if (s.indexOf('未填') !== -1 || s.indexOf('尚未') !== -1) return '尚未填寫';
+  if (s.indexOf('已訓練') !== -1 || s.indexOf('準時') !== -1 || s.indexOf('出席') !== -1) return '已訓練';
+  if (yesNo(row && row.kpiSubmitted) === '是') return '已訓練';
+  return '尚未填寫';
+}
+
+function attendanceColor(status, row) {
+  const s = normalizeAttendanceStatus(status, row);
+  if (s === '已訓練' || s === '補訓完成') return 'green';
+  if (s === '未出席已請假') return 'blue';
+  if (s === '尚未填寫') return 'yellow';
+  if (s === '遲到' || s === '早退') return 'orange';
+  if (s === '未出席未請假') return 'red';
+  if (s === '休息日') return 'gray';
+  return 'yellow';
+}
+
+function normalizeAttendanceReports(rows) {
+  return (rows || []).map(row => {
+    const date = normDate(row.date || row.timestamp);
+    const status = normalizeAttendanceStatus(row.attendanceStatus || row.status, row);
+    return {
+      timestamp: row.timestamp || '',
+      date: date,
+      studentName: row.studentName || row.name || '',
+      attendanceStatus: status,
+      checkInTime: row.checkInTime || '',
+      checkOutTime: row.checkOutTime || '',
+      absenceReason: row.absenceReason || '',
+      informedCoach: yesNo(row.informedCoach),
+      parentConfirmed: yesNo(row.parentConfirmed),
+      kpiSubmitted: yesNo(row.kpiSubmitted),
+      makeupTask: row.makeupTask || '',
+      makeupStatus: row.makeupStatus || '',
+      coachPublicNote: row.coachPublicNote || row.coachReply || '',
+      coachPrivateNote: row.coachPrivateNote || row.redLightNote || ''
+    };
+  }).filter(r => r.studentName && r.date).sort((a, b) => a.date < b.date ? 1 : -1);
+}
+
+function attendanceReportFromRecord(rec) {
+  return {
+    timestamp: rec.timestamp || rec.date || '',
+    date: normDate(rec.date),
+    studentName: rec.name,
+    attendanceStatus: '已訓練',
+    checkInTime: '',
+    checkOutTime: '',
+    absenceReason: '',
+    informedCoach: '是',
+    parentConfirmed: yesNo(rec.parentNote ? '是' : ''),
+    kpiSubmitted: '是',
+    makeupTask: '',
+    makeupStatus: '',
+    coachPublicNote: rec.coachReply || '',
+    coachPrivateNote: rec.redLightNote || ''
+  };
+}
+
+function mergeAttendanceWithKpi(attendanceRows, kpiRows, studentName) {
+  const map = {};
+  normalizeAttendanceReports(attendanceRows)
+    .filter(r => !studentName || String(r.studentName || '').trim() === String(studentName || '').trim())
+    .forEach(r => { map[(r.studentName || '') + ':' + r.date] = r; });
+  (kpiRows || []).filter(r => !studentName || String(r.name || '').trim() === String(studentName || '').trim()).forEach(rec => {
+    const derived = attendanceReportFromRecord(rec);
+    const key = (derived.studentName || '') + ':' + derived.date;
+    if (!map[key]) map[key] = derived;
+    else map[key].kpiSubmitted = '是';
+  });
+  return Object.values(map).sort((a, b) => a.date < b.date ? 1 : -1);
+}
+
+function dateAdd(dateStr, delta) {
+  const d = new Date(normDate(dateStr) + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  return ymd(d);
+}
+
+function recentDates(days) {
+  const out = [];
+  for (let i = 0; i < days; i++) out.push(dateAdd(todayStr(), -i));
+  return out;
+}
+
+function weekDates() {
+  const start = weekStartMondayStr();
+  return Array.from({ length: 7 }, (_, i) => dateAdd(start, i)).filter(d => d <= todayStr());
+}
+
+function monthDates() {
+  const now = new Date();
+  const first = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const out = [];
+  for (let d = first; d <= todayStr(); d = dateAdd(d, 1)) out.push(d);
+  return out;
+}
+
+function reportByDate(rows) {
+  const map = {};
+  rows.forEach(r => { if (!map[r.date]) map[r.date] = r; });
+  return map;
+}
+
+function attendanceStats(rows, dates) {
+  const map = reportByDate(rows);
+  const periodRows = dates.map(d => map[d] || { date: d, attendanceStatus: '尚未填寫', kpiSubmitted: '否' });
+  const expectedRows = periodRows.filter(r => normalizeAttendanceStatus(r.attendanceStatus, r) !== '休息日');
+  const present = expectedRows.filter(r => ['已訓練', '遲到', '早退', '補訓完成'].indexOf(normalizeAttendanceStatus(r.attendanceStatus, r)) !== -1).length;
+  const absent = expectedRows.filter(r => ['未出席已請假', '未出席未請假'].indexOf(normalizeAttendanceStatus(r.attendanceStatus, r)) !== -1).length;
+  const late = expectedRows.filter(r => normalizeAttendanceStatus(r.attendanceStatus, r) === '遲到').length;
+  const leaveEarly = expectedRows.filter(r => normalizeAttendanceStatus(r.attendanceStatus, r) === '早退').length;
+  const makeupDone = expectedRows.filter(r => normalizeAttendanceStatus(r.attendanceStatus, r) === '補訓完成' || String(r.makeupStatus || '').indexOf('完成') !== -1).length;
+  const makeupTotal = expectedRows.filter(r => r.makeupTask || ['未出席已請假', '未出席未請假'].indexOf(normalizeAttendanceStatus(r.attendanceStatus, r)) !== -1).length;
+  return {
+    expected: expectedRows.length,
+    present,
+    absent,
+    late,
+    leaveEarly,
+    makeupDone,
+    attendanceRate: expectedRows.length ? Math.round(present / expectedRows.length * 100) + '%' : '--',
+    makeupRate: makeupTotal ? Math.round(makeupDone / makeupTotal * 100) + '%' : '--'
+  };
+}
+
+function renderStatsCells(box, cells) {
+  box.innerHTML = cells.map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
+}
+
+function parentNoticeText(studentName, status) {
+  return `您好，今日系統尚未收到 ${studentName} 的訓練紀錄。目前狀態為：${status}。若今日請假，請協助確認原因；若已完成訓練，請提醒孩子補填紀錄。謝謝。`;
+}
+
+function coachAttendanceNoticeText(names) {
+  return `今日未完成訓練紀錄名單：${names.length ? names.join('、') : '無'}。請確認是否為請假、缺席或尚未填寫。`;
+}
+
+async function renderParentDashboard() {
+  const role = getRole();
+  if (!role || role.role !== 'parent' || !role.name) return;
+  const studentName = role.name;
+  const [attendanceRows, kpiRows] = await Promise.all([
+    fetchAttendanceReports(studentName, 90),
+    fetchRecentRecords(studentName, 90)
+  ]);
+  const rows = mergeAttendanceWithKpi(attendanceRows, kpiRows, studentName);
+  const byDate = reportByDate(rows);
+  const todayRow = byDate[todayStr()] || { date: todayStr(), studentName, attendanceStatus: '尚未填寫', kpiSubmitted: '否' };
+  const todayStatus = normalizeAttendanceStatus(todayRow.attendanceStatus, todayRow);
+  const todayColor = attendanceColor(todayStatus, todayRow);
+
+  const intro = $id('parentDashboardIntro');
+  if (intro) intro.textContent = `${studentName}｜家長只能查看此孩子個人資料，不顯示全隊排名、其他學生或教練內部備註。`;
+
+  $id('parentTodayStatus').innerHTML = `
+    <div class="parent-status-card parent-status-${todayColor}">
+      <strong>${todayStatus}</strong>
+      <div class="review-label">日期：${dateSlash(todayRow.date)}｜KPI：${todayRow.kpiSubmitted || '否'}｜補訓：${todayRow.makeupStatus || '無'}</div>
+      ${todayRow.absenceReason ? `<div class="review-label">未出席原因：${escapeHtml(todayRow.absenceReason)}</div>` : ''}
+      ${todayRow.coachPublicNote ? `<div class="hint-box good">教練提醒：${escapeHtml(todayRow.coachPublicNote)}</div>` : ''}
+    </div>`;
+
+  const seven = recentDates(7).map(d => byDate[d] || { date: d, studentName, attendanceStatus: '尚未填寫', kpiSubmitted: '否' });
+  $id('parentSevenDays').innerHTML = `
+    <div class="table-scroll"><table class="record-table">
+      <thead><tr><th>日期</th><th>出席狀態</th><th>是否填寫 KPI</th><th>未出席原因</th><th>補訓狀態</th><th>教練提醒</th></tr></thead>
+      <tbody>${seven.map(r => {
+        const st = normalizeAttendanceStatus(r.attendanceStatus, r);
+        const color = attendanceColor(st, r);
+        return `<tr><td>${dateSlash(r.date)}</td><td><span class="status-dot ${color}">${st}</span></td><td>${r.kpiSubmitted || '否'}</td><td>${escapeHtml(r.absenceReason || '-')}</td><td>${escapeHtml(r.makeupStatus || '-')}</td><td>${escapeHtml(r.coachPublicNote || '-')}</td></tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+
+  const ws = attendanceStats(rows, weekDates());
+  renderStatsCells($id('parentWeekStats'), [
+    ['應到天數', ws.expected], ['實到天數', ws.present], ['未出席次數', ws.absent],
+    ['遲到次數', ws.late], ['早退次數', ws.leaveEarly], ['補訓完成數', ws.makeupDone]
+  ]);
+
+  const ms = attendanceStats(rows, monthDates());
+  renderStatsCells($id('parentMonthStats'), [
+    ['應到天數', ms.expected], ['實到天數', ms.present], ['出席率', ms.attendanceRate],
+    ['未出席次數', ms.absent], ['遲到次數', ms.late], ['早退次數', ms.leaveEarly], ['補訓完成率', ms.makeupRate]
+  ]);
+
+  const makeupRows = rows.filter(r => r.makeupTask || ['未出席已請假', '未出席未請假'].indexOf(normalizeAttendanceStatus(r.attendanceStatus, r)) !== -1);
+  $id('parentMakeupTasks').innerHTML = makeupRows.length ? `
+    <div class="table-scroll"><table class="record-table">
+      <thead><tr><th>缺席日期</th><th>缺席原因</th><th>補訓任務</th><th>完成狀態</th><th>教練確認狀態</th></tr></thead>
+      <tbody>${makeupRows.slice(0, 12).map(r => `<tr><td>${dateSlash(r.date)}</td><td>${escapeHtml(r.absenceReason || '-')}</td><td>${escapeHtml(r.makeupTask || '待教練指派')}</td><td>${escapeHtml(r.makeupStatus || '待補訓')}</td><td>${escapeHtml(r.informedCoach || '-')}</td></tr>`).join('')}</tbody>
+    </table></div>` : '<div class="hint-box good">目前沒有待補訓任務。</div>';
+
+  const notes = rows.filter(r => r.coachPublicNote).slice(0, 8);
+  $id('parentCoachNotes').innerHTML = notes.length
+    ? notes.map(r => `<div class="hint-box good"><b>${dateSlash(r.date)}</b><br>${escapeHtml(r.coachPublicNote)}</div>`).join('')
+    : '<div class="review-label">目前沒有公開給家長的提醒。</div>';
+
+  const notice = parentNoticeText(studentName, todayStatus);
+  $id('parentLineNotice').textContent = notice;
+  const copyBtn = $id('btnParentCopyNotice');
+  const shareBtn = $id('btnParentShareNotice');
+  if (copyBtn) copyBtn.onclick = () => copyText(notice);
+  if (shareBtn) shareBtn.onclick = () => shareToLine(notice);
+}
+
+function upsertAttendanceReportFromKpi(payload) {
+  const arr = getAttendanceReportsLocal();
+  const derived = attendanceReportFromRecord(payload);
+  const idx = arr.findIndex(r => String(r.studentName || r.name || '').trim() === derived.studentName && normDate(r.date) === derived.date);
+  if (idx >= 0) arr[idx] = Object.assign({}, arr[idx], derived, { kpiSubmitted: '是', attendanceStatus: arr[idx].attendanceStatus || '已訓練' });
+  else arr.push(derived);
+  saveAttendanceReportsLocal(arr);
+}
+
+async function renderCoachAttendanceReports(todays) {
+  const box = $id('coachAttendanceReports');
+  if (!box) return;
+  const filterDate = $id('coachDate').value || todayStr();
+  const allReports = await fetchAllAttendanceReports();
+  const allRecords = await fetchAllRecords();
+  let rows = mergeAttendanceWithKpi(allReports, allRecords, '').filter(r => normDate(r.date) === filterDate);
+  if (!rows.length && Array.isArray(todays)) rows = todays.map(attendanceReportFromRecord);
+  const roster = getPlayers();
+  const byName = {};
+  rows.forEach(r => { byName[String(r.studentName || '').trim()] = r; });
+  const missingNames = roster.filter(name => {
+    const r = byName[name];
+    return !r || ['尚未填寫', '未出席未請假'].indexOf(normalizeAttendanceStatus(r.attendanceStatus, r)) !== -1;
+  });
+  const notice = coachAttendanceNoticeText(missingNames);
+  box.innerHTML = `
+    <div class="hint-box warn">${escapeHtml(notice)}</div>
+    <div class="btn-group">
+      <button type="button" id="btnCoachCopyAttendanceNotice" class="btn btn-secondary">📋 複製教練通知</button>
+      <button type="button" id="btnCoachShareAttendanceNotice" class="btn btn-line-share">💬 分享到 LINE</button>
+    </div>
+    <div class="table-scroll"><table class="record-table">
+      <thead><tr><th>日期</th><th>選手</th><th>出席狀態</th><th>KPI</th><th>未出席原因</th><th>家長確認</th><th>補訓任務</th><th>補訓狀態</th><th>公開提醒</th><th>教練內部備註</th></tr></thead>
+      <tbody>${roster.map(name => {
+        const r = byName[name] || { date: filterDate, studentName: name, attendanceStatus: '尚未填寫', kpiSubmitted: '否' };
+        const st = normalizeAttendanceStatus(r.attendanceStatus, r);
+        return `<tr><td>${dateSlash(r.date)}</td><td>${escapeHtml(name)}</td><td><span class="status-dot ${attendanceColor(st, r)}">${st}</span></td><td>${r.kpiSubmitted || '否'}</td><td>${escapeHtml(r.absenceReason || '-')}</td><td>${escapeHtml(r.parentConfirmed || '否')}</td><td>${escapeHtml(r.makeupTask || '-')}</td><td>${escapeHtml(r.makeupStatus || '-')}</td><td>${escapeHtml(r.coachPublicNote || '-')}</td><td>${escapeHtml(r.coachPrivateNote || '-')}</td></tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+  const copyBtn = $id('btnCoachCopyAttendanceNotice');
+  const shareBtn = $id('btnCoachShareAttendanceNotice');
+  if (copyBtn) copyBtn.addEventListener('click', () => copyText(notice));
+  if (shareBtn) shareBtn.addEventListener('click', () => shareToLine(notice));
+}
+
 /* ============================================================
    11.3 本週之星（努力型、正向、不露分數）
    ------------------------------------------------------------
@@ -2241,6 +2584,7 @@ async function refreshCoach() {
 
   renderOverview(todays);
   renderSubmitStatus(todays);
+  renderCoachAttendanceReports(todays);
   renderStatusLists(todays);
   renderRedLightCoaching(todays);
   renderAnalysis(todays);
@@ -3703,6 +4047,7 @@ async function postToWebApp(body) {
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tabName));
+  if (tabName === 'parent') renderParentDashboard();
 }
 
 /* ============================================================
@@ -3723,7 +4068,7 @@ function clearRole() { localStorage.removeItem(ROLE_KEY); }
 // 各角色可看的分頁與預設分頁
 const ROLE_TABS = {
   student: { allowed: ['student', 'lastperf', 'profile'], default: 'student' },
-  parent: { allowed: ['lastperf', 'profile'], default: 'lastperf' },
+  parent: { allowed: ['parent', 'lastperf', 'profile'], default: 'parent' },
   coach: { allowed: ['student', 'lastperf', 'coach', 'profile', 'settings'], default: 'coach' }
 };
 const ROLE_LABEL = { student: '🥋 選手', parent: '👨‍👩‍👧 家長', coach: '📊 教練' };
@@ -3760,20 +4105,47 @@ function loginStep2(role) {
     const who = role === 'student' ? '選手' : '孩子';
     const players = getPlayers();
     let opts = players.map(p => `<option value="${p}">${p}</option>`).join('');
+    const codeField = role === 'parent'
+      ? `<label class="field-label" style="margin-top:10px">家長登入碼</label>
+         <input type="password" id="loginParentCode" class="text-input" placeholder="請輸入 parents 工作表 loginCode" />
+         <p class="login-sub" style="margin-top:8px">示範登入碼：P012026、P022026...</p>`
+      : '';
     s2.innerHTML = `
       <p class="login-hint">請選擇${who}姓名</p>
       <select id="loginName" class="text-input"><option value="" disabled selected>請選擇${who}</option>${opts}</select>
+      ${codeField}
       <div class="login-step2-actions">
         <button class="login-back" id="loginBack">返回</button>
         <button class="btn btn-primary" id="loginNameGo" style="flex:1">進入</button>
-      </div>`;
+      </div>
+      <p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none;margin-top:10px"></p>`;
     $id('loginBack').addEventListener('click', showLoginOverlay);
-    $id('loginNameGo').addEventListener('click', () => {
+    $id('loginNameGo').addEventListener('click', async () => {
       const name = $id('loginName').value;
       if (!name) { toast('請選擇姓名'); return; }
+      if (role === 'parent') {
+        const code = ($id('loginParentCode').value || '').trim();
+        const ok = await verifyParentLogin(name, code);
+        if (!ok) {
+          const errEl = $id('loginErr');
+          errEl.style.display = 'block';
+          errEl.textContent = '家長登入碼錯誤，或此家長帳號尚未啟用。';
+          return;
+        }
+      }
       finishLogin(role, name);
     });
   }
+}
+
+async function verifyParentLogin(studentName, loginCode) {
+  if (!loginCode) return false;
+  const parents = await fetchParents();
+  return parents.some(p =>
+    String(p.studentName || '').trim() === String(studentName || '').trim() &&
+    String(p.loginCode || '').trim() === String(loginCode || '').trim() &&
+    String(p.status || 'active').toLowerCase() !== 'disabled'
+  );
 }
 
 // 教練登入：用後端 ADMIN_KEY 驗證
@@ -3842,6 +4214,7 @@ function applyRole() {
     const lp = $id('lastPerfName'); if (lp) lp.value = r.name;
     if (queryCard) queryCard.style.display = 'none';
     loadLastPerfPage();
+    renderParentDashboard();
   } else if (queryCard) {
     queryCard.style.display = '';
   }
@@ -3953,6 +4326,7 @@ function init() {
   // 分享到 LINE 按鈕（跳出 LINE 讓使用者選群組／好友）
   document.querySelectorAll('.btn-line-share').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (!btn.dataset.target) return;
       const text = $id(btn.dataset.target).textContent;
       shareToLine(text);
     });
