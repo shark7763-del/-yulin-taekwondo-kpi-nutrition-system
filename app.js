@@ -223,8 +223,59 @@ const NUTRITION_KEYWORDS = {
   vegetable: ['青菜', '花椰菜', '高麗菜', '菠菜', '地瓜葉', '空心菜', '菇', '菇類', '杏鮑菇', '蔬菜', '沙拉', '番茄', '小黃瓜', '胡蘿蔔'],
   sugaryDrink: ['奶茶', '手搖', '可樂', '汽水', '紅茶', '綠茶', '珍奶', '果汁', '運動飲料', '含糖', '多多', '養樂多'],
   friedOily: ['炸', '薯條', '鹽酥雞', '雞排', '炸雞', '披薩', '漢堡', '泡麵', '滷味', '火鍋', '燒烤'],
-  staple: ['飯', '麵', '地瓜', '馬鈴薯', '吐司', '麵包', '粥', '水餃', '義大利麵', '燕麥', '饅頭']
+  staple: ['飯', '麵', '地瓜', '馬鈴薯', '吐司', '麵包', '粥', '水餃', '義大利麵', '燕麥', '饅頭'],
+  fruit: ['水果', '蘋果', '香蕉', '芭樂', '橘子', '柳丁', '葡萄', '西瓜', '芒果', '鳳梨', '奇異果', '藍莓', '番茄', '小番茄', '木瓜']
 };
+
+/*
+   飲食快速勾選標籤：學生若只填「便當／營養午餐」這種籠統字眼，
+   靠關鍵字抓不到吃了什麼，改用這排標籤直接勾選吃到的類別。
+   kind = 'good'（營養好）或 'warn'（要提醒，含糖飲料／油炸）。
+   每餐的標籤存進該餐欄位的 〔…〕 後綴（見 composeMeal / parseMeal），
+   不需新增後端欄位。tag 文字務必與分析用的判斷字串一致。
+*/
+const MEAL_TAG_DEFS = {
+  staple:  { label: '主食',   kind: 'good' },
+  protein: { label: '蛋白質', kind: 'good' },
+  veg:     { label: '蔬菜',   kind: 'good' },
+  fruit:   { label: '水果',   kind: 'good' },
+  sugary:  { label: '含糖飲料', kind: 'warn' },
+  fried:   { label: '油炸',   kind: 'warn' }
+};
+const MEAL_TAG_OPTIONS = {
+  breakfast:    ['staple', 'protein', 'veg', 'fruit', 'sugary', 'fried'],
+  lunch:        ['staple', 'protein', 'veg', 'fruit', 'sugary', 'fried'],
+  dinner:       ['staple', 'protein', 'veg', 'fruit', 'sugary', 'fried'],
+  snacksDrinks: ['fruit', 'protein', 'sugary', 'fried']
+};
+const MEAL_TAG_BOX = { breakfast: 'tagsBreakfast', lunch: 'tagsLunch', dinner: 'tagsDinner', snacksDrinks: 'tagsSnacksDrinks' };
+const MEAL_TAG_LABELS = Object.keys(MEAL_TAG_DEFS).map(k => MEAL_TAG_DEFS[k].label);
+
+// 把使用者輸入的餐點文字與勾選標籤合併成存檔字串（標籤放 〔…〕 後綴）
+function composeMeal(text, tags) {
+  const t = (text || '').trim();
+  if (!tags || !tags.length) return t;
+  return (t ? t + ' ' : '') + '〔' + tags.join('・') + '〕';
+}
+// 從存檔字串拆出 { text, tags }；舊資料沒有 〔…〕 就回傳整串為 text、tags 空陣列
+function parseMeal(str) {
+  const s = (str || '').toString();
+  const m = s.match(/^([\s\S]*?)\s*〔([^〕]*)〕\s*$/);
+  if (!m) return { text: s.trim(), tags: [] };
+  return { text: m[1].trim(), tags: m[2].split(/[・,、]/).map(x => x.trim()).filter(Boolean) };
+}
+// 餐點欄顯示：文字 ＋ 標籤小色塊（含糖飲料／油炸用紅色，其餘綠色）
+function mealValueHtml(val) {
+  const { text, tags } = parseMeal(val);
+  let h = escapeHtml(text || '—').replace(/\n/g, '<br>');
+  if (tags.length) {
+    h += ' ' + tags.map(t => {
+      const warn = (t === '含糖飲料' || t === '油炸');
+      return `<span class="tag ${warn ? 'tag-red' : 'tag-green'}" style="font-size:0.72rem;padding:1px 8px;">${escapeHtml(t)}</span>`;
+    }).join('');
+  }
+  return h;
+}
 
 /*
    建議對照表 suggestionMap：細項 -> { 提醒, 建議 }
@@ -776,6 +827,58 @@ function buildChipToggler(boxId, targetId, items) {
   box.dataset.ready = '1';
 }
 
+/* ---- 飲食快速勾選標籤 ---- */
+// 建立每餐的可點選標籤（state 直接掛在 chip 的 .sel class 上）
+function buildMealTagChips() {
+  Object.keys(MEAL_TAG_BOX).forEach(meal => {
+    const box = $id(MEAL_TAG_BOX[meal]);
+    if (!box || box.dataset.ready) return;
+    box.innerHTML = '';
+    (MEAL_TAG_OPTIONS[meal] || []).forEach(key => {
+      const def = MEAL_TAG_DEFS[key];
+      if (!def) return;
+      const chip = document.createElement('span');
+      chip.className = 'chip' + (def.kind === 'warn' ? ' chip-warn' : '');
+      chip.textContent = def.label;
+      chip.dataset.label = def.label;
+      chip.addEventListener('click', () => {
+        chip.classList.toggle('sel');
+        saveDraft();
+      });
+      box.appendChild(chip);
+    });
+    box.dataset.ready = '1';
+  });
+}
+// 讀某餐目前勾選的標籤文字陣列
+function getMealTags(meal) {
+  const box = $id(MEAL_TAG_BOX[meal]);
+  if (!box) return [];
+  return Array.from(box.querySelectorAll('.chip.sel')).map(c => c.dataset.label);
+}
+// 還原某餐的勾選狀態（草稿用）
+function setMealTags(meal, tags) {
+  const box = $id(MEAL_TAG_BOX[meal]);
+  if (!box) return;
+  const want = (tags || []).map(String);
+  box.querySelectorAll('.chip').forEach(c => {
+    c.classList.toggle('sel', want.indexOf(c.dataset.label) !== -1);
+  });
+}
+// 全部餐點標籤一起讀 { breakfast:[], lunch:[], dinner:[], snacksDrinks:[] }
+function getAllMealTags() {
+  const out = {};
+  Object.keys(MEAL_TAG_BOX).forEach(meal => { out[meal] = getMealTags(meal); });
+  return out;
+}
+// 清空所有勾選
+function clearMealTags() {
+  Object.keys(MEAL_TAG_BOX).forEach(meal => {
+    const box = $id(MEAL_TAG_BOX[meal]);
+    if (box) box.querySelectorAll('.chip.sel').forEach(c => c.classList.remove('sel'));
+  });
+}
+
 // 依個人最近出席紀錄，算出請假的累積影響，顯示在未出席表單上方
 async function renderAbsenceImpact() {
   const box = $id('absenceImpact');
@@ -1008,17 +1111,31 @@ function analyzeNutrition(data) {
   const { breakfast, lunch, dinner, snacksDrinks, waterIntake, lateNightSnack, trainingIntensity, bmi, weightKg } = data;
   const allFood = [breakfast, lunch, dinner, snacksDrinks].join(' ');
 
-  const hasProtein = containsKeyword(allFood, NUTRITION_KEYWORDS.protein);
-  const hasVegetable = containsKeyword(allFood, NUTRITION_KEYWORDS.vegetable);
-  const hasStaple = containsKeyword(allFood, NUTRITION_KEYWORDS.staple);
-  const hasSugary = containsKeyword(snacksDrinks, NUTRITION_KEYWORDS.sugaryDrink) || containsKeyword(allFood, NUTRITION_KEYWORDS.sugaryDrink);
-  const hasFried = containsKeyword(allFood, NUTRITION_KEYWORDS.friedOily);
+  // 快速勾選標籤（優先採用）；舊資料／沒勾選時自動退回關鍵字判斷。
+  // 同時相容兩種來源：data.mealTags（送出時即時勾選）與餐點字串裡的 〔…〕（讀回的歷史紀錄）。
+  const mt = data.mealTags || {};
+  const allTags = [].concat(
+    mt.breakfast || parseMeal(breakfast).tags,
+    mt.lunch || parseMeal(lunch).tags,
+    mt.dinner || parseMeal(dinner).tags,
+    mt.snacksDrinks || parseMeal(snacksDrinks).tags
+  );
+  const hasTag = (label) => allTags.indexOf(label) !== -1;
+
+  const hasProtein = hasTag('蛋白質') || containsKeyword(allFood, NUTRITION_KEYWORDS.protein);
+  const hasVegetable = hasTag('蔬菜') || containsKeyword(allFood, NUTRITION_KEYWORDS.vegetable);
+  const hasStaple = hasTag('主食') || containsKeyword(allFood, NUTRITION_KEYWORDS.staple);
+  const hasFruit = hasTag('水果') || containsKeyword(allFood, NUTRITION_KEYWORDS.fruit);
+  const hasSugary = hasTag('含糖飲料') || containsKeyword(snacksDrinks, NUTRITION_KEYWORDS.sugaryDrink) || containsKeyword(allFood, NUTRITION_KEYWORDS.sugaryDrink);
+  const hasFried = hasTag('油炸') || containsKeyword(allFood, NUTRITION_KEYWORDS.friedOily);
   const lowWater = (waterIntake === '少於 500ml' || waterIntake === '500-1000ml');
   const hasLateNight = lateNightSnack && lateNightSnack !== '無';
   const heavyLateNight = lateNightSnack === '有，偏多';
   const isHighIntensity = (trainingIntensity === '高' || trainingIntensity === '比賽日');
   const isRecoveryDay = (trainingIntensity === '恢復日');
-  const noBreakfast = isEmptyMeal(breakfast);
+  // 早餐：文字空 且 沒勾任何早餐標籤，才算沒吃
+  const breakfastTags = mt.breakfast || parseMeal(breakfast).tags;
+  const noBreakfast = isEmptyMeal(parseMeal(breakfast).text) && (!breakfastTags || !breakfastTags.length);
 
   const risks = [];
   if (!hasProtein) risks.push('蛋白質不足');
@@ -1082,6 +1199,7 @@ function analyzeNutrition(data) {
   if (hasProtein) pros.push('有吃到蛋白質，對肌肉修復很好');
   if (hasVegetable) pros.push('有攝取蔬菜，幫助消化與恢復');
   if (hasStaple) pros.push('有補充主食，訓練才有能量');
+  if (hasFruit) pros.push('有吃水果，補充維生素與水分');
   if (!hasSugary) pros.push('沒有過多含糖飲料，很棒');
   if (!hasLateNight) pros.push('沒有吃宵夜，有助睡眠恢復');
   if (!pros.length) pros.push('今天有完成飲食紀錄，這就是好的開始');
@@ -1204,10 +1322,11 @@ function renderLastReview(rec, containerId, cardId) {
   // 當日飲食狀況（讓選手回顧前一天吃了什麼）
   html += `<h4 style="margin:12px 0 6px;color:var(--blue)">🍱 當日飲食狀況</h4>`;
   const mealRow = (label, val) => `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${escapeHtml(val || '—').replace(/\n/g, '<br>')}</span></div>`;
-  html += mealRow('早餐', rec.breakfast);
-  html += mealRow('午餐', rec.lunch);
-  html += mealRow('晚餐', rec.dinner);
-  if (rec.snacksDrinks) html += mealRow('點心／飲料', rec.snacksDrinks);
+  const foodRow = (label, val) => `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${mealValueHtml(val)}</span></div>`;
+  html += foodRow('早餐', rec.breakfast);
+  html += foodRow('午餐', rec.lunch);
+  html += foodRow('晚餐', rec.dinner);
+  if (rec.snacksDrinks) html += foodRow('點心／飲料', rec.snacksDrinks);
   html += mealRow('今日水量', rec.waterIntake);
   html += mealRow('宵夜', rec.lateNightSnack);
   html += mealRow('訓練強度', rec.trainingIntensity);
@@ -1741,11 +1860,27 @@ function buildRecord() {
   const rpe = $id('rpe') ? $id('rpe').value : '';
   const injuryArea = $id('injuryArea') ? $id('injuryArea').value : '';
 
-  const nutritionInput = {
+  // 餐點：文字（學生打的字，給關鍵字分析用）＋快速勾選標籤（給標籤分析用）
+  const mealTags = getAllMealTags();
+  const mealText = {
     breakfast: $id('breakfast').value,
     lunch: $id('lunch').value,
     dinner: $id('dinner').value,
-    snacksDrinks: $id('snacksDrinks').value,
+    snacksDrinks: $id('snacksDrinks').value
+  };
+  // 存檔字串：把標籤併進餐點欄（不需新增後端欄位）
+  const mealStored = {
+    breakfast: composeMeal(mealText.breakfast, mealTags.breakfast),
+    lunch: composeMeal(mealText.lunch, mealTags.lunch),
+    dinner: composeMeal(mealText.dinner, mealTags.dinner),
+    snacksDrinks: composeMeal(mealText.snacksDrinks, mealTags.snacksDrinks)
+  };
+  const nutritionInput = {
+    breakfast: mealText.breakfast,
+    lunch: mealText.lunch,
+    dinner: mealText.dinner,
+    snacksDrinks: mealText.snacksDrinks,
+    mealTags: mealTags,
     waterIntake: $id('waterIntake').value,
     lateNightSnack: $id('lateNightSnack').value,
     trainingIntensity: $id('trainingIntensity').value,
@@ -1789,10 +1924,10 @@ function buildRecord() {
     targetWeightKg: targetWeightKg,
     bmi: bmi,
     weightGap: weightGap,
-    breakfast: $id('breakfast').value,
-    lunch: $id('lunch').value,
-    dinner: $id('dinner').value,
-    snacksDrinks: $id('snacksDrinks').value,
+    breakfast: mealStored.breakfast,
+    lunch: mealStored.lunch,
+    dinner: mealStored.dinner,
+    snacksDrinks: mealStored.snacksDrinks,
     waterIntake: $id('waterIntake').value,
     lateNightSnack: $id('lateNightSnack').value,
     trainingIntensity: $id('trainingIntensity').value,
@@ -3638,10 +3773,11 @@ function renderLastReviewInto(rec, box) {
   // 當日飲食狀況（給家長看孩子每天吃什麼＋家長版建議）
   html += `<h4 style="margin:12px 0 6px;color:var(--blue)">🍱 當日飲食狀況</h4>`;
   const mealRow = (label, val) => `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${escapeHtml(val || '—').replace(/\n/g, '<br>')}</span></div>`;
-  html += mealRow('早餐', rec.breakfast);
-  html += mealRow('午餐', rec.lunch);
-  html += mealRow('晚餐', rec.dinner);
-  if (rec.snacksDrinks) html += mealRow('點心／飲料', rec.snacksDrinks);
+  const foodRow = (label, val) => `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${mealValueHtml(val)}</span></div>`;
+  html += foodRow('早餐', rec.breakfast);
+  html += foodRow('午餐', rec.lunch);
+  html += foodRow('晚餐', rec.dinner);
+  if (rec.snacksDrinks) html += foodRow('點心／飲料', rec.snacksDrinks);
   html += mealRow('今日水量', rec.waterIntake);
   html += mealRow('宵夜', rec.lateNightSnack);
   html += mealRow('訓練強度', rec.trainingIntensity);
@@ -4433,6 +4569,7 @@ function init() {
   // 下拉選單
   fillSelect($id('group'), GROUP_OPTIONS, '請選擇組別');
   buildAbsenceChips();   // 未出席訓練反思快捷選項
+  buildMealTagChips();   // 飲食快速勾選標籤
   fillSelect($id('waterIntake'), WATER_OPTIONS, '請選擇水量');
   fillSelect($id('lateNightSnack'), LATE_NIGHT_OPTIONS);
   fillSelect($id('trainingIntensity'), INTENSITY_OPTIONS, '請選擇強度');
@@ -4572,6 +4709,7 @@ function clearForm() {
    'reflection', 'tomorrowGoal', 'encouragementToTeammate', 'mainGoalToday'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
   if ($id('absenceHonesty')) $id('absenceHonesty').selectedIndex = 0;
   document.querySelectorAll('#absenceMissChips .chip, #absenceCatchupChips .chip').forEach(c => c.classList.remove('sel'));
+  clearMealTags();
   $id('date').value = todayStr();
   $id('bodyStatus').value = '普通';
   ['group', 'waterIntake', 'trainingIntensity'].forEach(id => $id(id).selectedIndex = 0);
@@ -4616,6 +4754,7 @@ function saveDraft() {
   DRAFT_FIELDS.forEach(id => { const el = $id(id); if (el) d[id] = el.value; });
   d._kpi = {};
   document.querySelectorAll('.kpi-slider').forEach(s => { d._kpi[s.id] = s.value; });
+  d._mealTags = getAllMealTags();   // 飲食快速勾選狀態
   try { localStorage.setItem(LS_KEYS.formDraft, JSON.stringify(d)); } catch (e) { /* 容量滿就略過 */ }
 }
 
@@ -4644,6 +4783,7 @@ function restoreDraft() {
     const s = $id(sid);
     if (s) { s.value = d._kpi[sid]; s.dispatchEvent(new Event('input')); }
   });
+  if (d._mealTags) Object.keys(d._mealTags).forEach(meal => setMealTags(meal, d._mealTags[meal]));
   updateBmiDisplay();
   return true;
 }

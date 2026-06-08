@@ -192,17 +192,23 @@
         <fieldset class="form-section training-only">
           <legend>飲食紀錄 🍱</legend>
 
+          <p class="meal-tags-hint">填「便當／營養午餐」也沒關係，下面點一下吃到的類別就好 👇</p>
+
           <label class="field-label">今日早餐 <span class="req">*</span></label>
-          <input type="text" id="breakfast" class="text-input" placeholder="例如：蛋餅、豆漿" />
+          <input type="text" id="breakfast" class="text-input" placeholder="例如：蛋餅、豆漿（或直接寫便當）" />
+          <div class="meal-tags quick-chips" id="tagsBreakfast" data-meal="breakfast"></div>
 
           <label class="field-label">今日午餐 <span class="req">*</span></label>
-          <input type="text" id="lunch" class="text-input" placeholder="例如：雞腿便當、青菜" />
+          <input type="text" id="lunch" class="text-input" placeholder="例如：雞腿便當、營養午餐" />
+          <div class="meal-tags quick-chips" id="tagsLunch" data-meal="lunch"></div>
 
           <label class="field-label">今日晚餐 <span class="req">*</span></label>
-          <input type="text" id="dinner" class="text-input" placeholder="例如：魚、飯、花椰菜" />
+          <input type="text" id="dinner" class="text-input" placeholder="例如：魚、飯、花椰菜（或直接寫便當）" />
+          <div class="meal-tags quick-chips" id="tagsDinner" data-meal="dinner"></div>
 
           <label class="field-label">今日點心／飲料</label>
           <input type="text" id="snacksDrinks" class="text-input" placeholder="例如：奶茶、餅乾" />
+          <div class="meal-tags quick-chips" id="tagsSnacksDrinks" data-meal="snacksDrinks"></div>
 
           <label class="field-label">今日水量 <span class="req">*</span></label>
           <select id="waterIntake" class="text-input"></select>
