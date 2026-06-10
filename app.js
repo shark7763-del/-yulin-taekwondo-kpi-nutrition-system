@@ -4683,8 +4683,22 @@ function init() {
 */
 function shareToLine(text) {
   if (!text || !text.trim()) { toast('沒有可分享的內容'); return; }
-  const url = 'https://line.me/R/msg/text/?' + encodeURIComponent(text);
-  window.open(url, '_blank');
+  // 1) 先複製到剪貼簿，當作萬用後備：桌機沒有 LINE App、或瀏覽器擋彈窗時，
+  //    使用者仍可直接切到 LINE 群組長按貼上。
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {});
+  } else {
+    fallbackCopy(text);
+  }
+  // 2) 再嘗試開啟 LINE 分享頁，讓使用者自己選群組／好友（手機裝 LINE 會帶入文字）。
+  //    改用現行的 /R/share 端點，比舊的 /R/msg/text/ 對群組支援更穩。
+  const url = 'https://line.me/R/share?text=' + encodeURIComponent(text);
+  const win = window.open(url, '_blank');
+  if (!win) {
+    toast('✅ 內容已複製，請切到 LINE 手動貼到群組（未裝 LINE 或被擋彈窗）');
+  } else {
+    toast('✅ 已複製並開啟 LINE，選好群組後若沒自動帶入文字，直接貼上即可');
+  }
 }
 
 // 複製文字（相容無 navigator.clipboard 的情況）
