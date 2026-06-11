@@ -1241,8 +1241,17 @@ function aspectAvgFromRecord(rec) {
 }
 
 function recordScoreMax(rec) {
-  const total = parseFloat(rec && rec.totalScore);
-  return total > 30 ? 50 : 30;
+  // 優先用實際項目數判斷：10 項=滿分 50、6 項=滿分 30
+  try {
+    const scores = JSON.parse((rec && rec.rawScoresJson) || '{}');
+    let n = 0;
+    Object.keys(scores).forEach(k => { n += Object.keys(scores[k] || {}).length; });
+    if (n >= 7) return 50;
+    if (n > 0) return 30;
+  } catch (e) { /* 落回下面判斷 */ }
+  // 沒有 rawScoresJson 的舊資料：新制 standard 視為 50，否則看總分
+  if (rec && rec.mode === 'standard') return 50;
+  return (parseFloat(rec && rec.totalScore) > 30) ? 50 : 30;
 }
 
 function presentAspectKeys(avg) {
@@ -2025,7 +2034,7 @@ async function doSubmit(mode) {
 
   // 鎖定送出按鈕，避免連點
   _submitting = true;
-  const submitBtns = [$id('btnSubmit'), $id('btnLocalSubmit')].filter(Boolean);
+  const submitBtns = [$id('btnSubmit'), $id('btnLocalSubmit'), $id('btnSubmitShare')].filter(Boolean);
   submitBtns.forEach(b => b.disabled = true);
 
   try {
@@ -3013,8 +3022,8 @@ function renderSubmitStatus(todays) {
     if (cntEl) cntEl.textContent = `（${getPicked().length}）`;
   }
 
-  // 催繳訊息文字（只含勾選的人）
-  function buildRemindText(names) {
+  // 催繳訊息文字（只含勾選的人）。改名避免和全域 buildRemindText（教練提醒語）衝突。
+  function buildAttendanceRemindText(names) {
     const dateStr = dateSlash($id('coachDate').value || todayStr());
     const fillUrl = location.origin + location.pathname;
     return `🥋 育林國中技擊隊｜今日 KPI 填寫提醒
@@ -3057,7 +3066,7 @@ ${fillUrl}`;
   if (copyBtn) copyBtn.addEventListener('click', () => {
     const picked = getPicked();
     if (!picked.length) { toast('請至少點選一位'); return; }
-    copyText(buildRemindText(picked));
+    copyText(buildAttendanceRemindText(picked));
   });
 
   // 分享催繳到 LINE（免費分享，跳出 LINE 選群組送出，不吃推播額度）
@@ -3065,7 +3074,7 @@ ${fillUrl}`;
   if (shareBtn) shareBtn.addEventListener('click', () => {
     const picked = getPicked();
     if (!picked.length) { toast('請至少點選一位'); return; }
-    shareToLine(buildRemindText(picked));
+    shareToLine(buildAttendanceRemindText(picked));
   });
 
   updateRemindCount();
@@ -4455,6 +4464,14 @@ async function coachLogin() {
   const pwd = $id('loginCoachPwd').value;
   const errEl = $id('loginErr');
   const go = $id('loginCoachGo');
+
+  // 一律擋空白密碼，避免「直接按進入」就闖進教練後台
+  if (!pwd || !pwd.trim()) {
+    errEl.style.display = 'block';
+    errEl.textContent = '請輸入教練密碼。';
+    return;
+  }
+
   go.disabled = true; go.textContent = '驗證中...';
   let result = { ok: false, keySet: true };
   if (getWebAppUrl()) {
@@ -4466,7 +4483,10 @@ async function coachLogin() {
   go.disabled = false; go.textContent = '進入';
 
   if (result.ok) {
-    if (result.keySet === false) toast('尚未設定教練密碼，建議到系統設定設一組');
+    if (result.keySet === false) {
+      // 後端還沒設 ADMIN_KEY：先放行讓教練進去設定，但強烈提醒（此時系統其實沒上鎖）
+      alert('⚠️ 後端尚未設定教練密碼，目前任何人都能進入教練後台。\n請立刻到「系統設定 → 教練密碼設定」設一組密碼。');
+    }
     // 記住教練密碼供名單同步等使用
     if (pwd) saveLineAdminKey(pwd);
     finishLogin('coach', '');
@@ -4500,6 +4520,10 @@ function applyRole() {
   badge.style.display = 'inline-block';
   badge.textContent = ROLE_LABEL[r.role] + (r.name ? '：' + r.name : '');
   $id('btnSwitchRole').style.display = 'block';
+
+  // 「💾 本機測試送出」只給教練看；學生/家長誤按會以為填完，其實沒進後台
+  const localBtn = $id('btnLocalSubmit');
+  if (localBtn) localBtn.style.display = (r.role === 'coach') ? '' : 'none';
 
   // 選手：鎖定姓名為自己
   if (r.role === 'student' && r.name) {

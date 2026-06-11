@@ -2,24 +2,31 @@
 
 ## 用法
 
-1. 開啟你的 Google Sheet。
-2. 在第一個工作表，把名稱改成 `records`（小寫，與 `Code.gs` 的 `SHEET_NAME` 一致）。
-3. 點選 **A1 儲存格**。
-4. 複製下面「一行 tab 分隔」的表頭，貼到 A1。
-   - Google Sheet 會自動把 tab 分隔的內容拆成一欄一欄，剛好填滿 A1 到 CR1。
-5. 完成後第一列就是正確的欄位順序。
+1. 開啟你的 Google Sheet（與 Apps Script 綁定的那一份）。
+2. 開啟 **擴充功能 → Apps Script** 編輯器。
+3. 函式下拉選 `setupSheet`，按「執行」（第一次會要求授權）。
+4. 完成後 `records` 工作表與正確表頭會自動建立／更新，欄位順序保證與程式一致。
 
-> 也可以不手動貼，直接在 Apps Script 編輯器執行一次 `setupSheet()`，系統會自動建立 `records` 工作表與表頭。
+> 不需要、也請不要手動把表頭貼到 A1（會欄位錯位）。詳見下方「重要」說明。
 
 ---
 
-## 一行 tab 分隔表頭（複製這一整行）
+## ⚠️ 重要：請「不要」再手動貼表頭
 
-```
-timestamp	date	name	gradeClass	group	trainingTopic	bodyStatus	sleepHours	sleepQuality	soreness	rpe	injuryArea	heightCm	weightKg	targetWeightKg	bmi	weightGap	breakfast	lunch	dinner	snacksDrinks	waterIntake	lateNightSnack	trainingIntensity	physicalAvg	technicalAvg	focusAvg	disciplineAvg	emotionAvg	tacticalAvg	totalScore	averageScore	status	recoveryScore	recoveryState	redLightCategories	lowItems	improveTargets	mainGoalToday	reflection	tomorrowGoal	encouragementToTeammate	nutritionRisks	nutritionAdviceStudent	nutritionAdviceParent	nutritionAdviceCoach	studentLineText	parentLineText	coachLineText	nutritionLineText	rawScoresJson	rawNutritionJson	recordId	coachPhysicalAvg	coachTechnicalAvg	coachFocusAvg	coachDisciplineAvg	coachEmotionAvg	coachTacticalAvg	coachTotalScore	coachAverageScore	coachStatus	coachComment	studentResponse	coachReply	reviewUpdatedAt	encourageTeammateName	parentNote	mode	freestyleTotal	freestyleStatus	freestyleDifficulty	freestyleCompletion	freestyleMusic	freestyleCreativity	freestyleExpression	freestyleSafety	rawFreestyleScoresJson	freestyleLineText	musicName	musicSeconds	freestyleTheme	practiceSection	aerialSuccessRate	spinSuccessRate	acroSuccessRate	comboKickCount	landingErrors	breakCount	needVideoFix	focusEightCount	aerialKickCount	unlockedMoves	redLightReason	redLightHandling	redLightNote
-```
+早期版本曾提供一行 tab 表頭給大家貼到 A1。**現在請勿這樣做。**
 
-> 💡 `recordId` 起是「交叉辯論／教練複評」、自由品勢與紅燈處理紀錄功能用的欄位，**不用手動補**——只要在 Apps Script 編輯器重新執行一次 `setupSheet()`，系統會自動把工作表補到最新欄位。
+原因：為了讓 100+ 筆舊資料自動對位，`Code.gs` 已把
+`sleepHours, sleepQuality, soreness, rpe, injuryArea, recoveryScore, recoveryState, redLightCategories`
+這 8 欄從「中間」移到「最後面」，並陸續新增 `absenceReason / absenceMiss / absenceCatchup / absenceHonesty / absenceReflection` 等欄位。
+舊版的手動表頭順序已經和程式不一致，**手動貼會造成整批欄位錯位、資料讀錯**。
+
+### ✅ 正確做法（只要一步）
+
+在 **Apps Script 編輯器**，函式下拉選 `setupSheet`，按一次「執行」。
+系統會自動建立 / 補齊 `records`、`roster`、`parents`、`attendance_reports`、`appdata` 工作表，
+表頭順序永遠以 `Code.gs` 的 `HEADERS` 為準，新增欄位都接在最後、不影響舊資料。
+
+> 表頭的「唯一真實來源」是 `Code.gs` 裡的 `HEADERS` 陣列。要看欄位順序請直接看那裡，本檔只做欄位說明用。
 
 ---
 
