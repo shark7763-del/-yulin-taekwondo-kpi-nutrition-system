@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260612a" />
+  <link rel="stylesheet" href="style.css?v=20260615a" />
 </head>
 <body>
 
@@ -266,6 +266,55 @@
           <button type="button" id="btnClear" class="btn btn-ghost">🧹 一鍵清空表單</button>
         </div>
       </form>
+
+      <!-- ========================================================= -->
+      <!-- 送出後：AI 教練回饋卡（選手／家長／教練三版本）            -->
+      <!-- ========================================================= -->
+      <div class="card coach-fb-card" id="coachFeedbackCard" style="display:none;">
+        <div class="cfb-head">
+          <h3 class="card-title" style="margin-bottom:0;border:none;padding-left:0;">🧑‍🏫 AI 教練回饋卡</h3>
+          <span id="cfbStatusBadge" class="cfb-badge"></span>
+        </div>
+        <p class="cfb-intro">送出完成，這是教練看完你今天紀錄後想對你說的話。</p>
+
+        <!-- 1. 今日狀態 -->
+        <div class="cfb-section">
+          <h4 class="cfb-sec-title">📊 今日狀態</h4>
+          <div id="cfbStatusGrid" class="cfb-status-grid"></div>
+        </div>
+
+        <!-- 2. 教練回饋（三版本切換） -->
+        <div class="cfb-section">
+          <h4 class="cfb-sec-title">🧑‍🏫 教練回饋</h4>
+          <div class="cfb-tabs">
+            <button type="button" class="cfb-tab active" data-fb="student">🥋 選手版</button>
+            <button type="button" class="cfb-tab" data-fb="parent">👨‍👩‍👧 家長版</button>
+            <button type="button" class="cfb-tab" data-fb="coach">📊 教練版</button>
+          </div>
+          <div id="cfbBody" class="cfb-body"></div>
+        </div>
+
+        <!-- 3. 明日任務 -->
+        <div class="cfb-section">
+          <h4 class="cfb-sec-title">🎯 明日任務</h4>
+          <div id="cfbTomorrow" class="cfb-tomorrow"></div>
+        </div>
+
+        <!-- 4. 分享到 LINE -->
+        <div class="cfb-section">
+          <h4 class="cfb-sec-title">📱 分享到 LINE</h4>
+          <div class="cfb-share-btns">
+            <button type="button" class="cfb-share-btn active" data-fb="student">🥋 選手版</button>
+            <button type="button" class="cfb-share-btn" data-fb="parent">👨‍👩‍👧 家長版</button>
+            <button type="button" class="cfb-share-btn" data-fb="coach">📊 教練版</button>
+          </div>
+          <pre id="cfbShareText" class="line-text"></pre>
+          <div class="btn-group">
+            <button type="button" id="cfbCopy" class="btn btn-secondary">📋 複製目前版本</button>
+            <button type="button" id="cfbShareLine" class="btn btn-line-share">💬 分享到 LINE</button>
+          </div>
+        </div>
+      </div>
 
       <!-- 送出後：今日 vs 上次 -->
       <div class="card" id="compareCard" style="display:none;">
@@ -644,6 +693,6 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260612a"></script>
+  <script src="app.js?v=20260615a"></script>
 </body>
 </html>

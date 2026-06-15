@@ -215,6 +215,70 @@ textarea.text-input { resize: vertical; }
   font-family: inherit; font-size: 0.9rem; color: var(--text-main);
 }
 
+/* ===================== AI 教練回饋卡 ===================== */
+.coach-fb-card {
+  border: 1px solid var(--gold);
+  box-shadow: 0 8px 26px rgba(245, 197, 24, 0.16), var(--shadow);
+}
+.cfb-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cfb-badge {
+  font-size: 0.82rem; font-weight: 800; padding: 4px 12px; border-radius: 20px;
+  border: 1px solid var(--border); background: #0f141c; color: var(--text-main);
+}
+.cfb-badge-green { border-color: var(--green); color: #5fe39a; background: rgba(46,204,113,0.14); }
+.cfb-badge-yellow { border-color: var(--yellow); color: #ffe066; background: rgba(241,196,15,0.14); }
+.cfb-badge-red { border-color: var(--red); color: #ff7b7b; background: rgba(226,59,59,0.14); }
+.cfb-badge-injury { border-color: var(--orange); color: #ffb066; background: rgba(230,126,34,0.14); }
+.cfb-badge-precomp { border-color: var(--blue); color: #7db8ec; background: rgba(46,125,209,0.14); }
+.cfb-badge-absence { border-color: var(--text-soft); color: var(--text-soft); }
+.cfb-intro { color: var(--text-soft); font-size: 0.9rem; margin: 8px 0 4px; }
+
+.cfb-section { margin-top: 18px; }
+.cfb-sec-title {
+  font-size: 1rem; color: var(--gold); font-weight: 800; margin-bottom: 10px;
+  padding-bottom: 6px; border-bottom: 1px dashed var(--border);
+}
+
+.cfb-status-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.cfb-stat {
+  background: #0f141c; border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 6px;
+}
+.cfb-stat-label { color: var(--text-soft); font-size: 0.85rem; }
+.cfb-stat-value { font-weight: 800; text-align: right; }
+.cfb-tone-good { color: #5fe39a; }
+.cfb-tone-warn { color: #ffb066; }
+.cfb-tone-danger { color: #ff7b7b; }
+.cfb-tone-none { color: var(--text-main); }
+
+.cfb-tabs, .cfb-share-btns { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.cfb-tab, .cfb-share-btn {
+  flex: 1 1 auto; min-width: 92px; padding: 10px 8px; cursor: pointer;
+  background: #0f141c; color: var(--text-soft); border: 1px solid var(--border);
+  border-radius: 10px; font-weight: 700; font-size: 0.9rem; font-family: inherit;
+  transition: filter 0.15s, border-color 0.15s;
+}
+.cfb-tab.active, .cfb-share-btn.active {
+  background: linear-gradient(135deg, var(--gold), #d8a90a); color: #1a1206; border-color: var(--gold);
+}
+.cfb-tab:hover, .cfb-share-btn:hover { filter: brightness(1.08); }
+
+.cfb-block {
+  background: #0f141c; border: 1px solid var(--border); border-left: 4px solid var(--blue);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+}
+.cfb-block.cfb-good { border-left-color: var(--green); }
+.cfb-block.cfb-warn { border-left-color: var(--orange); }
+.cfb-block-title { font-weight: 800; color: var(--gold); margin-bottom: 6px; font-size: 0.95rem; }
+.cfb-block-text { color: var(--text-main); line-height: 1.7; }
+
+.cfb-quote {
+  background: linear-gradient(135deg, rgba(245,197,24,0.10), rgba(46,125,209,0.08));
+  border: 1px solid var(--gold); border-radius: 12px; padding: 14px 16px; margin-top: 6px;
+  font-size: 1.02rem; font-weight: 700; color: var(--gold); line-height: 1.7;
+}
+.cfb-quote-by { display: block; margin-top: 6px; font-size: 0.8rem; color: var(--text-soft); font-weight: 600; }
+
 /* ===================== 教練後台 ===================== */
 .coach-controls { display: flex; flex-direction: column; gap: 4px; }
 .overview-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
