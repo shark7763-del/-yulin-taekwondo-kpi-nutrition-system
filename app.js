@@ -2118,6 +2118,9 @@ async function doSubmitInner(mode) {
   renderNutritionCard(rec);
   renderLineCard(lineTexts);
 
+  // 更新選手成長卡（連續天數／段位即時反映今天這筆）
+  renderPlayerCard(rec.name);
+
   // 捲動到 AI 教練回饋卡
   $id('coachFeedbackCard').scrollIntoView({ behavior: 'smooth' });
 
@@ -2164,6 +2167,7 @@ async function doSubmitAbsence(mode, rec) {
   renderAbsenceReportCard(rec);
   $id('nutritionCard').style.display = 'none';
   renderLineCard(lineTexts);
+  renderPlayerCard(rec.name);
   $id('coachFeedbackCard').scrollIntoView({ behavior: 'smooth' });
   return saved;
 }
@@ -2744,6 +2748,159 @@ function selectFbVersion(version) {
 function fbBlock(title, icon, text, tone) {
   return `<div class="cfb-block cfb-${tone}"><div class="cfb-block-title">${icon} 【${escapeHtml(title)}】</div>` +
     `<div class="cfb-block-text">${escapeHtml(text).replace(/\n/g, '<br>')}</div></div>`;
+}
+
+/* ============================================================
+   選手成長卡（養成型｜段位 / 連續火焰 / 生涯數據 / 能力雷達 / 座右銘）
+   ------------------------------------------------------------
+   讓學生每天打開就先看到「自己這個角色」養成到哪：用連續火焰製造
+   不想斷的動力、用段位與能力雷達製造「我在變強」的養成感。
+   段位以「累積訓練天數」決定（重堅持、重努力，不以分數論英雄）。
+   ============================================================ */
+const PLAYER_BELTS = [
+  { min: 0,   name: '見習生', belt: '白帶',   color: '#d8dde6', icon: '🥋' },
+  { min: 5,   name: '練習生', belt: '黃帶',   color: '#f1c40f', icon: '🥋' },
+  { min: 15,  name: '修行者', belt: '綠帶',   color: '#2ecc71', icon: '🥋' },
+  { min: 30,  name: '好手',   belt: '藍帶',   color: '#2e7dd1', icon: '🥋' },
+  { min: 50,  name: '強者',   belt: '紅帶',   color: '#e23b3b', icon: '🥋' },
+  { min: 80,  name: '高手',   belt: '紅黑帶', color: '#e67e22', icon: '🥋' },
+  { min: 120, name: '隊長級', belt: '黑帶',   color: '#f5c518', icon: '🏅' }
+];
+function computeBelt(days) {
+  let cur = PLAYER_BELTS[0];
+  for (let i = 0; i < PLAYER_BELTS.length; i++) { if (days >= PLAYER_BELTS[i].min) cur = PLAYER_BELTS[i]; }
+  const idx = PLAYER_BELTS.indexOf(cur);
+  return { cur: cur, next: PLAYER_BELTS[idx + 1] || null, idx: idx };
+}
+
+// 連續紀錄天數：從今天往回數（今天還沒填則從昨天起算，紀錄尚未斷）
+function computeStreak(dateSet) {
+  let streak = 0;
+  const cur = new Date(todayStr() + 'T00:00:00');
+  if (!dateSet[ymd(cur)]) cur.setDate(cur.getDate() - 1);
+  while (dateSet[ymd(cur)]) { streak++; cur.setDate(cur.getDate() - 1); }
+  return streak;
+}
+
+function appKeyMotto(name) { return 'motto:' + name; }
+
+function pcTile(icon, label, val) {
+  return `<div class="pc-tile"><div class="pc-tile-icon">${icon}</div>` +
+    `<div class="pc-tile-val">${escapeHtml(String(val))}</div><div class="pc-tile-label">${escapeHtml(label)}</div></div>`;
+}
+
+async function renderPlayerCard(name) {
+  const card = $id('playerCard');
+  if (!card) return;
+  if (!name) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  $id('playerCardBody').innerHTML = '<div class="hint-box">讀取你的選手卡中…</div>';
+
+  let recs = [];
+  try { recs = dedupeLatestByDate((await fetchRecentRecords(name, 90)) || []); } catch (e) { recs = []; }
+  const training = recs.filter(r => !isAbsenceRecord(r));
+
+  const dateSet = {};
+  recs.forEach(r => { dateSet[normDate(r.date)] = true; });
+  const streak = computeStreak(dateSet);
+  const trainingDays = new Set(training.map(r => normDate(r.date))).size;
+  const ym = todayStr().slice(0, 7);
+  const monthCount = training.filter(r => normDate(r.date).slice(0, 7) === ym).length;
+
+  // 個人最佳（PB）
+  let pb = 0, pbMax = 50;
+  training.forEach(r => { const t = parseFloat(r.totalScore) || 0; if (t > pb) { pb = t; pbMax = recordScoreMax(r); } });
+
+  // 近期戰力（近 30 筆平均）
+  const avgs = training.slice(0, 30).map(r => parseFloat(r.averageScore)).filter(v => !isNaN(v));
+  const recentAvg = avgs.length ? round1(avgs.reduce((a, b) => a + b, 0) / avgs.length) : 0;
+  const power = Math.round(recentAvg * 20);
+
+  // 生涯能力平均（給雷達）
+  const avgRec = {};
+  ASPECT_ORDER.forEach(k => {
+    const field = ASPECT_AVG_FIELD[k];
+    const vals = training.map(r => parseFloat(r[field])).filter(v => !isNaN(v) && v > 0);
+    avgRec[field] = vals.length ? round1(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+  });
+
+  const belt = computeBelt(trainingDays);
+  const todayDone = !!dateSet[todayStr()];
+
+  let html = '';
+  // Hero：頭像（段位色）＋姓名＋段位＋戰力＋連續火焰
+  html += `<div class="pc-hero">
+    <div class="pc-avatar" style="border-color:${belt.cur.color};box-shadow:0 0 14px ${belt.cur.color}55">${belt.cur.icon}</div>
+    <div class="pc-hero-info">
+      <div class="pc-name">${escapeHtml(name)}</div>
+      <div class="pc-belt" style="color:${belt.cur.color}">${belt.cur.belt}・${belt.cur.name}</div>
+      <div class="pc-power">⚡ 戰力 ${power}　<span class="pc-power-sub">近期平均 ${recentAvg}/5</span></div>
+    </div>
+    <div class="pc-streak ${streak > 0 ? 'on' : ''}">
+      <div class="pc-streak-num">${streak}</div>
+      <div class="pc-streak-label">🔥 連續天數</div>
+    </div>
+  </div>`;
+
+  // 今日提醒（製造不想斷的動力）
+  if (todayDone) html += `<div class="pc-today done">✅ 今天已完成紀錄，火焰 +1，明天見！</div>`;
+  else if (streak > 0) html += `<div class="pc-today">🔥 今天還沒填！填完就能延續你的 <b>${streak}</b> 天連續紀錄，別讓它斷在今天。</div>`;
+  else html += `<div class="pc-today">✍️ 今天填一筆，點燃你的第一道連續火焰，開始養成自己的選手卡。</div>`;
+
+  // 生涯數據
+  html += `<div class="pc-stats">
+    ${pcTile('🗓️', '生涯訓練天數', trainingDays)}
+    ${pcTile('📅', '本月已填', monthCount + ' 次')}
+    ${pcTile('🏆', '個人最佳', pb ? (pb + ' / ' + pbMax) : '—')}
+  </div>`;
+
+  // 段位進度
+  if (belt.next) {
+    const span = belt.next.min - belt.cur.min;
+    const done = trainingDays - belt.cur.min;
+    const pct = Math.max(4, Math.min(100, Math.round(done / span * 100)));
+    const remain = belt.next.min - trainingDays;
+    html += `<div class="pc-prog">
+      <div class="pc-prog-bar"><span style="width:${pct}%;background:${belt.next.color}"></span></div>
+      <div class="pc-prog-label">再 <b>${remain}</b> 個訓練日 → 升上 <b style="color:${belt.next.color}">${belt.next.belt}・${belt.next.name}</b></div>
+    </div>`;
+  } else {
+    html += `<div class="pc-prog-label" style="margin-top:10px">🏅 你已達最高段位，繼續守住這份堅持！</div>`;
+  }
+
+  // 能力養成雷達
+  if (training.length) html += `<h4 class="pc-sec">📊 我的能力養成</h4>` + radarFromRecord(avgRec);
+
+  // 座右銘
+  html += `<div id="pcMottoBox"></div>`;
+
+  $id('playerCardBody').innerHTML = html;
+  setupMotto(name);
+}
+
+// 座右銘：選手自己可編輯，教練／家長唯讀
+function setupMotto(name) {
+  const box = $id('pcMottoBox');
+  if (!box) return;
+  const editable = !isParentView() && !isCoachView();
+  appGet(appKeyMotto(name), data => {
+    if (!$id('pcMottoBox')) return;   // 期間可能已切換選手
+    const motto = (data && data.text) ? data.text : '';
+    if (editable) {
+      box.innerHTML = `<label class="field-label">我的座右銘 ✍️</label>
+        <div class="btn-group" style="margin-top:0">
+          <input type="text" id="pcMottoInput" class="text-input" style="flex:1" maxlength="40" value="${escapeHtml(motto)}" placeholder="寫一句給自己的話，例如：比昨天更好一點" />
+          <button type="button" id="pcMottoSave" class="btn btn-primary" style="flex:0 0 auto;min-width:60px">💾</button>
+        </div>`;
+      $id('pcMottoSave').addEventListener('click', async () => {
+        const t = $id('pcMottoInput').value.trim();
+        await appSet(appKeyMotto(name), { text: t });
+        toast('✅ 已更新座右銘');
+      });
+    } else {
+      box.innerHTML = motto ? `<div class="pc-motto">❝ ${escapeHtml(motto)} ❞</div>` : '';
+    }
+  });
 }
 
 /* ============================================================
@@ -5039,6 +5196,7 @@ function init() {
     if (!name) return;
     toast('讀取上次表現中...');
     loadStudentTask(name);   // 今日任務
+    renderPlayerCard(name);  // 選手成長卡
     const rec = await fetchLastRecord(name);
     renderLastReview(rec, 'lastReviewContent', 'lastReviewCard');
     autofillFromLast(rec);
