@@ -109,6 +109,18 @@ const WATER_OPTIONS = [
 // 宵夜選項
 const LATE_NIGHT_OPTIONS = ['無', '有，少量', '有，偏多'];
 
+// 今日心情指數（1–5，不計入 KPI 分數，只供關懷與團隊氣氛觀察）
+const MOOD_OPTIONS = [
+  { v: 1, emoji: '😣', label: '很低落' },
+  { v: 2, emoji: '😕', label: '有點累/煩' },
+  { v: 3, emoji: '😐', label: '普通' },
+  { v: 4, emoji: '🙂', label: '還不錯' },
+  { v: 5, emoji: '😄', label: '很好' }
+];
+const MOOD_REASON_CHIPS = ['課業忙', '睡不好', '和同學/朋友', '家裡的事', '訓練不順', '身體不適', '沒事就是累', '心情很好'];
+function moodMeta(v) { return MOOD_OPTIONS.find(m => String(m.v) === String(v)) || null; }
+function moodText(v) { const m = moodMeta(v); return m ? `${m.emoji} ${m.label}` : ''; }
+
 // 拉桿分數文字
 const SCORE_LABELS = { 1: '很差', 2: '偏弱', 3: '普通', 4: '良好', 5: '非常好' };
 
@@ -634,6 +646,72 @@ function renderEncourageChips() {
     });
     box.appendChild(chip);
   });
+}
+
+/* ---- 今日心情指數（表情單選 + 原因快捷）---- */
+function renderMoodPicker() {
+  const box = $id('moodPicker');
+  if (!box || box.dataset.ready) return;
+  box.innerHTML = '';
+  MOOD_OPTIONS.forEach(m => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mood-btn';
+    btn.dataset.mood = m.v;
+    btn.innerHTML = `<span class="mood-emoji">${m.emoji}</span><span class="mood-label">${m.label}</span>`;
+    btn.addEventListener('click', () => {
+      const on = btn.classList.contains('sel');
+      box.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('sel'));
+      if (!on) btn.classList.add('sel');   // 再點一次可取消
+      const showReason = box.querySelector('.mood-btn.sel');
+      const lbl = $id('moodReasonLabel');
+      if (lbl) lbl.style.display = showReason ? '' : 'none';
+      saveDraft();
+    });
+    box.appendChild(btn);
+  });
+  box.dataset.ready = '1';
+  // 原因快捷（可複選，點一下切換 .sel）
+  const rc = $id('moodReasonChips');
+  if (rc && !rc.dataset.ready) {
+    rc.innerHTML = '';
+    MOOD_REASON_CHIPS.forEach(label => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = label;
+      chip.addEventListener('click', () => { chip.classList.toggle('sel'); saveDraft(); });
+      rc.appendChild(chip);
+    });
+    rc.dataset.ready = '1';
+  }
+}
+// 讀目前選的心情值（沒選回 ''）
+function getMoodIndex() {
+  const sel = document.querySelector('#moodPicker .mood-btn.sel');
+  return sel ? sel.dataset.mood : '';
+}
+function setMoodIndex(v) {
+  const box = $id('moodPicker'); if (!box) return;
+  box.querySelectorAll('.mood-btn').forEach(b => b.classList.toggle('sel', String(b.dataset.mood) === String(v)));
+  const lbl = $id('moodReasonLabel');
+  if (lbl) lbl.style.display = v ? '' : 'none';
+}
+// 心情原因：moodReasonChips 用 buildChipToggler 綁到一個隱藏欄位；這裡直接讀已選 chip
+function getMoodReason() {
+  const box = $id('moodReasonChips');
+  if (!box) return '';
+  return Array.from(box.querySelectorAll('.chip.sel')).map(c => c.textContent).join('、');
+}
+function setMoodReason(str) {
+  const box = $id('moodReasonChips');
+  if (!box) return;
+  const want = String(str || '').split(/[、,]/).map(s => s.trim()).filter(Boolean);
+  box.querySelectorAll('.chip').forEach(c => c.classList.toggle('sel', want.indexOf(c.textContent) !== -1));
+}
+function clearMood() {
+  const box = $id('moodPicker'); if (box) box.querySelectorAll('.mood-btn.sel').forEach(b => b.classList.remove('sel'));
+  const rc = $id('moodReasonChips'); if (rc) rc.querySelectorAll('.chip.sel').forEach(c => c.classList.remove('sel'));
+  const lbl = $id('moodReasonLabel'); if (lbl) lbl.style.display = 'none';
 }
 
 /* ---- 名單雲端同步（全裝置共用）---- */
@@ -1923,6 +2001,8 @@ function buildRecord() {
     absenceCatchup: absenceMode && $id('absenceCatchup') ? $id('absenceCatchup').value.trim() : '',
     absenceHonesty: absenceMode && $id('absenceHonesty') ? $id('absenceHonesty').value : '',
     bodyStatus: bodyStatus,
+    moodIndex: getMoodIndex(),
+    moodReason: getMoodReason(),
     sleepHours: sleepHours,
     sleepQuality: sleepQuality,
     soreness: soreness,
@@ -2639,6 +2719,10 @@ function buildStatusGrid(rec, scenario, recv) {
   if (rec.bodyStatus) {
     const t = (rec.bodyStatus === '受傷中' || rec.bodyStatus === '不舒服') ? 'danger' : (rec.bodyStatus === '疲勞' ? 'warn' : 'good');
     grid.push({ label: '身體', value: rec.bodyStatus, tone: t });
+  }
+  if (String(rec.moodIndex || '').trim() !== '') {
+    const mi = parseFloat(rec.moodIndex);
+    grid.push({ label: '心情', value: moodText(rec.moodIndex), tone: mi <= 2 ? 'warn' : (mi >= 4 ? 'good' : 'none') });
   }
   if (String(rec.sleepHours).trim() !== '') grid.push({ label: '睡眠', value: `${rec.sleepHours} 小時${rec.sleepQuality ? '・' + rec.sleepQuality : ''}`, tone: (parseFloat(rec.sleepHours) < 6 ? 'warn' : '') });
   if (String(rec.rpe).trim() !== '') grid.push({ label: 'RPE', value: `${rec.rpe}/10`, tone: (parseFloat(rec.rpe) > 8 ? 'warn' : '') });
@@ -3496,6 +3580,7 @@ async function refreshCoach() {
   if (statusFilter !== 'all') todays = todays.filter(r => r.status === statusFilter);
 
   renderOverview(todays);
+  renderTeamMood(todays);
   renderSubmitStatus(todays);
   renderCoachAttendanceReports(todays);
   renderStatusLists(todays);
@@ -3525,6 +3610,64 @@ function renderOverview(todays) {
     ['🟢 綠燈', green], ['平均體重', avgWeight + ' kg'], ['飲食風險', riskCount], ['水量不足', lowWaterCount]
   ];
   box.innerHTML = cells.map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
+}
+
+/* ---- 團隊今日心情：一眼看出全隊氣氛，並抓出需要關心的人 ---- */
+function renderTeamMood(todays) {
+  const box = $id('coachMood');
+  if (!box) return;
+
+  const withMood = todays.filter(r => String(r.moodIndex || '').trim() !== '' && !isNaN(parseFloat(r.moodIndex)));
+  if (!withMood.length) {
+    box.innerHTML = `<div class="hint-box">今天還沒有人填心情指數。學生在「填寫頁 → 今日心情指數」勾選後，這裡就會顯示全隊氣氛。</div>`;
+    return;
+  }
+
+  const vals = withMood.map(r => parseFloat(r.moodIndex));
+  const avg = round1(vals.reduce((a, b) => a + b, 0) / vals.length);
+  const low = withMood.filter(r => parseFloat(r.moodIndex) <= 2);
+  const mid = withMood.filter(r => parseFloat(r.moodIndex) === 3);
+  const high = withMood.filter(r => parseFloat(r.moodIndex) >= 4);
+
+  // 團隊氣氛燈號
+  let teamLight, teamWord, cls;
+  if (avg >= 4) { teamLight = '🟢'; teamWord = '全隊氣氛愉快'; cls = 'good'; }
+  else if (avg >= 3) { teamLight = '🟡'; teamWord = '氣氛普通，留意個別狀況'; cls = ''; }
+  else { teamLight = '🔴'; teamWord = '低氣壓，今天多給點關心'; cls = 'warn'; }
+
+  const faceAvg = moodMeta(Math.round(avg)) ? moodMeta(Math.round(avg)).emoji : '🙂';
+
+  let html = `<div class="mood-team-head ${cls}">
+    <span class="mood-team-face">${faceAvg}</span>
+    <div><div class="mood-team-light">${teamLight} ${teamWord}</div>
+    <div class="mood-team-sub">平均心情 ${avg} / 5　（${withMood.length} 人已回報）</div></div>
+  </div>`;
+
+  // 分布
+  html += `<div class="overview-grid" style="margin-top:12px">
+    ${moodDistCell('😄🙂 開心', high.length, 'green')}
+    ${moodDistCell('😐 普通', mid.length, 'yellow')}
+    ${moodDistCell('😕😣 低落', low.length, 'red')}
+  </div>`;
+
+  // 需要關心名單（心情 ≤ 2）
+  if (low.length) {
+    html += `<h4 style="margin:14px 0 6px;color:var(--blue)">💛 今天需要關心（${low.length}）</h4>`;
+    low.sort((a, b) => parseFloat(a.moodIndex) - parseFloat(b.moodIndex)).forEach(r => {
+      const reason = String(r.moodReason || '').trim();
+      html += `<div class="redcare-card"><div class="redcare-head"><b>${escapeHtml(r.name)}</b><span class="tag tag-red">${moodText(r.moodIndex)}</span></div>`;
+      if (reason) html += `<div class="redcare-low">原因：${escapeHtml(reason)}</div>`;
+      html += `</div>`;
+    });
+    html += `<div class="hint-box">這幾位今天心情偏低，訓練前後找機會關心一下，別讓情緒累積。</div>`;
+  } else {
+    html += `<div class="hint-box good">今天沒有人心情偏低 👍</div>`;
+  }
+
+  box.innerHTML = html;
+}
+function moodDistCell(label, n, color) {
+  return `<div class="ov-cell"><span class="ov-num" style="color:var(--${color})">${n}</span><span class="ov-label">${label}</span></div>`;
 }
 
 /* ---- 已填寫 / 未填寫名單（對照全隊名單）---- */
@@ -5176,6 +5319,7 @@ function init() {
   fillSelect($id('trainingIntensity'), INTENSITY_OPTIONS, '請選擇強度');
   refreshNameSelects();
   renderEncourageChips();
+  renderMoodPicker();   // 今日心情指數
 
   // KPI 拉桿（預設對練）
   renderKpiSliders('跆拳道對練');
@@ -5332,6 +5476,7 @@ function clearForm() {
   toggleAbsenceReason($id('group').value);
   if ($id('encourageTeammate')) $id('encourageTeammate').selectedIndex = 0;
   $id('lateNightSnack').value = '無';
+  clearMood();
   // 清空自由品勢額外欄位
   FREESTYLE_EXTRA_IDS.forEach(id => { const el = $id(id); if (el) { if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = ''; } });
   updateBmiDisplay();
@@ -5371,6 +5516,8 @@ function saveDraft() {
   d._kpi = {};
   document.querySelectorAll('.kpi-slider').forEach(s => { d._kpi[s.id] = s.value; });
   d._mealTags = getAllMealTags();   // 飲食快速勾選狀態
+  d._mood = getMoodIndex();         // 今日心情指數
+  d._moodReason = getMoodReason();
   try { localStorage.setItem(LS_KEYS.formDraft, JSON.stringify(d)); } catch (e) { /* 容量滿就略過 */ }
 }
 
@@ -5400,6 +5547,8 @@ function restoreDraft() {
     if (s) { s.value = d._kpi[sid]; s.dispatchEvent(new Event('input')); }
   });
   if (d._mealTags) Object.keys(d._mealTags).forEach(meal => setMealTags(meal, d._mealTags[meal]));
+  if (d._mood) setMoodIndex(d._mood);
+  if (d._moodReason) setMoodReason(d._moodReason);
   updateBmiDisplay();
   return true;
 }

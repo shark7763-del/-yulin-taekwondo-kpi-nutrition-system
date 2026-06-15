@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260615b" />
+  <link rel="stylesheet" href="style.css?v=20260616a" />
 </head>
 <body>
 
@@ -152,6 +152,11 @@
               <option value="不舒服">不舒服</option>
               <option value="受傷中">受傷中</option>
             </select>
+
+            <label class="field-label">今日心情指數 <span class="mood-note">（不評分，只是讓教練知道你今天好不好）</span></label>
+            <div id="moodPicker" class="mood-picker"></div>
+            <label class="field-label" id="moodReasonLabel" style="display:none;">心情的原因（可不填）</label>
+            <div id="moodReasonChips" class="quick-chips"></div>
 
             <label class="field-label">昨晚睡眠時數</label>
             <input type="number" id="sleepHours" class="text-input" step="0.5" min="0" max="12" placeholder="例如：7.5" />
@@ -489,6 +494,12 @@
         <div id="coachOverview" class="overview-grid"></div>
       </div>
 
+      <!-- 團隊心情 -->
+      <div class="card">
+        <h3 class="card-title">🙂 團隊今日心情</h3>
+        <div id="coachMood"></div>
+      </div>
+
       <!-- 今日任務指派 -->
       <div class="card">
         <h3 class="card-title">🎯 今日任務指派</h3>
@@ -699,6 +710,6 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260615b"></script>
+  <script src="app.js?v=20260616a"></script>
 </body>
 </html>

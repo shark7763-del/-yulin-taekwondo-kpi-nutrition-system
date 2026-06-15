@@ -90,7 +90,10 @@ var HEADERS = [
   'absenceReflection',  // 反思彙整（可讀文字，供教練／家長後台顯示）
   // ===== 睡眠/RPE/恢復 8 欄：原本被插在中間造成舊資料錯位，移到最後相容 =====
   'sleepHours', 'sleepQuality', 'soreness', 'rpe', 'injuryArea',
-  'recoveryScore', 'recoveryState', 'redLightCategories'
+  'recoveryScore', 'recoveryState', 'redLightCategories',
+  // ===== 今日心情指數（新增於最後，不影響舊資料；不計入 KPI 分數）=====
+  'moodIndex',          // 1–5（5 表情）
+  'moodReason'          // 心情原因（快速勾選，多選以、分隔）
 ];
 
 /* ============================================================
