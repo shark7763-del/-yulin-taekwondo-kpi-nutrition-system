@@ -5275,8 +5275,6 @@ function applyRole() {
   if (localBtn) localBtn.style.display = (r.role === 'coach') ? '' : 'none';
 
   // 解憂信箱：只給選手看（家長/教練端不顯示這個情感入口）
-  const solaceCard = $id('solaceCard');
-  if (solaceCard) solaceCard.style.display = (r.role === 'student') ? '' : 'none';
   const tabSolace = $id('tabSolace');
   if (tabSolace) tabSolace.style.display = (r.role === 'student') ? '' : 'none';
 
