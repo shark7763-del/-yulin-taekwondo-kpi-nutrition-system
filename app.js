@@ -1469,6 +1469,7 @@ function buildRemindText(lowItems) {
 // 渲染「今天我要改善」勾選項
 function renderImproveOptions(itemNames) {
   const box = $id('improveOptions');
+  if (!box) return;   // 「今天我要改善」已移除
   let options = itemNames;
   if (!options || !options.length) {
     // 沒有上次紀錄 -> 顯示六大面向
@@ -1481,7 +1482,8 @@ function renderImproveOptions(itemNames) {
     label.innerHTML = `<input type="checkbox" value="${name}" id="${id}"> ${name}`;
     box.appendChild(label);
   });
-  $id('improveCard').style.display = 'block';
+  const card = $id('improveCard');
+  if (card) card.style.display = 'block';
 }
 
 function getCheckedImproveTargets() {
@@ -2004,7 +2006,7 @@ function buildRecord() {
   const redCats = absenceMode ? [] : redLightCategories(scores, nutritionRisks, recovery.state);
 
   const improveTargets = getCheckedImproveTargets().join('｜');
-  const mainGoalToday = $id('mainGoalToday').value;
+  const mainGoalToday = $id('mainGoalToday') ? $id('mainGoalToday').value : '';
 
   const rec = {
     recordId: 'r' + Date.now() + '_' + Math.floor(Math.random() * 100000),
