@@ -708,7 +708,7 @@ function updateMoodCareNote() {
   const v = parseFloat(getMoodIndex());
   if (!isNaN(v) && v <= 2) {
     note.style.display = '';
-    note.innerHTML = `今天心情好像有點低 💛 要不要到 <a href="${SOLACE_URL}" target="_blank" rel="noopener">解憂信箱</a> 跟教練說說？不用勉強自己一個人扛。`;
+    note.innerHTML = `今天心情好像有點低 💛 要不要到 <a href="${SOLACE_URL}" target="_blank" rel="noopener">解憂信箱</a> 跟運動心理教練說說？不用勉強自己一個人扛。`;
   } else {
     note.style.display = 'none';
     note.innerHTML = '';
@@ -2831,7 +2831,7 @@ function renderCoachFeedbackCard(fb) {
   if (sol) {
     if (fb.moodLow) {
       sol.style.display = '';
-      sol.innerHTML = `💛 今天心情好像有點低。要不要到 <a href="${SOLACE_URL}" target="_blank" rel="noopener">解憂信箱</a> 說說？教練會看到，也會在乎。`;
+      sol.innerHTML = `💛 今天心情好像有點低。要不要到 <a href="${SOLACE_URL}" target="_blank" rel="noopener">解憂信箱</a> 說說？運動心理教練會看到，也會在乎。`;
     } else { sol.style.display = 'none'; sol.innerHTML = ''; }
   }
 
