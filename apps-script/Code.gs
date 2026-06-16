@@ -247,9 +247,11 @@ function setupSheet() {
   }
   sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
   sheet.setFrozenRows(1);
+  getRosterSheet();
   getParentsSheet();
   getAttendanceReportsSheet();
-  return 'setupSheet 完成，表頭已重寫為最新版（睡眠/RPE/恢復 8 欄已移到最後，舊資料對位）。';
+  getAppDataSheet();
+  return 'setupSheet 完成，records 表頭已重寫為最新版，並已建立 roster、parents、attendance_reports、appdata 工作表。';
 }
 
 // 今天日期字串 yyyy-MM-dd

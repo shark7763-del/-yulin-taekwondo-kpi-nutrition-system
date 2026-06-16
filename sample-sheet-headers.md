@@ -1,4 +1,4 @@
-# Google Sheet 表頭（可直接複製貼上）
+# Google Sheet 表頭（請用 setupSheet 自動建立）
 
 ## 用法
 
@@ -67,8 +67,8 @@
 | recoveryScore / recoveryState | 疲勞與恢復指數／恢復狀態 |
 | redLightCategories | AI 紅燈原因分類 |
 | lowItems | 最低三項（以｜分隔） |
-| improveTargets | 今天我要改善（勾選項，以｜分隔） |
-| mainGoalToday | 今天我最想做到的一件事 |
+| improveTargets | 舊版「今天我要改善」欄位，保留供舊資料相容 |
+| mainGoalToday | 舊版「今天我最想做到的一件事」欄位，保留供舊資料相容 |
 | reflection | 今日心得 |
 | tomorrowGoal | 明日目標 |
 | encouragementToTeammate | 隊友鼓勵 |
@@ -107,6 +107,6 @@
 | unlockedMoves | 解鎖哪些高難度動作 |
 | redLightReason / redLightHandling / redLightNote | 教練後台紅燈處理紀錄：原因、處理方式、備註 |
 
-共 **96 欄**。前 52 欄為學生紀錄、KPI、恢復指數、飲食與 LINE 文字，接著為交叉辯論／教練複評、隊友鼓勵名／家長留言、自由品勢與紅燈處理紀錄。重新部署後在 Apps Script 編輯器執行一次 `setupSheet()` 即可自動補欄。
+共 **103 欄**。前段為學生基本資料、KPI、飲食與 LINE 文字，後段接交叉辯論／教練複評、隊友鼓勵名／家長留言、自由品勢、紅燈處理、未出席反思、AI 教練回饋與心情紀錄。重新部署後在 Apps Script 編輯器執行一次 `setupSheet()` 即可自動補欄。
 
 > 註：自由品勢前端目前只填「主題、空中踢擊完成幾腳、落地失誤幾次、解鎖哪些高難度動作」＋10 項評分拉桿；其餘 freestyle 欄位（成功率、練習段落、影片修正、8 拍…）保留在表頭但不寫入，作日後擴充用。
