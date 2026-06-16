@@ -448,6 +448,16 @@ const ENCOURAGE_PRESETS = [
   '一起加油，比賽我們互相罩！'
 ];
 
+// 感謝今天的人事物快捷用語（點一下帶入內容欄）
+const GRATITUDE_PRESETS = [
+  '謝謝教練今天的指導',
+  '謝謝隊友陪我一起練習',
+  '謝謝爸媽的接送與支持',
+  '謝謝今天沒有放棄的自己',
+  '謝謝身體今天撐住了',
+  '謝謝對手讓我學到東西'
+];
+
 // 紅燈原因分類 / 處理方式（教練後台勾選）
 const RED_LIGHT_REASONS = ['疲勞', '受傷', '飲食', '情緒', '技術', '態度', '學業壓力'];
 const RED_LIGHT_HANDLINGS = ['已談話', '已通知家長', '已調整訓練量', '持續觀察'];
@@ -645,6 +655,25 @@ function renderEncourageChips() {
     chip.addEventListener('click', () => {
       const ta = $id('encouragementToTeammate');
       ta.value = ta.value.trim() ? (ta.value.trim() + '\n' + text) : text;
+    });
+    box.appendChild(chip);
+  });
+}
+
+// 渲染「感謝今天的人事物」快捷按鈕（點一下帶入文字框）
+function renderGratitudeChips() {
+  const box = $id('gratitudeQuick');
+  if (!box) return;
+  box.innerHTML = '';
+  GRATITUDE_PRESETS.forEach(text => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.textContent = text;
+    chip.addEventListener('click', () => {
+      const ta = $id('gratitude');
+      ta.value = ta.value.trim() ? (ta.value.trim() + '\n' + text) : text;
+      saveDraft();
     });
     box.appendChild(chip);
   });
@@ -2058,6 +2087,7 @@ function buildRecord() {
     mainGoalToday: mainGoalToday,
     reflection: $id('reflection').value,
     tomorrowGoal: $id('tomorrowGoal').value,
+    gratitude: $id('gratitude') ? $id('gratitude').value : '',
     encourageTeammateName: $id('encourageTeammate') ? $id('encourageTeammate').value : '',
     encouragementToTeammate: $id('encouragementToTeammate').value,
     nutritionRisks: nutritionRisks,
@@ -5361,6 +5391,7 @@ function init() {
   fillSelect($id('trainingIntensity'), INTENSITY_OPTIONS, '請選擇強度');
   refreshNameSelects();
   renderEncourageChips();
+  renderGratitudeChips();   // 感謝今天的人事物
   renderMoodPicker();   // 今日心情指數
 
   // KPI 拉桿（預設對練）
@@ -5508,7 +5539,7 @@ function fallbackCopy(text) {
 function clearForm() {
   ['gradeClass', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'heightCm', 'weightKg', 'targetWeightKg',
    'breakfast', 'lunch', 'dinner', 'snacksDrinks',
-   'reflection', 'tomorrowGoal', 'encouragementToTeammate', 'mainGoalToday'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
+   'reflection', 'tomorrowGoal', 'gratitude', 'encouragementToTeammate', 'mainGoalToday'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
   if ($id('absenceHonesty')) $id('absenceHonesty').selectedIndex = 0;
   document.querySelectorAll('#absenceMissChips .chip, #absenceCatchupChips .chip').forEach(c => c.classList.remove('sel'));
   clearMealTags();
@@ -5544,7 +5575,7 @@ const DRAFT_FIELDS = [
   'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'absenceHonesty', 'bodyStatus',
   'heightCm', 'weightKg', 'targetWeightKg',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'lateNightSnack', 'trainingIntensity',
-  'reflection', 'tomorrowGoal', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday'
+  'reflection', 'tomorrowGoal', 'gratitude', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday'
 ].concat(FREESTYLE_EXTRA_IDS);
 
 function debounce(fn, ms) {
