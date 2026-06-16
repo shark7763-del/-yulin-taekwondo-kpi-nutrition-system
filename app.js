@@ -5277,6 +5277,8 @@ function applyRole() {
   // 解憂信箱：只給選手看（家長/教練端不顯示這個情感入口）
   const solaceCard = $id('solaceCard');
   if (solaceCard) solaceCard.style.display = (r.role === 'student') ? '' : 'none';
+  const tabSolace = $id('tabSolace');
+  if (tabSolace) tabSolace.style.display = (r.role === 'student') ? '' : 'none';
 
   // 選手：鎖定姓名為自己
   if (r.role === 'student' && r.name) {
@@ -5333,6 +5335,13 @@ function init() {
   // 分頁
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  // 解憂信箱分頁鈕：開新分頁到外站，不切換內部分頁
+  const tabSolace = $id('tabSolace');
+  if (tabSolace) tabSolace.addEventListener('click', () => {
+    window.open(SOLACE_URL, '_blank', 'noopener');
+    toast('💌 已開啟解憂信箱');
   });
 
   // 日期預設今天
