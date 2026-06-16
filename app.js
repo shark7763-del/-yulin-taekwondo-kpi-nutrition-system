@@ -118,6 +118,8 @@ const MOOD_OPTIONS = [
   { v: 5, emoji: '😄', label: '很好' }
 ];
 const MOOD_REASON_CHIPS = ['課業忙', '睡不好', '和同學/朋友', '家裡的事', '訓練不順', '身體不適', '沒事就是累', '心情很好'];
+// 解憂信箱（外站，另一個 repo），心情低或主動想說話時引導過去
+const SOLACE_URL = 'https://shark7763-del.github.io/athlete-solace-box/';
 function moodMeta(v) { return MOOD_OPTIONS.find(m => String(m.v) === String(v)) || null; }
 function moodText(v) { const m = moodMeta(v); return m ? `${m.emoji} ${m.label}` : ''; }
 
@@ -666,6 +668,7 @@ function renderMoodPicker() {
       const showReason = box.querySelector('.mood-btn.sel');
       const lbl = $id('moodReasonLabel');
       if (lbl) lbl.style.display = showReason ? '' : 'none';
+      updateMoodCareNote();
       saveDraft();
     });
     box.appendChild(btn);
@@ -695,6 +698,21 @@ function setMoodIndex(v) {
   box.querySelectorAll('.mood-btn').forEach(b => b.classList.toggle('sel', String(b.dataset.mood) === String(v)));
   const lbl = $id('moodReasonLabel');
   if (lbl) lbl.style.display = v ? '' : 'none';
+  updateMoodCareNote();
+}
+
+// 心情偏低（≤2）時，溫柔引導到解憂信箱
+function updateMoodCareNote() {
+  const note = $id('moodCareNote');
+  if (!note) return;
+  const v = parseFloat(getMoodIndex());
+  if (!isNaN(v) && v <= 2) {
+    note.style.display = '';
+    note.innerHTML = `今天心情好像有點低 💛 要不要到 <a href="${SOLACE_URL}" target="_blank" rel="noopener">解憂信箱</a> 跟教練說說？不用勉強自己一個人扛。`;
+  } else {
+    note.style.display = 'none';
+    note.innerHTML = '';
+  }
 }
 // 心情原因：moodReasonChips 用 buildChipToggler 綁到一個隱藏欄位；這裡直接讀已選 chip
 function getMoodReason() {
@@ -712,6 +730,7 @@ function clearMood() {
   const box = $id('moodPicker'); if (box) box.querySelectorAll('.mood-btn.sel').forEach(b => b.classList.remove('sel'));
   const rc = $id('moodReasonChips'); if (rc) rc.querySelectorAll('.chip.sel').forEach(c => c.classList.remove('sel'));
   const lbl = $id('moodReasonLabel'); if (lbl) lbl.style.display = 'none';
+  updateMoodCareNote();
 }
 
 /* ---- 名單雲端同步（全裝置共用）---- */
@@ -2761,6 +2780,7 @@ function buildCoachFeedback(rec, last, history, affirm) {
     scenarioLabel: SCENARIO_LABEL[scenario],
     header: { name: rec.name || '選手', date: dateSlash(rec.date), scenarioLabel: SCENARIO_LABEL[scenario] },
     statusGrid: buildStatusGrid(rec, scenario, c.recv),
+    moodLow: !isNaN(parseFloat(rec.moodIndex)) && parseFloat(rec.moodIndex) <= 2,
     versions: versions
   };
 }
@@ -2805,6 +2825,15 @@ function renderCoachFeedbackCard(fb) {
   });
   $id('cfbCopy').onclick = () => copyText($id('cfbShareText').textContent);
   $id('cfbShareLine').onclick = () => shareToLine($id('cfbShareText').textContent);
+
+  // 心情偏低 → 解憂信箱關懷
+  const sol = $id('cfbSolace');
+  if (sol) {
+    if (fb.moodLow) {
+      sol.style.display = '';
+      sol.innerHTML = `💛 今天心情好像有點低。要不要到 <a href="${SOLACE_URL}" target="_blank" rel="noopener">解憂信箱</a> 說說？教練會看到，也會在乎。`;
+    } else { sol.style.display = 'none'; sol.innerHTML = ''; }
+  }
 
   selectFbVersion('student');
   card.style.display = 'block';
@@ -5244,6 +5273,10 @@ function applyRole() {
   // 「💾 本機測試送出」只給教練看；學生/家長誤按會以為填完，其實沒進後台
   const localBtn = $id('btnLocalSubmit');
   if (localBtn) localBtn.style.display = (r.role === 'coach') ? '' : 'none';
+
+  // 解憂信箱：只給選手看（家長/教練端不顯示這個情感入口）
+  const solaceCard = $id('solaceCard');
+  if (solaceCard) solaceCard.style.display = (r.role === 'student') ? '' : 'none';
 
   // 選手：鎖定姓名為自己
   if (r.role === 'student' && r.name) {
