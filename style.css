@@ -68,6 +68,14 @@ body {
 }
 .tab-btn:hover { color: var(--text-main); }
 .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); background: rgba(245,197,24,0.08); }
+/* 解憂信箱：外部連結鈕，外觀比照分頁但用紫色點綴，不參與分頁切換 */
+.tab-link {
+  flex: 1 0 auto; min-width: 96px; padding: 14px 10px;
+  background: transparent; border: none; border-bottom: 3px solid transparent;
+  color: #e3a7ef; font-size: 0.95rem; font-weight: 700; cursor: pointer;
+  font-family: inherit; transition: all 0.2s;
+}
+.tab-link:hover { color: #f3c9fb; border-bottom-color: #c77dd8; background: rgba(199,125,216,0.10); }
 
 /* ===================== 主內容 ===================== */
 .app-main { max-width: 720px; margin: 0 auto; padding: 16px; }
