@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
   <link rel="stylesheet" href="style.css?v=20260616g" />
+  <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
 </head>
 <body>
 
@@ -43,7 +44,6 @@
     <button class="tab-btn active" data-tab="student">📝 學生填寫</button>
     <button class="tab-btn" data-tab="lastperf">📌 上次表現</button>
     <button class="tab-btn" data-tab="profile">👤 個人檔案</button>
-    <button type="button" class="tab-link" id="tabSolace" style="display:none;">💌 解憂信箱</button>
     <button class="tab-btn" data-tab="parent">👨‍👩‍👧 家長後台</button>
     <button class="tab-btn" data-tab="coach">📊 教練後台</button>
     <button class="tab-btn" data-tab="settings">⚙️ 系統設定</button>
@@ -239,9 +239,9 @@
           <input type="text" id="unlockedMoves" class="text-input" placeholder="例如：540 旋風踢、空中側踢" />
         </fieldset>
 
-        <!-- KPI 紀錄（依組別顯示 10 項，總分 /50） -->
+        <!-- KPI 紀錄（六面向各 5 題，共 30 項，總分 /150） -->
         <fieldset class="form-section training-only" id="standardKpiSection">
-          <legend>KPI 十項評分 📈</legend>
+          <legend>運動科學 KPI 30 項評分 📈</legend>
           <div id="kpiContainer"></div>
         </fieldset>
 
@@ -309,7 +309,7 @@
           <div id="cfbTomorrow" class="cfb-tomorrow"></div>
         </div>
 
-        <!-- 心情偏低時的解憂信箱關懷（自動顯示） -->
+        <!-- 心情偏低時的一般關懷提醒（自動顯示） -->
         <div id="cfbSolace" class="cfb-solace" style="display:none;"></div>
 
         <!-- 4. 分享到 LINE -->
@@ -392,11 +392,21 @@
         <label class="field-label">選擇選手</label>
         <select id="lastPerfName" class="text-input"></select>
         <button type="button" id="btnLoadLastPerf" class="btn btn-primary">🔍 查詢上次表現</button>
+        <button type="button" id="btnWeeklyReport" class="btn btn-secondary">📊 產生本週報告</button>
       </div>
       <!-- 七天成長趨勢（折線圖） -->
       <div class="card" id="trendCard" style="display:none;">
         <h3 class="card-title">📈 七天成長趨勢</h3>
         <div id="trendBox"></div>
+      </div>
+
+      <!-- 個人週報（純前端現算） -->
+      <div class="card" id="weeklyReportCard" style="display:none;">
+        <div id="weeklyReportBox"></div>
+        <div class="wk-actions no-print">
+          <button type="button" id="btnCopyWeeklyLine" class="btn btn-primary">📱 複製家長版 LINE</button>
+          <button type="button" id="btnPrintWeekly" class="btn btn-secondary">🖨 列印 / 存 PDF</button>
+        </div>
       </div>
 
       <div class="card" id="lastPerfResultCard" style="display:none;">
@@ -487,6 +497,39 @@
           </select>
           <button type="button" id="btnRefreshCoach" class="btn btn-primary">🔄 重新整理資料</button>
         </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- 每月訪視專用報表                                          -->
+      <!-- ========================================================= -->
+      <div class="card mr-control-card">
+        <h3 class="card-title">📄 每月訪視報表</h3>
+        <p class="review-label" style="margin-bottom:12px">給主任、校長、長官訪視使用的正式月報。資料來源為選手每日回報，可預覽、下載 PDF、列印。</p>
+        <div class="mr-control-row">
+          <div class="mr-control-field">
+            <label for="monthlyReportMonth">月份</label>
+            <input type="month" id="monthlyReportMonth" class="text-input" />
+          </div>
+          <div class="mr-control-field">
+            <label for="monthlyReportType">報表類型</label>
+            <select id="monthlyReportType" class="text-input">
+              <option value="official">長官訪視版</option>
+              <option value="coach">教練內部版</option>
+              <option value="parent">家長摘要版</option>
+            </select>
+          </div>
+          <div class="mr-control-field" id="monthlyReportChildWrap" style="display:none;">
+            <label for="monthlyReportChild">選手（家長版）</label>
+            <select id="monthlyReportChild" class="text-input"></select>
+          </div>
+        </div>
+        <div class="mr-btn-row">
+          <button type="button" id="generateMonthlyReportBtn" class="btn btn-primary">📄 產生本月訪視報表</button>
+          <button type="button" id="downloadMonthlyPdfBtn" class="btn btn-secondary" disabled>⬇️ 下載 PDF</button>
+          <button type="button" id="printMonthlyReportBtn" class="btn btn-ghost" disabled>🖨 列印報表</button>
+        </div>
+        <p class="mr-hint">提示：長官版只列重點選手；教練版含全隊完整成長樹；家長版僅顯示所選孩子。心理與解憂內容不會放入報表。</p>
+        <div id="monthlyReportPreview" style="display:none;"></div>
       </div>
 
       <!-- 今日總覽 -->
@@ -712,5 +755,8 @@
   </footer>
 
   <script src="app.js?v=20260616g"></script>
+  <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
+  <script src="monthly-report.js?v=20260620a"></script>
 </body>
 </html>

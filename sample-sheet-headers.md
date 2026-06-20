@@ -61,7 +61,7 @@
 | disciplineAvg | 自律態度平均 |
 | emotionAvg | 情緒控制平均 |
 | tacticalAvg | 戰術執行力平均 |
-| totalScore | 總分（新紀錄為 10 項加總，滿分 50；舊紀錄保留滿分 30） |
+| totalScore | 總分（商業版量表為 30 項加總，滿分 150；舊紀錄依原題數保留） |
 | averageScore | 平均分數（新紀錄為總分 / 10；舊紀錄為總分 / 6） |
 | status | 🟢/🟡/🔴 燈號狀態 |
 | recoveryScore / recoveryState | 疲勞與恢復指數／恢復狀態 |

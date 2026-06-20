@@ -68,14 +68,6 @@ body {
 }
 .tab-btn:hover { color: var(--text-main); }
 .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); background: rgba(245,197,24,0.08); }
-/* 解憂信箱：外部連結鈕，外觀比照分頁但用紫色點綴，不參與分頁切換 */
-.tab-link {
-  flex: 1 0 auto; min-width: 96px; padding: 14px 10px;
-  background: transparent; border: none; border-bottom: 3px solid transparent;
-  color: #e3a7ef; font-size: 0.95rem; font-weight: 700; cursor: pointer;
-  font-family: inherit; transition: all 0.2s;
-}
-.tab-link:hover { color: #f3c9fb; border-bottom-color: #c77dd8; background: rgba(199,125,216,0.10); }
 
 /* ===================== 主內容 ===================== */
 .app-main { max-width: 720px; margin: 0 auto; padding: 16px; }
@@ -331,23 +323,11 @@ textarea.text-input { resize: vertical; }
   border: 1px solid var(--blue); color: var(--gold); font-weight: 700; font-size: 1.02rem;
 }
 
-/* ===================== 解憂信箱 ===================== */
-.solace-card { border: 1px solid #c77dd8; box-shadow: 0 8px 26px rgba(199, 125, 216, 0.16), var(--shadow); }
-.solace-inner { display: flex; align-items: center; gap: 12px; }
-.solace-icon { font-size: 2.1rem; flex: 0 0 auto; }
-.solace-title { font-size: 1.1rem; font-weight: 800; color: #e3a7ef; }
-.solace-sub { font-size: 0.88rem; color: var(--text-soft); margin-top: 2px; }
-.solace-btn {
-  display: block; text-align: center; text-decoration: none; margin-top: 12px;
-  padding: 12px 16px; border-radius: 12px; font-weight: 800; font-size: 1rem;
-  color: #2a0f31; background: linear-gradient(135deg, #e3a7ef, #c77dd8);
-}
-.solace-btn:hover { filter: brightness(1.06); }
+/* ===================== 心情關懷提醒 ===================== */
 .mood-care {
   margin-top: 8px; padding: 10px 12px; border-radius: 10px; font-size: 0.88rem; line-height: 1.6;
   background: rgba(199, 125, 216, 0.12); border: 1px solid #c77dd8; color: #f0d4f5;
 }
-.mood-care a, .cfb-solace a { color: #f5c518; font-weight: 800; }
 .cfb-solace {
   margin-top: 4px; padding: 12px 14px; border-radius: 10px; font-size: 0.92rem; line-height: 1.7;
   background: rgba(199, 125, 216, 0.12); border: 1px solid #c77dd8; color: #f0d4f5;
@@ -675,3 +655,37 @@ textarea.text-input { resize: vertical; }
 .status-dot.orange { color: #ffb066; background: rgba(230,126,34,0.12); }
 .status-dot.red { color: #ff7b7b; background: rgba(226,59,59,0.12); }
 .status-dot.gray { color: #c4cad4; background: rgba(139,149,165,0.12); }
+
+/* ============================================================
+   個人週報（純前端現算）
+   ============================================================ */
+.wk-range { color: var(--text-soft); font-size: 13px; margin: -4px 0 12px; }
+.wk-sec { margin: 14px 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.wk-sec:first-of-type { border-top: none; padding-top: 0; }
+.wk-sec-h { font-weight: 800; color: var(--gold); margin-bottom: 6px; }
+.wk-stat-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.wk-stat { flex: 1 1 0; min-width: 90px; background: var(--bg-card-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px; text-align: center; }
+.wk-num { display: block; font-size: 26px; font-weight: 800; color: var(--text-main); line-height: 1.1; }
+.wk-cap { display: block; font-size: 12px; color: var(--text-soft); margin-top: 2px; }
+.review-value.up, .wk-good { color: var(--green); }
+.review-value.down, .wk-bad { color: var(--red); }
+.wk-warn { color: var(--orange); }
+.hint-box.wk-warn-box { border-left-color: var(--orange); }
+.hint-box.wk-bad-box { border-left-color: var(--red); }
+.wk-goal { font-weight: 700; }
+.wk-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.wk-actions .btn { flex: 1 1 0; min-width: 150px; }
+
+/* 列印 / 存 PDF：只留週報卡，淺色友善 */
+@media print {
+  body { background: #fff; color: #111; }
+  .tab-nav, .no-print, #lastPerfQueryCard, #trendCard, #lastPerfResultCard,
+  header, footer { display: none !important; }
+  .tab-panel { display: block !important; }
+  #weeklyReportCard { box-shadow: none; border: 1px solid #ccc; }
+  .wk-sec-h { color: #b8860b; }
+  .wk-stat { background: #f4f4f4; border-color: #ddd; }
+  .wk-num, .review-value, .card-title { color: #111 !important; }
+  .hint-box { background: #f7f7f7; color: #111; }
+}
