@@ -5369,25 +5369,94 @@ function loginStep2(role) {
     $id('loginCoachGo').addEventListener('click', () => coachLogin());
     $id('loginCoachPwd').addEventListener('keydown', e => { if (e.key === 'Enter') coachLogin(); });
   } else {
-    // 選手 / 家長：選名字
+    // 選手 / 家長：選名字（可搜尋，人數多也好找）
     const who = role === 'student' ? '選手' : '孩子';
     const players = getPlayers();
-    let opts = players.map(p => `<option value="${p}">${p}</option>`).join('');
     s2.innerHTML = `
       <p class="login-hint">請選擇${who}姓名</p>
-      <select id="loginName" class="text-input"><option value="" disabled selected>請選擇${who}</option>${opts}</select>
+      <div class="login-name-picker">
+        <input type="text" id="loginNameSearch" class="text-input login-name-search" placeholder="🔍 輸入姓名搜尋，或直接點下方名單" autocomplete="off" inputmode="search" />
+        <input type="hidden" id="loginName" value="" />
+        <div id="loginNameList" class="login-name-list"></div>
+      </div>
       <div class="login-step2-actions">
         <button class="login-back" id="loginBack">返回</button>
         <button class="btn btn-primary" id="loginNameGo" style="flex:1">進入</button>
       </div>
       <p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none;margin-top:10px"></p>`;
     $id('loginBack').addEventListener('click', showLoginOverlay);
-    $id('loginNameGo').addEventListener('click', async () => {
-      const name = $id('loginName').value;
-      if (!name) { toast('請選擇姓名'); return; }
+    setupLoginNamePicker(players, role);
+    $id('loginNameGo').addEventListener('click', () => {
+      const name = resolveLoginName(players);
+      if (!name) { toast('請選擇或輸入姓名'); return; }
       finishLogin(role, name);
     });
   }
+}
+
+/*
+   登入姓名搜尋選擇器：上方輸入框即時過濾，下方名單點選即選定。
+   選定值寫入隱藏的 #loginName（沿用既有 finishLogin 流程）。
+*/
+function setupLoginNamePicker(players, role) {
+  const search = $id('loginNameSearch');
+  const list = $id('loginNameList');
+  const hidden = $id('loginName');
+  if (!search || !list || !hidden) return;
+
+  function renderList(keyword) {
+    const kw = String(keyword || '').trim().toLowerCase();
+    const matched = players.filter(p => !kw || String(p).toLowerCase().indexOf(kw) !== -1);
+    if (!matched.length) {
+      list.innerHTML = `<div class="login-name-empty">找不到「${escapeHtml(keyword)}」，請確認輸入或換個關鍵字</div>`;
+      return;
+    }
+    list.innerHTML = matched.map(p =>
+      `<button type="button" class="login-name-item${hidden.value === p ? ' sel' : ''}" data-name="${escapeHtml(p)}">${escapeHtml(p)}</button>`
+    ).join('');
+  }
+
+  function selectName(name) {
+    hidden.value = name;
+    search.value = name;
+    list.querySelectorAll('.login-name-item').forEach(b => b.classList.toggle('sel', b.dataset.name === name));
+  }
+
+  list.addEventListener('click', e => {
+    const btn = e.target.closest('.login-name-item');
+    if (!btn) return;
+    selectName(btn.dataset.name);
+  });
+
+  search.addEventListener('input', () => {
+    // 打字時清掉先前選定（避免顯示與實際不符）；完全相符才視為選定
+    const exact = players.find(p => p === search.value.trim());
+    hidden.value = exact || '';
+    renderList(search.value);
+  });
+
+  // Enter：若只剩一個候選或完全相符就直接選定並進入
+  search.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const name = resolveLoginName(players);
+    if (name) { selectName(name); finishLogin(role, name); }
+  });
+
+  renderList('');
+}
+
+// 解析目前登入要用的姓名：優先隱藏選定值，其次輸入框完全相符，再其次唯一候選
+function resolveLoginName(players) {
+  const hidden = $id('loginName');
+  const search = $id('loginNameSearch');
+  if (hidden && hidden.value) return hidden.value;
+  const kw = search ? search.value.trim() : '';
+  if (!kw) return '';
+  const exact = players.find(p => p === kw);
+  if (exact) return exact;
+  const matched = players.filter(p => String(p).toLowerCase().indexOf(kw.toLowerCase()) !== -1);
+  return matched.length === 1 ? matched[0] : '';
 }
 
 // 教練登入：用後端 ADMIN_KEY 驗證
