@@ -26,31 +26,66 @@
   };
 
   var DECK = [
-    // 專注
+    // 專注 🎯
     { id: 'f1', t: 'focus', r: 'common', q: '把注意力放回呼吸，再放回動作。' },
     { id: 'f2', t: 'focus', r: 'common', q: '一次只想一件事，這一腳。' },
+    { id: 'f5', t: 'focus', r: 'common', q: '眼睛看哪裡，力量就到哪裡。' },
+    { id: 'f6', t: 'focus', r: 'common', q: '慢就是快，先把動作做對。' },
+    { id: 'f7', t: 'focus', r: 'common', q: '雜念來了，數三下再回到訓練。' },
+    { id: 'f8', t: 'focus', r: 'common', q: '把今天的目標縮小到一個動作。' },
     { id: 'f3', t: 'focus', r: 'rare', q: '分心是正常的，把它拉回來就是訓練。' },
+    { id: 'f9', t: 'focus', r: 'rare', q: '真正的專注，是吵雜中還聽得見教練。' },
+    { id: 'f10', t: 'focus', r: 'rare', q: '比賽不用想結果，想好下一個動作就好。' },
     { id: 'f4', t: 'focus', r: 'epic', q: '最強的專注，是失誤後立刻回到當下。' },
-    // 抗壓
+    { id: 'f11', t: 'focus', r: 'epic', q: '高手不是不分心，是分心後回得最快。' },
+    // 抗壓 🛡️
     { id: 's1', t: 'stress', r: 'common', q: '緊張代表你在乎，深呼吸三次。' },
     { id: 's2', t: 'stress', r: 'common', q: '壓力來的時候，先放鬆肩膀。' },
+    { id: 's5', t: 'stress', r: 'common', q: '手會抖是正常的，握緊再放開。' },
+    { id: 's6', t: 'stress', r: 'common', q: '把「我好緊張」換成「我準備好了」。' },
+    { id: 's7', t: 'stress', r: 'common', q: '緊張時，把注意力放回腳底。' },
+    { id: 's8', t: 'stress', r: 'common', q: '賽前睡不著？閉眼休息也是充電。' },
     { id: 's3', t: 'stress', r: 'rare', q: '比賽的心跳，是身體在幫你準備。' },
+    { id: 's9', t: 'stress', r: 'rare', q: '壓力不是敵人，是你想贏的證明。' },
+    { id: 's10', t: 'stress', r: 'rare', q: '把大比賽，當成一次平常的練習。' },
     { id: 's4', t: 'stress', r: 'epic', q: '真正的強者，是在害怕時還能出手。' },
-    // 自信
+    { id: 's11', t: 'stress', r: 'epic', q: '冠軍也會怕，他只是選擇不被怕綁住。' },
+    // 自信 🦁
     { id: 'c1', t: 'confidence', r: 'common', q: '你練過的，身體都記得。' },
     { id: 'c2', t: 'confidence', r: 'common', q: '抬頭、挺胸，先讓姿勢自信起來。' },
+    { id: 'c5', t: 'confidence', r: 'common', q: '別人怎麼看不重要，你信不信自己才重要。' },
+    { id: 'c6', t: 'confidence', r: 'common', q: '今天的你，比昨天多會一點。' },
+    { id: 'c7', t: 'confidence', r: 'common', q: '失誤不代表你不行，只代表這一次。' },
+    { id: 'c8', t: 'confidence', r: 'common', q: '先把姿勢做得有自信，心就會跟上。' },
     { id: 'c3', t: 'confidence', r: 'rare', q: '不用完美，只要比昨天好一點。' },
+    { id: 'c9', t: 'confidence', r: 'rare', q: '你不需要最強，只需要全力。' },
+    { id: 'c10', t: 'confidence', r: 'rare', q: '自信不是覺得會贏，是不怕輸地去拚。' },
     { id: 'c4', t: 'confidence', r: 'epic', q: '相信自己，是你給自己最強的裝備。' },
-    // 恢復
+    { id: 'c11', t: 'confidence', r: 'epic', q: '真正的對手只有一個，就是昨天的自己。' },
+    // 恢復 🌿
     { id: 'r1', t: 'recovery', r: 'common', q: '睡好覺，是最便宜的進步。' },
     { id: 'r2', t: 'recovery', r: 'common', q: '累了就好好休息，這也是訓練。' },
+    { id: 'r5', t: 'recovery', r: 'common', q: '痠痛不是壞事，是身體在變強。' },
+    { id: 'r6', t: 'recovery', r: 'common', q: '多喝一口水，身體會謝謝你。' },
+    { id: 'r7', t: 'recovery', r: 'common', q: '拉筋五分鐘，明天少痛一點。' },
+    { id: 'r8', t: 'recovery', r: 'common', q: '吃得好，才練得久。' },
     { id: 'r3', t: 'recovery', r: 'rare', q: '恢復不是偷懶，是讓努力長出來。' },
+    { id: 'r9', t: 'recovery', r: 'rare', q: '休息日不是退步日，是充電日。' },
+    { id: 'r10', t: 'recovery', r: 'rare', q: '身體會說話，學會聽它的聲音。' },
     { id: 'r4', t: 'recovery', r: 'epic', q: '懂得休息的選手，才走得遠。' },
-    // 鬥志
+    { id: 'r11', t: 'recovery', r: 'epic', q: '頂尖的祕密，藏在睡覺和恢復裡。' },
+    // 鬥志 🔥
     { id: 'd1', t: 'drive', r: 'common', q: '今天多撐一下下，就是成長。' },
     { id: 'd2', t: 'drive', r: 'common', q: '沒有白費的汗水。' },
+    { id: 'd5', t: 'drive', r: 'common', q: '不想練的那天，練了就是賺到。' },
+    { id: 'd6', t: 'drive', r: 'common', q: '累的時候，再做最後一組。' },
+    { id: 'd7', t: 'drive', r: 'common', q: '進步藏在你想停下的那一刻之後。' },
+    { id: 'd8', t: 'drive', r: 'common', q: '把「我做不到」改成「我還沒做到」。' },
     { id: 'd3', t: 'drive', r: 'rare', q: '想放棄的時候，再做一次就好。' },
-    { id: 'd4', t: 'drive', r: 'epic', q: '冠軍，是在沒人看見時還在練的人。' }
+    { id: 'd9', t: 'drive', r: 'rare', q: '別人休息時你還在練，差距就在這裡。' },
+    { id: 'd10', t: 'drive', r: 'rare', q: '痛苦會過去，變強會留下。' },
+    { id: 'd4', t: 'drive', r: 'epic', q: '冠軍，是在沒人看見時還在練的人。' },
+    { id: 'd11', t: 'drive', r: 'epic', q: '站上頒獎台的人，都熬過想放棄的夜。' }
   ];
   var TOTAL = DECK.length;
 
