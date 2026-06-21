@@ -527,6 +527,24 @@ textarea.text-input { resize: vertical; }
 }
 .login-role-btn:hover { border-color: var(--gold); background: rgba(245,197,24,0.08); transform: translateY(-2px); }
 .login-step2-actions { display: flex; gap: 10px; margin-top: 14px; }
+.login-entry-help { margin-top: 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-soft); font-size: .82rem; text-align: left; }
+.login-entry-help p { margin: 4px 0; }
+.login-privacy-note { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--border); color: var(--text-soft); font-size: .76rem; line-height: 1.6; text-align: left; }
+.login-alt { display: block; width: 100%; margin-top: 10px; border: 0; background: transparent; color: var(--blue); font-weight: 700; cursor: pointer; }
+.login-alt:hover { text-decoration: underline; }
+.login-security-note { color: var(--text-soft); font-size: .8rem; line-height: 1.5; margin: 10px 0 0; }
+.consent-notice { max-height: 150px; overflow-y: auto; margin-bottom: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 9px; color: var(--text-soft); font-size: .8rem; line-height: 1.6; text-align: left; }
+.consent-row { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; color: var(--text-main); font-size: .84rem; text-align: left; }
+.consent-row input { margin-top: 3px; accent-color: var(--blue); }
+
+/* 帳號與家長管理 */
+.account-admin-toolbar, .account-parent-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.account-admin-toolbar { justify-content: space-between; margin-bottom: 8px; }
+.account-admin-title { color: var(--blue); margin: 18px 0 8px; }
+.account-parent-form > .text-input { flex: 1 1 180px; }
+.account-actions { display: flex; flex-wrap: wrap; gap: 5px; min-width: 220px; }
+.account-actions button { border: 1px solid var(--border); border-radius: 7px; background: var(--bg-card-2); color: var(--text-main); padding: 5px 8px; cursor: pointer; font-size: .78rem; }
+.account-actions button:hover { border-color: var(--blue); }
 .login-back { background: transparent; border: 1px solid var(--border); color: var(--text-soft); border-radius: 12px; padding: 14px; flex: 1; cursor: pointer; font-weight: 700; }
 
 /* 登入姓名搜尋選擇器（人數多也好找） */

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260621e" />
+  <link rel="stylesheet" href="style.css?v=20260621f" />
   <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
 </head>
 <body>
@@ -22,9 +22,15 @@
           <button class="login-role-btn" data-role="parent">👨‍👩‍👧 我是家長</button>
           <button class="login-role-btn" data-role="coach">📊 我是教練</button>
         </div>
+        <div class="login-entry-help">
+          <p><b>選手：</b>姓名＋4位數 PIN</p>
+          <p><b>家長：</b>首次孩子姓名＋完整手機；之後孩子姓名＋手機後四碼</p>
+          <p><b>教練：</b>教練密碼</p>
+        </div>
       </div>
 
       <div id="loginStep2" style="display:none;"></div>
+      <p class="login-privacy-note">本系統依角色顯示不同資料。選手只能查看自己的資料，家長只能查看自己孩子的摘要，教練後台保留完整資料供訓練管理與風險追蹤使用。每日回報每天開放，KPI 回報由教練依訓練週期或比賽狀況手動開啟。</p>
     </div>
   </div>
 
@@ -536,6 +542,26 @@
         </div>
       </div>
 
+      <div class="card" id="accountAdminCard">
+        <h3 class="card-title">🔐 帳號與家長管理</h3>
+        <div class="account-admin-toolbar">
+          <label class="toggle-row"><input type="checkbox" id="legacyLoginEnabled" /> 啟用舊制過渡登入</label>
+          <button type="button" id="btnRefreshAccounts" class="btn btn-secondary">重新整理帳號</button>
+        </div>
+        <p class="review-label">所有選手 PIN、啟用碼與教練密碼只在後端以雜湊保存；教練不會看到原始 PIN。</p>
+        <h4 class="account-admin-title">選手帳號</h4>
+        <div id="studentAccountAdmin" class="table-wrap"><div class="hint-box">讀取中...</div></div>
+        <h4 class="account-admin-title">新增／更新家長手機</h4>
+        <div class="account-parent-form">
+          <select id="accountParentStudent" class="text-input"><option value="">選擇孩子</option></select>
+          <input id="accountParentName" class="text-input" placeholder="家長姓名" />
+          <input id="accountParentPhone" class="text-input" type="tel" inputmode="tel" placeholder="完整手機號碼" />
+          <button type="button" id="btnSaveParentAccount" class="btn btn-primary">儲存家長資料</button>
+        </div>
+        <h4 class="account-admin-title">家長帳號</h4>
+        <div id="parentAccountAdmin" class="table-wrap"><div class="hint-box">讀取中...</div></div>
+      </div>
+
       <!-- ========================================================= -->
       <!-- 每月訪視專用報表                                          -->
       <!-- ========================================================= -->
@@ -771,7 +797,7 @@
         <ul id="playerList" class="player-list"></ul>
         <div class="btn-group">
           <button type="button" id="btnSyncRoster" class="btn btn-primary">☁️ 同步名單到雲端</button>
-          <button type="button" id="btnResetPlayers" class="btn btn-secondary">♻️ 恢復預設名單</button>
+          <button type="button" id="btnResetPlayers" class="btn btn-secondary">♻️ 重新載入雲端名單</button>
           <button type="button" id="btnExportPlayers" class="btn btn-ghost">📤 匯出 JSON</button>
           <button type="button" id="btnImportPlayers" class="btn btn-ghost">📥 匯入 JSON</button>
         </div>
@@ -791,7 +817,7 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260621e"></script>
+  <script src="app.js?v=20260621f"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260620a"></script>

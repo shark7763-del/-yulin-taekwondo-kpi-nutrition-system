@@ -107,6 +107,14 @@
 | unlockedMoves | 解鎖哪些高難度動作 |
 | redLightReason / redLightHandling / redLightNote | 教練後台紅燈處理紀錄：原因、處理方式、備註 |
 
-共 **103 欄**。前段為學生基本資料、KPI、飲食與 LINE 文字，後段接交叉辯論／教練複評、隊友鼓勵名／家長留言、自由品勢、紅燈處理、未出席反思、AI 教練回饋與心情紀錄。重新部署後在 Apps Script 編輯器執行一次 `setupSheet()` 即可自動補欄。
+records 最後另有 `studentId`，供新制帳號授權與既有姓名資料漸進對應。前段為學生基本資料、KPI、飲食與 LINE 文字，後段接交叉辯論／教練複評、隊友鼓勵名／家長留言、自由品勢、紅燈處理、未出席反思、AI 教練回饋與心情紀錄。重新部署後在 Apps Script 編輯器執行一次 `setupSheet()` 即可自動補欄。
+
+## 新制帳號工作表
+
+- `student_accounts`：`studentId`、`studentName`、`teamId`、年級班級、帳號狀態、PIN 雜湊、啟用碼雜湊、錯誤次數、鎖定與登入時間。
+- `parents`：保留舊欄位相容性，並新增 `studentId`、完整手機／後四碼、綁定狀態、同意狀態、錯誤次數、鎖定與登入時間，以及五項家長同意欄位。
+- `coach_settings`：`coachId`、`teamId`、教練密碼雜湊、錯誤次數、鎖定與登入時間。
+
+`setupSheet()` 只補工作表與表頭，不會清除既有 records 資料。選手啟用碼明碼只在教練按下產生時回傳一次，Sheet 僅保存雜湊。
 
 > 註：自由品勢前端目前只填「主題、空中踢擊完成幾腳、落地失誤幾次、解鎖哪些高難度動作」＋10 項評分拉桿；其餘 freestyle 欄位（成功率、練習段落、影片修正、8 拍…）保留在表頭但不寫入，作日後擴充用。

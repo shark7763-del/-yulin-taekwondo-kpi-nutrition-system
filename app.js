@@ -37,13 +37,8 @@ const CONFIG = {
    1. 常數設定
    ============================================================ */
 
-// 內建預設選手名單
-const DEFAULT_PLAYERS = [
-  '王冠霖', '謝昊恩', '唐霈昕', '林子棠', '葉承祐', '吳昀蓁',
-  '蘇宥嘉', '許景皓', '王柏鈞', '上官哲忻', '林駿堯', '徐洧翎',
-  '張晏慈', '曹絜綺', '鄧鈞甯', '陳語玄', '胡馨凌', '高莉妤',
-  '陳希恩', '黃粲益', '黃粲祐', '林晏合', '王瀚忠', '許晨熙'
-];
+// 公開前端不內嵌選手名單；教練驗證後才從受保護的 roster API 載入。
+const DEFAULT_PLAYERS = [];
 
 const PARENT_FIELDS = ['parentId', 'parentName', 'phone', 'lineId', 'studentName', 'loginCode', 'status'];
 const ATTENDANCE_REPORT_FIELDS = [
@@ -5236,10 +5231,9 @@ function setupSettingsHandlers() {
     syncRosterAndToast('已新增');
   });
 
-  $id('btnResetPlayers').addEventListener('click', () => {
-    savePlayers(DEFAULT_PLAYERS.slice());
-    renderPlayerList(); refreshNameSelects();
-    syncRosterAndToast('已恢復預設名單');
+  $id('btnResetPlayers').addEventListener('click', async () => {
+    await loadRosterFromServer();
+    toast('已重新載入雲端名單');
   });
 
   $id('btnExportPlayers').addEventListener('click', () => {
@@ -5257,19 +5251,17 @@ function setupSettingsHandlers() {
     } catch (e) { toast('匯入失敗：請確認是 JSON 陣列格式'); }
   });
 
-  // 設定教練密碼（= 後端 ADMIN_KEY）
+  // 設定教練密碼：後端只保存雜湊
   const setPwdBtn = $id('btnSetCoachPwd');
   if (setPwdBtn) setPwdBtn.addEventListener('click', async () => {
     const np = $id('newCoachPwd').value.trim();
     const st = $id('coachPwdStatus');
-    if (!np) { st.className = 'conn-status fail'; st.textContent = '請輸入新密碼。'; return; }
+    if (np.length < 8) { st.className = 'conn-status fail'; st.textContent = '教練密碼至少需要 8 個字元。'; return; }
     if (!getWebAppUrl()) { st.className = 'conn-status fail'; st.textContent = '尚未設定 Web App URL。'; return; }
     st.className = 'conn-status info'; st.textContent = '設定中...';
     try {
-      // adminKey 用目前已知的密碼（第一次設定時後端尚無密碼，會放行）
-      const res = await postToWebApp({ action: 'setLineConfig', adminKey: getLineAdminKey(), newAdminKey: np });
+      const res = await postToWebApp({ action: 'setCoachPassword', newPassword: np });
       if (res && res.ok) {
-        saveLineAdminKey(np); // 記住，之後改設定/同步名單才不會被擋
         $id('newCoachPwd').value = '';
         st.className = 'conn-status ok'; st.textContent = '✅ 教練密碼已設定。';
       } else {
@@ -5475,10 +5467,17 @@ function showConn(type, msg) {
 async function postToWebApp(body) {
   const url = getWebAppUrl();
   if (!url) throw new Error('未設定 Web App URL');
+  const role = getRole();
+  const requestBody = Object.assign({}, body);
+  if (role && role.authToken && !requestBody.authToken) requestBody.authToken = role.authToken;
+  if (role && !role.authToken && AUTH_CONFIG.legacyLoginEnabled) {
+    requestBody.legacyRole = role.role;
+    requestBody.legacyName = role.name || '';
+  }
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(requestBody)
   });
   const text = await res.text();
   try { return JSON.parse(text); }
@@ -5502,17 +5501,28 @@ function switchTab(tabName) {
    ============================================================ */
 
 const ROLE_KEY = 'yulin_role';
+let AUTH_CONFIG = { legacyLoginEnabled: true };
 
 function getRole() {
   try { return JSON.parse(localStorage.getItem(ROLE_KEY)); } catch (e) { return null; }
 }
-function setRole(role, name) { localStorage.setItem(ROLE_KEY, JSON.stringify({ role: role, name: name || '' })); }
+function setRole(role, name, auth) {
+  auth = auth || {};
+  localStorage.setItem(ROLE_KEY, JSON.stringify({
+    role: role,
+    name: name || auth.studentName || '',
+    studentId: auth.studentId || '',
+    teamId: auth.teamId || '',
+    parentId: auth.parentId || '',
+    authToken: auth.authToken || auth.token || ''
+  }));
+}
 function clearRole() { localStorage.removeItem(ROLE_KEY); }
 
 // 各角色可看的分頁與預設分頁
 const ROLE_TABS = {
   student: { allowed: ['student', 'lastperf', 'profile'], default: 'student' },
-  parent: { allowed: ['parent', 'lastperf', 'profile'], default: 'parent' },
+  parent: { allowed: ['parent'], default: 'parent' },
   coach: { allowed: ['student', 'lastperf', 'coach', 'profile', 'settings'], default: 'coach' }
 };
 const ROLE_LABEL = { student: '🥋 選手', parent: '👨‍👩‍👧 家長', coach: '📊 教練' };
@@ -5526,7 +5536,27 @@ function showLoginOverlay() {
   $id('loginStep2').innerHTML = '';
 }
 
-// 進入第二步（選名字 / 輸密碼）
+async function loadAuthConfig() {
+  if (!getWebAppUrl()) return AUTH_CONFIG;
+  try {
+    const res = await postToWebApp({ action: 'getAuthConfig' });
+    if (res && res.ok) AUTH_CONFIG = res;
+  } catch (e) { /* 沿用過渡預設 */ }
+  return AUTH_CONFIG;
+}
+
+function loginError(message) {
+  const el = $id('loginErr');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = message;
+}
+
+function loginField(id, label, type, attrs) {
+  return `<label class="field-label" for="${id}">${label}</label><input id="${id}" class="text-input" type="${type || 'text'}" ${attrs || ''} />`;
+}
+
+// 進入第二步（新制驗證；過渡模式另以文字入口顯示）
 function loginStep2(role) {
   const s1 = $id('loginStep1'), s2 = $id('loginStep2');
   s1.style.display = 'none';
@@ -5535,7 +5565,7 @@ function loginStep2(role) {
   if (role === 'coach') {
     s2.innerHTML = `
       <p class="login-hint">請輸入教練密碼</p>
-      <input type="password" id="loginCoachPwd" class="text-input" placeholder="教練密碼" />
+      ${loginField('loginCoachPwd', '教練密碼', 'password', 'placeholder="教練密碼" autocomplete="current-password"')}
       <div class="login-step2-actions">
         <button class="login-back" id="loginBack">返回</button>
         <button class="btn btn-primary" id="loginCoachGo" style="flex:1">進入</button>
@@ -5544,30 +5574,146 @@ function loginStep2(role) {
     $id('loginBack').addEventListener('click', showLoginOverlay);
     $id('loginCoachGo').addEventListener('click', () => coachLogin());
     $id('loginCoachPwd').addEventListener('keydown', e => { if (e.key === 'Enter') coachLogin(); });
-  } else {
-    // 選手 / 家長：選名字（可搜尋，人數多也好找）
-    const who = role === 'student' ? '選手' : '孩子';
-    const players = getPlayers();
+  } else if (role === 'student') {
     s2.innerHTML = `
-      <p class="login-hint">請選擇${who}姓名</p>
-      <div class="login-name-picker">
-        <input type="text" id="loginNameSearch" class="text-input login-name-search" placeholder="🔍 輸入姓名搜尋，或直接點下方名單" autocomplete="off" inputmode="search" />
-        <input type="hidden" id="loginName" value="" />
-        <div id="loginNameList" class="login-name-list"></div>
-      </div>
+      <p class="login-hint">選手登入</p>
+      ${loginField('loginStudentName', '姓名', 'text', 'placeholder="輸入姓名" autocomplete="username"')}
+      ${loginField('loginStudentPin', '4 位數 PIN', 'password', 'placeholder="4 位數 PIN" inputmode="numeric" maxlength="4" autocomplete="current-password"')}
       <div class="login-step2-actions">
         <button class="login-back" id="loginBack">返回</button>
-        <button class="btn btn-primary" id="loginNameGo" style="flex:1">進入</button>
+        <button class="btn btn-primary" id="loginStudentGo" style="flex:1">登入</button>
       </div>
+      <button type="button" class="login-alt" id="loginStudentActivate">首次登入／重新設定 PIN</button>
+      ${AUTH_CONFIG.legacyLoginEnabled ? '<button type="button" class="login-alt" id="loginStudentLegacy">舊制過渡登入</button>' : ''}
       <p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none;margin-top:10px"></p>`;
     $id('loginBack').addEventListener('click', showLoginOverlay);
-    setupLoginNamePicker(players, role);
-    $id('loginNameGo').addEventListener('click', () => {
-      const name = resolveLoginName(players);
-      if (!name) { toast('請選擇或輸入姓名'); return; }
-      finishLogin(role, name);
-    });
+    $id('loginStudentGo').addEventListener('click', studentAccountLogin);
+    $id('loginStudentActivate').addEventListener('click', showStudentActivation);
+    if ($id('loginStudentLegacy')) $id('loginStudentLegacy').addEventListener('click', () => showLegacyLogin('student'));
+  } else {
+    s2.innerHTML = `
+      <p class="login-hint">家長登入</p>
+      ${loginField('loginParentStudentName', '孩子姓名', 'text', 'placeholder="輸入孩子姓名" autocomplete="username"')}
+      ${loginField('loginParentLast4', '手機後四碼', 'password', 'placeholder="手機後四碼" inputmode="numeric" maxlength="4" autocomplete="current-password"')}
+      <div class="login-step2-actions">
+        <button class="login-back" id="loginBack">返回</button>
+        <button class="btn btn-primary" id="loginParentGo" style="flex:1">登入</button>
+      </div>
+      <button type="button" class="login-alt" id="loginParentFirst">首次完整手機驗證</button>
+      ${AUTH_CONFIG.legacyLoginEnabled ? '<button type="button" class="login-alt" id="loginParentLegacy">舊制過渡登入</button>' : ''}
+      <p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none;margin-top:10px"></p>`;
+    $id('loginBack').addEventListener('click', showLoginOverlay);
+    $id('loginParentGo').addEventListener('click', parentAccountLogin);
+    $id('loginParentFirst').addEventListener('click', showParentVerification);
+    if ($id('loginParentLegacy')) $id('loginParentLegacy').addEventListener('click', () => showLegacyLogin('parent'));
   }
+}
+
+function showStudentActivation() {
+  const s2 = $id('loginStep2');
+  s2.innerHTML = `<p class="login-hint">首次啟用／重新設定 PIN</p>
+    ${loginField('activateStudentName', '姓名', 'text', 'placeholder="輸入姓名"')}
+    ${loginField('activateCode', '教練提供的啟用碼', 'text', 'placeholder="6 位數啟用碼" inputmode="numeric" maxlength="6"')}
+    ${loginField('activatePin', '設定 4 位數 PIN', 'password', 'inputmode="numeric" maxlength="4"')}
+    ${loginField('activatePinConfirm', '再次確認 PIN', 'password', 'inputmode="numeric" maxlength="4"')}
+    <div class="login-step2-actions"><button class="login-back" id="loginBack">返回</button><button class="btn btn-primary" id="activateGo" style="flex:1">完成啟用</button></div>
+    <p class="login-security-note">不可使用 0000、1111、1234、4321、9999。</p><p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none"></p>`;
+  $id('loginBack').addEventListener('click', () => loginStep2('student'));
+  $id('activateGo').addEventListener('click', studentActivateAccount);
+}
+
+function showParentVerification() {
+  const s2 = $id('loginStep2');
+  s2.innerHTML = `<p class="login-hint">家長首次驗證</p>
+    ${loginField('verifyParentStudentName', '孩子姓名', 'text', 'placeholder="輸入孩子姓名"')}
+    ${loginField('verifyParentPhone', '教練預先建立的完整手機', 'tel', 'placeholder="例如 0912345678" inputmode="tel"')}
+    <div class="login-step2-actions"><button class="login-back" id="loginBack">返回</button><button class="btn btn-primary" id="verifyParentGo" style="flex:1">驗證</button></div>
+    <p class="login-security-note">手機必須先由教練建立或核准，無法自行新增綁定。</p><p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none"></p>`;
+  $id('loginBack').addEventListener('click', () => loginStep2('parent'));
+  $id('verifyParentGo').addEventListener('click', parentFirstVerify);
+}
+
+function showLegacyLogin(role) {
+  const s2 = $id('loginStep2');
+  s2.innerHTML = `<p class="login-hint">舊制過渡登入</p>
+    ${loginField('legacyLoginName', role === 'student' ? '選手姓名' : '孩子姓名', 'text', 'placeholder="輸入完整姓名"')}
+    <div class="login-step2-actions"><button class="login-back" id="loginBack">返回</button><button class="btn btn-primary" id="legacyLoginGo" style="flex:1">進入</button></div>
+    <p class="login-security-note">此入口僅供帳號轉換期間使用，教練可在後台關閉。</p><p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none"></p>`;
+  $id('loginBack').addEventListener('click', () => loginStep2(role));
+  $id('legacyLoginGo').addEventListener('click', () => {
+    const name = $id('legacyLoginName').value.trim();
+    if (!name) return loginError('請輸入姓名。');
+    finishLogin(role, name);
+  });
+}
+
+async function runLogin(buttonId, request, role) {
+  const button = $id(buttonId);
+  button.disabled = true; const oldText = button.textContent; button.textContent = '驗證中...';
+  try {
+    const res = await postToWebApp(request);
+    if (!res || !res.ok) { loginError((res && res.error) || '登入失敗，請稍後再試。'); return; }
+    const user = res.user || {};
+    setRole(role, user.studentName || '', Object.assign({}, user, { authToken: res.authToken }));
+    if (role === 'parent' && res.consentRequired) {
+      showParentConsent();
+      return;
+    }
+    $id('loginOverlay').classList.add('hidden');
+    applyRole();
+  } catch (e) { loginError('無法連線驗證，請稍後再試。'); }
+  finally { button.disabled = false; button.textContent = oldText; }
+}
+
+function studentAccountLogin() {
+  return runLogin('loginStudentGo', { action: 'studentLogin', studentName: $id('loginStudentName').value.trim(), pin: $id('loginStudentPin').value }, 'student');
+}
+function studentActivateAccount() {
+  return runLogin('activateGo', { action: 'studentActivate', studentName: $id('activateStudentName').value.trim(), activationCode: $id('activateCode').value.trim(), pin: $id('activatePin').value, pinConfirm: $id('activatePinConfirm').value }, 'student');
+}
+function parentAccountLogin() {
+  return runLogin('loginParentGo', { action: 'parentLogin', studentName: $id('loginParentStudentName').value.trim(), parentPhoneLast4: $id('loginParentLast4').value }, 'parent');
+}
+function parentFirstVerify() {
+  return runLogin('verifyParentGo', { action: 'parentVerify', studentName: $id('verifyParentStudentName').value.trim(), parentPhone: $id('verifyParentPhone').value }, 'parent');
+}
+
+function showParentConsent() {
+  const s2 = $id('loginStep2');
+  $id('loginStep1').style.display = 'none';
+  s2.style.display = 'block';
+  s2.innerHTML = `<p class="login-hint">家長同意與個資告知</p>
+    <div class="consent-notice">本系統蒐集學生出席、訓練狀態、身體狀態、KPI成長與教練提醒，僅作為訓練管理、身體狀態追蹤、家長溝通與訓練報表使用。家長端僅能查看自己孩子的訓練摘要與教練公開提醒，不會顯示其他學生資料。如需查詢、更正、停止使用或刪除資料，請聯繫教練或系統管理者。</div>
+    <label class="consent-row"><input type="checkbox" id="consentTrainingData"> 同意訓練與出席資料用於訓練管理</label>
+    <label class="consent-row"><input type="checkbox" id="consentHealthData"> 同意身體狀態資料用於安全追蹤</label>
+    <label class="consent-row"><input type="checkbox" id="consentParentNotice"> 同意接收教練公開提醒與家長摘要</label>
+    <label class="consent-row"><input type="checkbox" id="consentReport"> 同意資料用於個人訓練報表</label>
+    <label class="consent-row"><input type="checkbox" id="consentLineNotice"> 同意接收 LINE 通知（選填）</label>
+    <div class="login-step2-actions"><button class="login-back" id="consentCancel">取消</button><button class="btn btn-primary" id="consentGo" style="flex:1">同意並繼續</button></div>
+    <p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none"></p>`;
+  $id('consentCancel').addEventListener('click', () => { clearRole(); showLoginOverlay(); });
+  $id('consentGo').addEventListener('click', submitParentConsent);
+}
+
+async function submitParentConsent() {
+  const button = $id('consentGo');
+  button.disabled = true; button.textContent = '儲存中...';
+  try {
+    const res = await postToWebApp({
+      action: 'parentConsent',
+      consentTrainingData: $id('consentTrainingData').checked,
+      consentHealthData: $id('consentHealthData').checked,
+      consentParentNotice: $id('consentParentNotice').checked,
+      consentReport: $id('consentReport').checked,
+      consentLineNotice: $id('consentLineNotice').checked
+    });
+    if (!res || !res.ok) { loginError((res && res.error) || '同意資料儲存失敗。'); return; }
+    const user = res.user || {};
+    setRole('parent', user.studentName || '', Object.assign({}, user, { authToken: res.authToken }));
+    $id('loginOverlay').classList.add('hidden');
+    applyRole();
+  } catch (e) { loginError('無法連線，請稍後再試。'); }
+  finally { button.disabled = false; button.textContent = '同意並繼續'; }
 }
 
 /*
@@ -5635,7 +5781,7 @@ function resolveLoginName(players) {
   return matched.length === 1 ? matched[0] : '';
 }
 
-// 教練登入：用後端 ADMIN_KEY 驗證
+// 教練登入：密碼只送後端驗證，前端不保存明碼
 async function coachLogin() {
   const pwd = $id('loginCoachPwd').value;
   const errEl = $id('loginErr');
@@ -5649,26 +5795,22 @@ async function coachLogin() {
   }
 
   go.disabled = true; go.textContent = '驗證中...';
-  let result = { ok: false, keySet: true };
+  let result = { ok: false };
   if (getWebAppUrl()) {
     try {
-      const res = await postToWebApp({ action: 'verifyAdmin', adminKey: pwd });
+      const res = await postToWebApp({ action: 'coachLogin', coachPassword: pwd });
       if (res && res.ok !== undefined) result = res;
     } catch (e) { /* 連線失敗，往下判斷 */ }
   }
   go.disabled = false; go.textContent = '進入';
 
   if (result.ok) {
-    if (result.keySet === false) {
-      // 後端還沒設 ADMIN_KEY：先放行讓教練進去設定，但強烈提醒（此時系統其實沒上鎖）
-      alert('⚠️ 後端尚未設定教練密碼，目前任何人都能進入教練後台。\n請立刻到「系統設定 → 教練密碼設定」設一組密碼。');
-    }
-    // 記住教練密碼供名單同步等使用
-    if (pwd) saveLineAdminKey(pwd);
-    finishLogin('coach', '');
+    const user = result.user || {};
+    setRole('coach', '', Object.assign({}, user, { authToken: result.authToken }));
+    $id('loginOverlay').classList.add('hidden');
+    applyRole();
   } else {
-    errEl.style.display = 'block';
-    errEl.textContent = '密碼錯誤，請再試一次。';
+    loginError(result.error || '登入資訊不正確。');
   }
 }
 
@@ -5684,6 +5826,13 @@ function applyRole() {
   const r = getRole();
   if (!r) { showLoginOverlay(); return; }
   const conf = ROLE_TABS[r.role] || ROLE_TABS.student;
+
+  // 新制選手／家長的姓名欄只保留自己的身分，不把全隊選項留在 DOM。
+  if ((r.role === 'student' || r.role === 'parent') && r.name) {
+    ['name', 'lastPerfName', 'profileName'].forEach(id => setSelectOnlyName(id, r.name));
+  } else if (r.role === 'coach') {
+    refreshNameSelects();
+  }
 
   // 分頁顯示控制
   document.querySelectorAll('.tab-btn').forEach(b => {
@@ -5735,6 +5884,21 @@ function applyRole() {
   } else if (profileQuery) {
     profileQuery.style.display = '';
   }
+
+  if (r.role === 'coach') {
+    loadRosterFromServer().then(() => refreshAccountAdmin());
+    refreshCoach();
+  }
+}
+
+function setSelectOnlyName(id, name) {
+  const el = $id(id);
+  if (!el || el.tagName !== 'SELECT') return;
+  el.innerHTML = '';
+  const option = document.createElement('option');
+  option.value = name; option.textContent = name;
+  el.appendChild(option);
+  el.value = name;
 }
 
 function setupRoleHandlers() {
@@ -5742,6 +5906,8 @@ function setupRoleHandlers() {
     btn.addEventListener('click', () => loginStep2(btn.dataset.role));
   });
   $id('btnSwitchRole').addEventListener('click', () => {
+    const current = getRole();
+    if (current && current.authToken && getWebAppUrl()) postToWebApp({ action: 'logout' }).catch(() => {});
     clearRole();
     // 解除選手姓名鎖定
     const nameSel = $id('name'); if (nameSel) nameSel.disabled = false;
@@ -5750,6 +5916,104 @@ function setupRoleHandlers() {
     $id('roleBadge').style.display = 'none';
     $id('btnSwitchRole').style.display = 'none';
     showLoginOverlay();
+  });
+}
+
+/* ============================================================
+   15.6 教練帳號與家長管理
+   ============================================================ */
+
+function accountDate(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? escapeHtml(value) : d.toLocaleString('zh-TW', { hour12: false });
+}
+
+async function refreshAccountAdmin() {
+  const studentBox = $id('studentAccountAdmin');
+  const parentBox = $id('parentAccountAdmin');
+  if (!studentBox || !parentBox || !isCoachView()) return;
+  try {
+    const res = await postToWebApp({ action: 'getAccountAdminData' });
+    if (!res || !res.ok) throw new Error((res && res.error) || '讀取失敗');
+    const data = res.data || { students: [], parents: [] };
+    $id('legacyLoginEnabled').checked = !!data.legacyLoginEnabled;
+
+    studentBox.innerHTML = `<table><thead><tr><th>選手</th><th>狀態</th><th>最近登入</th><th>PIN</th><th>操作</th></tr></thead><tbody>${
+      data.students.map(s => `<tr><td>${escapeHtml(s.studentName)}</td><td>${escapeHtml(s.accountStatus || 'pending')}${s.lockedUntil ? '<br><span class="tag tag-red">鎖定</span>' : ''}</td><td>${accountDate(s.lastLoginAt)}</td><td>${s.pinSet ? '已設定' : '待啟用'}</td><td class="account-actions">
+        <button type="button" data-student-action="generateActivation" data-student-id="${escapeHtml(s.studentId)}">產生啟用碼</button>
+        <button type="button" data-student-action="resetPin" data-student-id="${escapeHtml(s.studentId)}">重設 PIN</button>
+        <button type="button" data-student-action="unlock" data-student-id="${escapeHtml(s.studentId)}">解除鎖定</button>
+        <button type="button" data-student-action="${s.accountStatus === 'disabled' ? 'enable' : 'disable'}" data-student-id="${escapeHtml(s.studentId)}">${s.accountStatus === 'disabled' ? '啟用' : '停用'}</button>
+      </td></tr>`).join('') || '<tr><td colspan="5">尚無選手帳號，請先同步名單並執行 setupSheet。</td></tr>'
+    }</tbody></table>`;
+
+    const studentSelect = $id('accountParentStudent');
+    studentSelect.innerHTML = '<option value="">選擇孩子</option>' + data.students.map(s => `<option value="${escapeHtml(s.studentId)}">${escapeHtml(s.studentName)}</option>`).join('');
+
+    parentBox.innerHTML = `<table><thead><tr><th>孩子</th><th>家長</th><th>手機</th><th>綁定／同意</th><th>最近登入</th><th>操作</th></tr></thead><tbody>${
+      data.parents.map(p => `<tr><td>${escapeHtml(p.studentName)}</td><td>${escapeHtml(p.parentName || '-')}</td><td>${escapeHtml(p.parentPhone || '-')}</td><td>${escapeHtml(p.bindStatus || 'pending')} / ${escapeHtml(p.consentStatus || 'pending')}</td><td>${accountDate(p.lastLoginAt)}</td><td class="account-actions">
+        <button type="button" data-parent-action="edit" data-parent-id="${escapeHtml(p.parentId)}" data-student-id="${escapeHtml(p.studentId)}" data-parent-name="${escapeHtml(p.parentName || '')}" data-parent-phone="${escapeHtml(p.parentPhone || '')}">更新手機</button>
+        <button type="button" data-parent-action="unlock" data-parent-id="${escapeHtml(p.parentId)}">解除鎖定</button>
+        <button type="button" data-parent-action="unbind" data-parent-id="${escapeHtml(p.parentId)}">解除綁定</button>
+        <button type="button" data-parent-action="${p.bindStatus === 'disabled' ? 'enable' : 'disable'}" data-parent-id="${escapeHtml(p.parentId)}">${p.bindStatus === 'disabled' ? '啟用' : '停用查看'}</button>
+      </td></tr>`).join('') || '<tr><td colspan="6">尚未建立家長資料。</td></tr>'
+    }</tbody></table>`;
+  } catch (e) {
+    studentBox.innerHTML = `<div class="hint-box warn">帳號資料讀取失敗：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function runStudentAccountAction(studentId, accountAction) {
+  const res = await postToWebApp({ action: 'studentAccountAction', studentId, accountAction });
+  if (!res || !res.ok) { toast((res && res.error) || '操作失敗'); return; }
+  if (res.activationCode) alert(`啟用碼：${res.activationCode}\n有效期限：${accountDate(res.expiresAt)}\n請以安全方式提供給該選手。`);
+  else toast('帳號狀態已更新');
+  refreshAccountAdmin();
+}
+
+function setupAccountAdminHandlers() {
+  const card = $id('accountAdminCard');
+  if (!card) return;
+  $id('btnRefreshAccounts').addEventListener('click', refreshAccountAdmin);
+  $id('legacyLoginEnabled').addEventListener('change', async e => {
+    const res = await postToWebApp({ action: 'setLegacyLoginEnabled', enabled: e.target.checked });
+    if (!res || !res.ok) { e.target.checked = !e.target.checked; toast((res && res.error) || '設定失敗'); return; }
+    AUTH_CONFIG.legacyLoginEnabled = !!res.legacyLoginEnabled;
+    toast(e.target.checked ? '舊制過渡登入已開啟' : '舊制過渡登入已關閉');
+  });
+  $id('studentAccountAdmin').addEventListener('click', e => {
+    const btn = e.target.closest('[data-student-action]');
+    if (btn) runStudentAccountAction(btn.dataset.studentId, btn.dataset.studentAction).catch(() => toast('操作失敗'));
+  });
+  $id('parentAccountAdmin').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-parent-action]');
+    if (!btn) return;
+    if (btn.dataset.parentAction === 'edit') {
+      $id('accountParentStudent').value = btn.dataset.studentId;
+      $id('accountParentName').value = btn.dataset.parentName;
+      $id('accountParentPhone').value = btn.dataset.parentPhone;
+      $id('btnSaveParentAccount').dataset.parentId = btn.dataset.parentId;
+      $id('accountParentPhone').focus();
+      return;
+    }
+    const res = await postToWebApp({ action: 'parentAccountAction', parentId: btn.dataset.parentId, accountAction: btn.dataset.parentAction });
+    toast(res && res.ok ? '家長帳號已更新' : ((res && res.error) || '操作失敗'));
+    if (res && res.ok) refreshAccountAdmin();
+  });
+  $id('btnSaveParentAccount').addEventListener('click', async e => {
+    const body = {
+      action: 'upsertParentAccount', parentId: e.currentTarget.dataset.parentId || '',
+      studentId: $id('accountParentStudent').value,
+      parentName: $id('accountParentName').value.trim(), parentPhone: $id('accountParentPhone').value.trim()
+    };
+    const res = await postToWebApp(body);
+    toast(res && res.ok ? '家長資料已儲存，首次登入前需用完整手機驗證' : ((res && res.error) || '儲存失敗'));
+    if (res && res.ok) {
+      e.currentTarget.dataset.parentId = '';
+      $id('accountParentName').value = ''; $id('accountParentPhone').value = '';
+      refreshAccountAdmin();
+    }
   });
 }
 
@@ -5885,18 +6149,16 @@ function init() {
 
   // 角色登入
   setupRoleHandlers();
+  setupAccountAdminHandlers();
 
-  // 從雲端拉共用名單（學生手機開連結也會自動拿到最新名單）
-  // 拉完名單後再套用角色（選手/家長姓名鎖定才正確）
-  loadRosterFromServer().then(() => {
-    if (getRole()) applyRole();
+  // 先讀取後端登入模式；新制選手／家長不下載全隊名單。
+  loadAuthConfig().then(() => {
+    const role = getRole();
+    if (role) applyRole();
     else showLoginOverlay();
     // 角色套用後再還原草稿（選手姓名鎖定才正確）；有還原才提示
     if (restoreDraft()) toast('📝 已還原上次未送出的草稿');
   });
-
-  // 初次載入教練後台資料
-  refreshCoach();
 
   // 本週之星（學生填寫頁上方）
   renderWeeklyStars();

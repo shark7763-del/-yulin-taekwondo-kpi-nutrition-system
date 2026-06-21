@@ -30,8 +30,27 @@ var ROSTER_SHEET = 'roster';
 // 家長後台工作表
 var PARENTS_SHEET = 'parents';
 var ATTENDANCE_REPORTS_SHEET = 'attendance_reports';
+var STUDENT_ACCOUNTS_SHEET = 'student_accounts';
+var COACH_SETTINGS_SHEET = 'coach_settings';
 
-var PARENT_HEADERS = ['parentId', 'parentName', 'phone', 'lineId', 'studentName', 'loginCode', 'status'];
+// 前 7 欄保留舊 parents 表順序，避免既有家長資料在升級時錯位；新版欄位接在右側。
+var PARENT_HEADERS = [
+  'parentId', 'parentName', 'phone', 'lineId', 'studentName', 'loginCode', 'status',
+  'studentId', 'parentPhone', 'parentPhoneLast4', 'bindStatus', 'consentStatus',
+  'consentDate', 'firstVerifiedAt', 'lastLoginAt', 'failedLoginCount', 'lockedUntil',
+  'lineBindStatus', 'createdAt', 'updatedAt', 'consentTrainingData', 'consentHealthData',
+  'consentParentNotice', 'consentReport', 'consentLineNotice'
+];
+var STUDENT_ACCOUNT_HEADERS = [
+  'studentId', 'studentName', 'teamId', 'grade', 'className', 'accountStatus',
+  'pinHash', 'pinSetAt', 'pinResetRequired', 'activationCodeHash',
+  'activationCodeExpiresAt', 'failedLoginCount', 'lockedUntil', 'lastLoginAt',
+  'createdAt', 'updatedAt'
+];
+var COACH_SETTING_HEADERS = [
+  'coachId', 'teamId', 'coachPasswordHash', 'lastLoginAt', 'failedLoginCount',
+  'lockedUntil', 'createdAt', 'updatedAt'
+];
 var ATTENDANCE_REPORT_HEADERS = [
   'timestamp', 'date', 'studentName', 'attendanceStatus', 'checkInTime', 'checkOutTime',
   'absenceReason', 'informedCoach', 'parentConfirmed', 'kpiSubmitted', 'makeupTask',
@@ -100,6 +119,7 @@ var HEADERS = [
   'bedTime', 'wakeTime',          // 就寢時間、起床時間（sleepHours 由兩者推算）
   'painScore', 'painLevel',       // 受傷部位疼痛指數 0–10、對應分級文字
   'urineStatus'                   // 尿液顏色監控（脫水快篩）
+  ,'studentId'                    // 新制帳號識別；加在最後以相容既有資料
 ];
 
 /* ============================================================
@@ -142,40 +162,69 @@ function handleAction(action, data) {
     case 'ping':
       return jsonOut({ ok: true, message: 'pong', time: new Date().toISOString() });
     case 'addRecord':
-      return jsonOut(addRecord(data.payload || {}));
+      return jsonOut(addRecordAuthorized(data));
     case 'getLastRecordByName':
-      return jsonOut({ ok: true, data: getLastRecordByName(data.name) });
+      return jsonOut(authRecordResult(data, 'last'));
     case 'getRecentRecordsByName':
-      return jsonOut({ ok: true, data: getRecentRecordsByName(data.name, data.limit || 7) });
+      return jsonOut(authRecordResult(data, 'recent'));
     case 'getTodayRecords':
-      return jsonOut({ ok: true, data: getRecordsByDate(data.date || todayStr()) });
+      return jsonOut(authTeamRecords(data, data.date || todayStr()));
     case 'getRecordsByDate':
-      return jsonOut({ ok: true, data: getRecordsByDate(data.date) });
+      return jsonOut(authTeamRecords(data, data.date));
     case 'getAllRecords':
-      return jsonOut({ ok: true, data: getAllRecords() });
+      return jsonOut(authAllRecords(data));
     case 'getParents':
-      return jsonOut({ ok: true, data: getParents() });
+      return jsonOut(authCoachOnly(data, function () { return getParentsForCoach(); }));
     case 'getAttendanceReportsByName':
-      return jsonOut({ ok: true, data: getAttendanceReportsByName(data.studentName || data.name, data.limit || 60) });
+      return jsonOut(authAttendanceByStudent(data));
     case 'getAllAttendanceReports':
-      return jsonOut({ ok: true, data: getAllAttendanceReports() });
+      return jsonOut(authCoachOnly(data, function () { return getAllAttendanceReports(); }));
     case 'updateRecord':
-      return jsonOut(updateRecord(data.recordId, data.fields || {}));
+      return jsonOut(updateRecordAuthorized(data));
+    // ---- 新制角色驗證與帳號管理 ----
+    case 'getAuthConfig':
+      return jsonOut(getAuthConfig());
+    case 'studentActivate':
+      return jsonOut(studentActivate(data));
+    case 'studentLogin':
+      return jsonOut(studentLogin(data));
+    case 'parentVerify':
+      return jsonOut(parentVerify(data));
+    case 'parentLogin':
+      return jsonOut(parentLogin(data));
+    case 'parentConsent':
+      return jsonOut(parentConsent(data));
+    case 'coachLogin':
+      return jsonOut(coachLogin(data));
+    case 'logout':
+      return jsonOut(logoutSession(data));
+    case 'getAccountAdminData':
+      return jsonOut(getAccountAdminData(data));
+    case 'studentAccountAction':
+      return jsonOut(studentAccountAction(data));
+    case 'upsertParentAccount':
+      return jsonOut(upsertParentAccount(data));
+    case 'parentAccountAction':
+      return jsonOut(parentAccountAction(data));
+    case 'setLegacyLoginEnabled':
+      return jsonOut(setLegacyLoginEnabled(data));
+    case 'setCoachPassword':
+      return jsonOut(setCoachPassword(data));
     // ---- 通用同步儲存（任務、個人檔案目標/備註等）----
     case 'getAppData':
-      return jsonOut({ ok: true, data: getAppData(data.key) });
+      return jsonOut(getAppDataAuthorized(data));
     case 'setAppData':
-      return jsonOut(setAppData(data.key, data.value, data));
+      return jsonOut(setAppDataAuthorized(data));
     case 'getAllAppData':
-      return jsonOut({ ok: true, data: getAllAppData(data.prefix || '') });
+      return jsonOut(authCoachOnly(data, function () { return getAllAppData(data.prefix || ''); }));
     // ---- 選手名單（全裝置共用）----
     case 'getRoster':
-      return jsonOut({ ok: true, data: getRoster() });
+      return jsonOut(authCoachOnly(data, function () { return getRoster(); }));
     case 'setRoster':
       return jsonOut(setRoster(data.players || [], data));
     // ---- LINE 推播相關 ----
     case 'getLineStatus':
-      return jsonOut({ ok: true, data: getLineStatus() });
+      return jsonOut(authCoachOnly(data, function () { return getLineStatus(); }));
     case 'setLineConfig':
       return jsonOut(setLineConfigFromRequest(data));
     case 'lineTest':
@@ -183,7 +232,7 @@ function handleAction(action, data) {
     case 'pushLineText':
       return jsonOut(pushLineText(data));
     case 'getLineLastSource':
-      return jsonOut({ ok: true, data: { lastSourceId: getProp('LINE_LAST_SOURCE_ID') || '', lastSourceType: getProp('LINE_LAST_SOURCE_TYPE') || '' } });
+      return jsonOut(authCoachOnly(data, function () { return { lastSourceId: getProp('LINE_LAST_SOURCE_ID') || '', lastSourceType: getProp('LINE_LAST_SOURCE_TYPE') || '' }; }));
     case 'verifyAdmin':
       return jsonOut(verifyAdmin(data));
     // ---- 本週之星開關（教練可關，全裝置共用，預設開）----
@@ -257,7 +306,10 @@ function setupSheet() {
   getParentsSheet();
   getAttendanceReportsSheet();
   getAppDataSheet();
-  return 'setupSheet 完成，records 表頭已重寫為最新版，並已建立 roster、parents、attendance_reports、appdata 工作表。';
+  getStudentAccountsSheet();
+  getCoachSettingsSheet();
+  syncStudentAccountsFromRoster();
+  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings 工作表。';
 }
 
 // 今天日期字串 yyyy-MM-dd
@@ -273,6 +325,424 @@ function rowToObject(headers, row) {
     obj[headers[i]] = row[i];
   }
   return obj;
+}
+
+/* ============================================================
+   新制登入、雜湊、工作階段與角色授權
+   ============================================================ */
+
+var AUTH_SESSION_SECONDS = 21600; // 6 小時（CacheService 上限）
+var LOGIN_MAX_FAILURES = 5;
+var LOGIN_LOCK_MINUTES = 10;
+var TEAM_ID_DEFAULT = 'yulin-taekwondo';
+
+function nowIso() { return new Date().toISOString(); }
+function normalizeName(v) { return String(v || '').trim(); }
+function normalizePhone(v) { return String(v || '').replace(/\D/g, ''); }
+
+function getAuthSalt() {
+  var salt = getProp('AUTH_SALT');
+  if (!salt) {
+    salt = Utilities.getUuid() + Utilities.getUuid();
+    setProp('AUTH_SALT', salt);
+  }
+  return salt;
+}
+
+function hashSecret(scope, secret) {
+  var raw = getAuthSalt() + '|' + String(scope || '') + '|' + String(secret || '');
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw, Utilities.Charset.UTF_8);
+  return bytes.map(function (b) { var n = b < 0 ? b + 256 : b; return ('0' + n.toString(16)).slice(-2); }).join('');
+}
+
+function safeEqual(a, b) {
+  a = String(a || ''); b = String(b || '');
+  if (!a || a.length !== b.length) return false;
+  var diff = 0;
+  for (var i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function isWeakPin(pin) {
+  return ['0000', '1111', '1234', '4321', '9999'].indexOf(String(pin)) !== -1;
+}
+
+function validatePin(pin) {
+  if (!/^\d{4}$/.test(String(pin || ''))) return 'PIN 必須是 4 位數字。';
+  if (isWeakPin(pin)) return '此 PIN 過於簡單，請改用其他 4 位數字。';
+  return '';
+}
+
+function getStudentAccountsSheet() {
+  return getSheetWithHeaders(STUDENT_ACCOUNTS_SHEET, STUDENT_ACCOUNT_HEADERS);
+}
+
+function getCoachSettingsSheet() {
+  return getSheetWithHeaders(COACH_SETTINGS_SHEET, COACH_SETTING_HEADERS);
+}
+
+function findObjectRow(sh, headers, key, value) {
+  var col = headers.indexOf(key);
+  if (col < 0 || sh.getLastRow() < 2) return null;
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, headers.length).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][col]) === String(value)) return { row: i + 2, values: values[i], object: rowToObject(headers, values[i]) };
+  }
+  return null;
+}
+
+function findStudentAccountByName(name) {
+  var sh = getStudentAccountsSheet();
+  var rows = readSheetObjects(sh, STUDENT_ACCOUNT_HEADERS);
+  name = normalizeName(name);
+  for (var i = 0; i < rows.length; i++) if (normalizeName(rows[i].studentName) === name) return findObjectRow(sh, STUDENT_ACCOUNT_HEADERS, 'studentId', rows[i].studentId);
+  return null;
+}
+
+function updateObjectRow(sh, headers, rowNum, fields) {
+  var values = sh.getRange(rowNum, 1, 1, headers.length).getValues()[0];
+  Object.keys(fields).forEach(function (key) {
+    var idx = headers.indexOf(key);
+    if (idx >= 0) values[idx] = fields[key] == null ? '' : fields[key];
+  });
+  sh.getRange(rowNum, 1, 1, headers.length).setValues([values]);
+}
+
+function syncStudentAccountsFromRoster() {
+  var names = getRoster();
+  var sh = getStudentAccountsSheet();
+  var created = 0;
+  for (var i = 0; i < names.length; i++) {
+    if (findStudentAccountByName(names[i])) continue;
+    var now = nowIso();
+    sh.appendRow([
+      Utilities.getUuid(), names[i], TEAM_ID_DEFAULT, '', '', 'pending', '', '', true,
+      '', '', 0, '', '', now, now
+    ]);
+    created++;
+  }
+  return created;
+}
+
+function getCoachSetting() {
+  var sh = getCoachSettingsSheet();
+  if (sh.getLastRow() < 2) {
+    var now = nowIso();
+    sh.appendRow(['coach-main', TEAM_ID_DEFAULT, '', '', 0, '', now, now]);
+  }
+  return { sheet: sh, row: 2, object: rowToObject(COACH_SETTING_HEADERS, sh.getRange(2, 1, 1, COACH_SETTING_HEADERS.length).getValues()[0]) };
+}
+
+function lockedResponse(account) {
+  var until = account && account.lockedUntil ? new Date(account.lockedUntil).getTime() : 0;
+  if (until && until > Date.now()) return { ok: false, locked: true, error: '登入錯誤次數過多，請稍後再試。' };
+  return null;
+}
+
+function recordLoginFailure(sh, headers, row, account) {
+  var count = Number(account.failedLoginCount || 0) + 1;
+  var fields = { failedLoginCount: count, updatedAt: nowIso() };
+  if (count >= LOGIN_MAX_FAILURES) fields.lockedUntil = new Date(Date.now() + LOGIN_LOCK_MINUTES * 60000).toISOString();
+  updateObjectRow(sh, headers, row, fields);
+  return count >= LOGIN_MAX_FAILURES;
+}
+
+function recordLoginSuccess(sh, headers, row) {
+  updateObjectRow(sh, headers, row, { failedLoginCount: 0, lockedUntil: '', lastLoginAt: nowIso(), updatedAt: nowIso() });
+}
+
+function createAuthSession(role, details) {
+  var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
+  var session = {
+    role: role,
+    studentId: details.studentId || '',
+    studentName: details.studentName || '',
+    teamId: details.teamId || TEAM_ID_DEFAULT,
+    parentId: details.parentId || '',
+    consentStatus: details.consentStatus || '',
+    createdAt: nowIso()
+  };
+  CacheService.getScriptCache().put('auth:' + token, JSON.stringify(session), AUTH_SESSION_SECONDS);
+  return { token: token, session: session };
+}
+
+function getAuthSession(data) {
+  var token = data && (data.authToken || data.token);
+  if (!token) return null;
+  var raw = CacheService.getScriptCache().get('auth:' + token);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+function logoutSession(data) {
+  var token = data && (data.authToken || data.token);
+  if (token) CacheService.getScriptCache().remove('auth:' + token);
+  return { ok: true };
+}
+
+function legacyLoginEnabled() { return getProp('LEGACY_LOGIN_ENABLED') !== 'false'; }
+
+function getAuthConfig() {
+  return { ok: true, legacyLoginEnabled: legacyLoginEnabled(), pinRules: { length: 4, maxFailures: LOGIN_MAX_FAILURES, lockMinutes: LOGIN_LOCK_MINUTES } };
+}
+
+function requireRole(data, roles) {
+  var session = getAuthSession(data);
+  if (!session) return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
+  if (roles.indexOf(session.role) === -1) return { ok: false, error: '你沒有權限執行此操作。', forbidden: true };
+  if (session.role === 'parent' && session.consentStatus !== 'agreed') return { ok: false, error: '請先完成家長同意與個資告知。', consentRequired: true };
+  return { ok: true, session: session };
+}
+
+function studentActivate(data) {
+  var name = normalizeName(data.studentName);
+  var activationCode = String(data.activationCode || '').trim();
+  var pin = String(data.pin || '');
+  if (pin !== String(data.pinConfirm || '')) return { ok: false, error: '兩次輸入的 PIN 不一致。' };
+  var pinError = validatePin(pin);
+  if (pinError) return { ok: false, error: pinError };
+  var found = findStudentAccountByName(name);
+  if (!found) return { ok: false, error: '啟用資訊不正確，請向教練確認。' };
+  if (found.object.accountStatus === 'disabled') return { ok: false, error: '此帳號已停用，請聯繫教練。' };
+  var locked = lockedResponse(found.object); if (locked) return locked;
+  var expires = found.object.activationCodeExpiresAt ? new Date(found.object.activationCodeExpiresAt).getTime() : 0;
+  var valid = expires >= Date.now() && safeEqual(found.object.activationCodeHash, hashSecret('activation:' + found.object.studentId, activationCode));
+  if (!valid) {
+    var didLock = recordLoginFailure(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS, found.row, found.object);
+    return { ok: false, locked: didLock, error: didLock ? '登入錯誤次數過多，請稍後再試。' : '啟用資訊不正確，請向教練確認。' };
+  }
+  var now = nowIso();
+  updateObjectRow(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS, found.row, {
+    accountStatus: 'active', pinHash: hashSecret('pin:' + found.object.studentId, pin), pinSetAt: now,
+    pinResetRequired: false, activationCodeHash: '', activationCodeExpiresAt: '',
+    failedLoginCount: 0, lockedUntil: '', lastLoginAt: now, updatedAt: now
+  });
+  var auth = createAuthSession('student', found.object);
+  return { ok: true, authToken: auth.token, user: auth.session };
+}
+
+function studentLogin(data) {
+  var found = findStudentAccountByName(data.studentName);
+  if (!found || found.object.accountStatus === 'disabled') return { ok: false, error: '登入資訊不正確，請確認姓名與 PIN。' };
+  var locked = lockedResponse(found.object); if (locked) return locked;
+  var valid = found.object.accountStatus === 'active' && !found.object.pinResetRequired &&
+    safeEqual(found.object.pinHash, hashSecret('pin:' + found.object.studentId, data.pin));
+  if (!valid) {
+    var didLock = recordLoginFailure(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS, found.row, found.object);
+    return { ok: false, locked: didLock, activationRequired: found.object.accountStatus === 'pending' || !!found.object.pinResetRequired,
+      error: didLock ? '登入錯誤次數過多，請稍後再試。' : '登入資訊不正確，請確認姓名與 PIN。' };
+  }
+  recordLoginSuccess(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS, found.row);
+  var auth = createAuthSession('student', found.object);
+  return { ok: true, authToken: auth.token, user: auth.session };
+}
+
+function parentPhoneValue(parent) { return normalizePhone(parent.parentPhone || parent.phone); }
+
+function findParentByStudentName(name) {
+  var sh = getParentsSheet();
+  var rows = readSheetObjects(sh, PARENT_HEADERS);
+  name = normalizeName(name);
+  for (var i = 0; i < rows.length; i++) {
+    if (normalizeName(rows[i].studentName) === name && String(rows[i].bindStatus || rows[i].status || '') !== 'disabled') {
+      return findObjectRow(sh, PARENT_HEADERS, 'parentId', rows[i].parentId);
+    }
+  }
+  return null;
+}
+
+function parentVerify(data) {
+  var found = findParentByStudentName(data.studentName);
+  var phone = normalizePhone(data.parentPhone);
+  if (!found || !phone) return { ok: false, error: '登入資訊不正確，請確認姓名與登入資料。' };
+  var locked = lockedResponse(found.object); if (locked) return locked;
+  if (!safeEqual(parentPhoneValue(found.object), phone)) {
+    var didLock = recordLoginFailure(getParentsSheet(), PARENT_HEADERS, found.row, found.object);
+    return { ok: false, locked: didLock, error: didLock ? '登入錯誤次數過多，請稍後再試。' : '登入資訊不正確，請確認姓名與登入資料。' };
+  }
+  var student = findStudentAccountByName(found.object.studentName);
+  if (!student) return { ok: false, error: '家長資料尚未完成，請聯繫教練。' };
+  var now = nowIso();
+  updateObjectRow(getParentsSheet(), PARENT_HEADERS, found.row, {
+    studentId: student.object.studentId, parentPhone: phone, parentPhoneLast4: phone.slice(-4),
+    bindStatus: 'verified', firstVerifiedAt: found.object.firstVerifiedAt || now,
+    failedLoginCount: 0, lockedUntil: '', lastLoginAt: now, updatedAt: now
+  });
+  var consentStatus = String(found.object.consentStatus || '');
+  var auth = createAuthSession('parent', { parentId: found.object.parentId, studentId: student.object.studentId, studentName: student.object.studentName, teamId: student.object.teamId, consentStatus: consentStatus });
+  return { ok: true, authToken: auth.token, user: auth.session, consentRequired: String(found.object.consentStatus || '') !== 'agreed' };
+}
+
+function parentLogin(data) {
+  var found = findParentByStudentName(data.studentName);
+  var last4 = String(data.parentPhoneLast4 || '').replace(/\D/g, '');
+  if (!found || !/^\d{4}$/.test(last4)) return { ok: false, error: '登入資訊不正確，請確認姓名與登入資料。' };
+  var locked = lockedResponse(found.object); if (locked) return locked;
+  var storedLast4 = String(found.object.parentPhoneLast4 || parentPhoneValue(found.object).slice(-4));
+  var valid = String(found.object.bindStatus || '') === 'verified' && safeEqual(storedLast4, last4);
+  if (!valid) {
+    var didLock = recordLoginFailure(getParentsSheet(), PARENT_HEADERS, found.row, found.object);
+    return { ok: false, locked: didLock, error: didLock ? '登入錯誤次數過多，請稍後再試。' : '登入資訊不正確，請確認姓名與登入資料。' };
+  }
+  var student = found.object.studentId ? findObjectRow(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS, 'studentId', found.object.studentId) : findStudentAccountByName(found.object.studentName);
+  if (!student) return { ok: false, error: '家長資料尚未完成，請聯繫教練。' };
+  recordLoginSuccess(getParentsSheet(), PARENT_HEADERS, found.row);
+  var consentStatus = String(found.object.consentStatus || '');
+  var auth = createAuthSession('parent', { parentId: found.object.parentId, studentId: student.object.studentId, studentName: student.object.studentName, teamId: student.object.teamId, consentStatus: consentStatus });
+  return { ok: true, authToken: auth.token, user: auth.session, consentRequired: String(found.object.consentStatus || '') !== 'agreed' };
+}
+
+function parentConsent(data) {
+  var session = getAuthSession(data);
+  if (!session || session.role !== 'parent') return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
+  if (!data.consentTrainingData || !data.consentHealthData || !data.consentParentNotice || !data.consentReport) {
+    return { ok: false, error: '請確認必要的同意項目。' };
+  }
+  var sh = getParentsSheet();
+  var found = findObjectRow(sh, PARENT_HEADERS, 'parentId', session.parentId);
+  if (!found) return { ok: false, error: '找不到家長資料。' };
+  var now = nowIso();
+  updateObjectRow(sh, PARENT_HEADERS, found.row, {
+    consentTrainingData: true, consentHealthData: true, consentParentNotice: true,
+    consentReport: true, consentLineNotice: !!data.consentLineNotice,
+    consentStatus: 'agreed', consentDate: now, updatedAt: now
+  });
+  CacheService.getScriptCache().remove('auth:' + String(data.authToken || ''));
+  var auth = createAuthSession('parent', {
+    parentId: session.parentId, studentId: session.studentId, studentName: session.studentName,
+    teamId: session.teamId, consentStatus: 'agreed'
+  });
+  return { ok: true, authToken: auth.token, user: auth.session };
+}
+
+function coachLogin(data) {
+  var setting = getCoachSetting();
+  var account = setting.object;
+  var locked = lockedResponse(account); if (locked) return locked;
+  var password = String(data.coachPassword || '');
+  var valid = account.coachPasswordHash && safeEqual(account.coachPasswordHash, hashSecret('coach:' + account.coachId, password));
+  // 平行遷移：首次新版登入可用既有 ADMIN_KEY，成功後立即建立雜湊。
+  if (!account.coachPasswordHash && getProp('ADMIN_KEY') && safeEqual(getProp('ADMIN_KEY'), password)) {
+    valid = true;
+    updateObjectRow(setting.sheet, COACH_SETTING_HEADERS, setting.row, { coachPasswordHash: hashSecret('coach:' + account.coachId, password), updatedAt: nowIso() });
+  }
+  if (!valid) {
+    var didLock = recordLoginFailure(setting.sheet, COACH_SETTING_HEADERS, setting.row, account);
+    return { ok: false, locked: didLock, setupRequired: !account.coachPasswordHash && !getProp('ADMIN_KEY'), error: didLock ? '登入錯誤次數過多，請稍後再試。' : '登入資訊不正確。' };
+  }
+  recordLoginSuccess(setting.sheet, COACH_SETTING_HEADERS, setting.row);
+  var auth = createAuthSession('coach', { teamId: account.teamId || TEAM_ID_DEFAULT });
+  return { ok: true, authToken: auth.token, user: auth.session };
+}
+
+function authCoachOnly(data, getter) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  return { ok: true, data: getter() };
+}
+
+function authorizedStudentName(data, allowCoach) {
+  var session = getAuthSession(data);
+  if (session && session.role === 'parent' && session.consentStatus !== 'agreed') return { ok: false, error: '請先完成家長同意與個資告知。', consentRequired: true };
+  if (session && session.role === 'coach' && allowCoach) return { ok: true, name: normalizeName(data.name || data.studentName), session: session };
+  if (session && (session.role === 'student' || session.role === 'parent')) return { ok: true, name: session.studentName, studentId: session.studentId, session: session };
+  if (legacyLoginEnabled() && (data.legacyRole === 'student' || data.legacyRole === 'parent')) {
+    var legacyName = normalizeName(data.legacyName);
+    var requestedName = normalizeName(data.name || data.studentName);
+    if (legacyName && (!requestedName || requestedName === legacyName)) return { ok: true, name: legacyName, legacy: true };
+  }
+  return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
+}
+
+function recordsForIdentity(identity) {
+  var all = getAllRecords();
+  return all.filter(function (r) {
+    if (identity.studentId && r.studentId) return String(r.studentId) === String(identity.studentId);
+    return normalizeName(r.name) === normalizeName(identity.name);
+  });
+}
+
+function authRecordResult(data, mode) {
+  var identity = authorizedStudentName(data, true);
+  if (!identity.ok) return identity;
+  var rows = recordsForIdentity(identity).sort(byTimestampDesc);
+  if (identity.session && identity.session.role === 'parent') rows = rows.map(parentRecordSummary);
+  return { ok: true, data: mode === 'last' ? (rows[0] || null) : rows.slice(0, Number(data.limit || 7)) };
+}
+
+function parentRecordSummary(r) {
+  return {
+    recordId: r.recordId, studentId: r.studentId, name: r.name, date: r.date,
+    group: r.group, trainingTopic: r.trainingTopic, status: r.status,
+    absenceReason: r.absenceReason, tomorrowGoal: r.tomorrowGoal,
+    nutritionAdviceParent: r.nutritionAdviceParent, coachReply: r.coachReply,
+    parentNote: r.parentNote, timestamp: r.timestamp
+  };
+}
+
+function authTeamRecords(data, date) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  return { ok: true, data: getRecordsByDate(date).filter(function (r) { return !r.teamId || r.teamId === auth.session.teamId; }) };
+}
+
+function authAllRecords(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  return { ok: true, data: getAllRecords() };
+}
+
+function addRecordAuthorized(data) {
+  var payload = data.payload || {};
+  var session = getAuthSession(data);
+  if (session && session.role === 'student') {
+    payload.name = session.studentName;
+    payload.studentId = session.studentId;
+  } else if (!session || session.role !== 'coach') {
+    if (!legacyLoginEnabled() || data.legacyRole !== 'student' || normalizeName(data.legacyName) !== normalizeName(payload.name)) {
+      return { ok: false, error: '你沒有權限送出這筆資料。', forbidden: true };
+    }
+  }
+  return addRecord(payload);
+}
+
+function authAttendanceByStudent(data) {
+  var identity = authorizedStudentName(data, true);
+  if (!identity.ok) return identity;
+  var rows = getAttendanceReportsByName(identity.name, data.limit || 60);
+  if (identity.session && identity.session.role !== 'coach') rows = rows.map(function (r) {
+    var copy = {};
+    Object.keys(r).forEach(function (key) { if (key !== 'coachPrivateNote') copy[key] = r[key]; });
+    return copy;
+  });
+  return { ok: true, data: rows };
+}
+
+function updateRecordAuthorized(data) {
+  var session = getAuthSession(data);
+  if (!session) {
+    if (legacyLoginEnabled() && (data.legacyRole === 'student' || data.legacyRole === 'parent')) {
+      var legacyAllowed = data.legacyRole === 'parent' ? ['parentNote'] : ['studentResponse'];
+      var legacyFields = {};
+      legacyAllowed.forEach(function (key) { if (data.fields && Object.prototype.hasOwnProperty.call(data.fields, key)) legacyFields[key] = data.fields[key]; });
+      return updateRecord(data.recordId, legacyFields);
+    }
+    return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
+  }
+  var fields = data.fields || {};
+  if (session.role === 'coach') return updateRecord(data.recordId, fields);
+  var record = findRecordById(data.recordId);
+  if (!record || (record.studentId ? record.studentId !== session.studentId : normalizeName(record.name) !== normalizeName(session.studentName))) return { ok: false, error: '你沒有權限修改這筆資料。', forbidden: true };
+  var allowed = session.role === 'parent' ? ['parentNote'] : ['studentResponse'];
+  var safeFields = {};
+  allowed.forEach(function (key) { if (Object.prototype.hasOwnProperty.call(fields, key)) safeFields[key] = fields[key]; });
+  return updateRecord(data.recordId, safeFields);
+}
+
+function findRecordById(recordId) {
+  var rows = getAllRecords();
+  for (var i = 0; i < rows.length; i++) if (String(rows[i].recordId) === String(recordId)) return rows[i];
+  return null;
 }
 
 /* ============================================================
@@ -534,6 +1004,135 @@ function getParents() {
   });
 }
 
+function getParentsForCoach() {
+  return readSheetObjects(getParentsSheet(), PARENT_HEADERS);
+}
+
+/* ============================================================
+   教練後台：選手帳號與家長帳號管理
+   ============================================================ */
+
+function getAccountAdminData(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  syncStudentAccountsFromRoster();
+  var students = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS).map(function (r) {
+    return {
+      studentId: r.studentId, studentName: r.studentName, teamId: r.teamId,
+      accountStatus: r.accountStatus, pinSet: !!r.pinHash && !r.pinResetRequired,
+      pinResetRequired: !!r.pinResetRequired, activationCodeExpiresAt: r.activationCodeExpiresAt,
+      failedLoginCount: Number(r.failedLoginCount || 0), lockedUntil: r.lockedUntil,
+      lastLoginAt: r.lastLoginAt
+    };
+  });
+  var parents = getParentsForCoach().map(function (r) {
+    var phone = parentPhoneValue(r);
+    return {
+      parentId: r.parentId, studentId: r.studentId, studentName: r.studentName,
+      parentName: r.parentName, parentPhone: phone, parentPhoneLast4: phone.slice(-4),
+      bindStatus: r.bindStatus || r.status || 'pending', consentStatus: r.consentStatus || 'pending',
+      lastLoginAt: r.lastLoginAt, failedLoginCount: Number(r.failedLoginCount || 0), lockedUntil: r.lockedUntil
+    };
+  });
+  return { ok: true, data: { students: students, parents: parents, legacyLoginEnabled: legacyLoginEnabled() } };
+}
+
+function newActivationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function studentAccountAction(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var found = findObjectRow(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS, 'studentId', data.studentId);
+  if (!found) return { ok: false, error: '找不到選手帳號。' };
+  var action = String(data.accountAction || '');
+  var fields = { updatedAt: nowIso() };
+  var activationCode = '';
+  if (action === 'generateActivation' || action === 'resetPin') {
+    activationCode = newActivationCode();
+    fields.activationCodeHash = hashSecret('activation:' + found.object.studentId, activationCode);
+    fields.activationCodeExpiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+    fields.pinResetRequired = true;
+    fields.failedLoginCount = 0;
+    fields.lockedUntil = '';
+    if (action === 'resetPin') fields.pinHash = '';
+    if (found.object.accountStatus !== 'disabled') fields.accountStatus = 'pending';
+  } else if (action === 'unlock') {
+    fields.failedLoginCount = 0; fields.lockedUntil = '';
+    if (found.object.accountStatus === 'locked') fields.accountStatus = found.object.pinHash ? 'active' : 'pending';
+  } else if (action === 'disable') {
+    fields.accountStatus = 'disabled';
+  } else if (action === 'enable') {
+    fields.accountStatus = found.object.pinHash && !found.object.pinResetRequired ? 'active' : 'pending';
+  } else {
+    return { ok: false, error: '未知的帳號操作。' };
+  }
+  updateObjectRow(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS, found.row, fields);
+  return { ok: true, activationCode: activationCode, expiresAt: fields.activationCodeExpiresAt || '' };
+}
+
+function upsertParentAccount(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var student = findObjectRow(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS, 'studentId', data.studentId);
+  if (!student) return { ok: false, error: '找不到選手帳號。' };
+  var phone = normalizePhone(data.parentPhone);
+  if (phone.length < 8) return { ok: false, error: '請輸入完整家長手機號碼。' };
+  var sh = getParentsSheet();
+  var found = data.parentId ? findObjectRow(sh, PARENT_HEADERS, 'parentId', data.parentId) : findParentByStudentName(student.object.studentName);
+  var now = nowIso();
+  var fields = {
+    studentId: student.object.studentId, studentName: student.object.studentName,
+    parentName: normalizeName(data.parentName), phone: phone, parentPhone: phone,
+    parentPhoneLast4: phone.slice(-4), bindStatus: 'pending', status: 'pending',
+    failedLoginCount: 0, lockedUntil: '', updatedAt: now
+  };
+  if (found) updateObjectRow(sh, PARENT_HEADERS, found.row, fields);
+  else {
+    fields.parentId = Utilities.getUuid(); fields.createdAt = now;
+    sh.appendRow(PARENT_HEADERS.map(function (key) { return fields[key] == null ? '' : fields[key]; }));
+  }
+  return { ok: true };
+}
+
+function parentAccountAction(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var sh = getParentsSheet();
+  var found = findObjectRow(sh, PARENT_HEADERS, 'parentId', data.parentId);
+  if (!found) return { ok: false, error: '找不到家長帳號。' };
+  var action = String(data.accountAction || '');
+  var fields = { updatedAt: nowIso() };
+  if (action === 'unlock') { fields.failedLoginCount = 0; fields.lockedUntil = ''; }
+  else if (action === 'unbind') { fields.bindStatus = 'pending'; fields.firstVerifiedAt = ''; fields.lastLoginAt = ''; }
+  else if (action === 'disable') { fields.bindStatus = 'disabled'; fields.status = 'disabled'; }
+  else if (action === 'enable') { fields.bindStatus = 'pending'; fields.status = 'pending'; }
+  else return { ok: false, error: '未知的家長帳號操作。' };
+  updateObjectRow(sh, PARENT_HEADERS, found.row, fields);
+  return { ok: true };
+}
+
+function setLegacyLoginEnabled(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  setProp('LEGACY_LOGIN_ENABLED', data.enabled ? 'true' : 'false');
+  return { ok: true, legacyLoginEnabled: legacyLoginEnabled() };
+}
+
+function setCoachPassword(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var password = String(data.newPassword || '');
+  if (password.length < 8) return { ok: false, error: '教練密碼至少需要 8 個字元。' };
+  var setting = getCoachSetting();
+  updateObjectRow(setting.sheet, COACH_SETTING_HEADERS, setting.row, {
+    coachPasswordHash: hashSecret('coach:' + setting.object.coachId, password),
+    failedLoginCount: 0, lockedUntil: '', updatedAt: nowIso()
+  });
+  return { ok: true };
+}
+
 function getAllAttendanceReports() {
   var rows = readSheetObjects(getAttendanceReportsSheet(), ATTENDANCE_REPORT_HEADERS);
   rows.sort(function (a, b) {
@@ -603,6 +1202,84 @@ function setAppData(key, value, data) {
   if (row === -1) sh.appendRow([key, json]);
   else sh.getRange(row, 2).setValue(json);
   return { ok: true, key: key };
+}
+
+function appDataKeyAllowedForSession(key, session) {
+  key = String(key || '');
+  if (session.role === 'coach') return true;
+  var name = normalizeName(session.studentName);
+  return key === 'profile:' + name || key === 'motto:' + name || key.indexOf('task:' + name + ':') === 0;
+}
+
+function getAppDataAuthorized(data) {
+  var session = getAuthSession(data);
+  if (session) {
+    if (!appDataKeyAllowedForSession(data.key, session)) return { ok: false, error: '你沒有權限讀取此資料。', forbidden: true };
+    var value = getAppData(data.key);
+    if (value && typeof value === 'object' && session.role !== 'coach') {
+      value = JSON.parse(JSON.stringify(value));
+      delete value.coachNote;
+      if (session.role === 'parent') delete value.studentNote;
+    }
+    return { ok: true, data: value };
+  }
+  if (legacyLoginEnabled() && (data.legacyRole === 'student' || data.legacyRole === 'parent')) {
+    var legacySession = { role: data.legacyRole, studentName: normalizeName(data.legacyName) };
+    if (legacySession.studentName && appDataKeyAllowedForSession(data.key, legacySession)) {
+      var legacyValue = getAppData(data.key);
+      if (legacyValue && typeof legacyValue === 'object') {
+        legacyValue = JSON.parse(JSON.stringify(legacyValue));
+        delete legacyValue.coachNote;
+        if (legacySession.role === 'parent') delete legacyValue.studentNote;
+      }
+      return { ok: true, data: legacyValue, legacy: true };
+    }
+  }
+  return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
+}
+
+function writeAppData(key, value) {
+  if (!key) return { ok: false, error: '缺少 key' };
+  var sh = getAppDataSheet();
+  var json = JSON.stringify(value === undefined ? null : value);
+  var row = appDataRow(sh, key);
+  if (row === -1) sh.appendRow([key, json]);
+  else sh.getRange(row, 2).setValue(json);
+  return { ok: true, key: key };
+}
+
+function setAppDataAuthorized(data) {
+  var session = getAuthSession(data);
+  if (session) {
+    if (!appDataKeyAllowedForSession(data.key, session)) return { ok: false, error: '你沒有權限寫入此資料。', forbidden: true };
+    if (session.role === 'parent') return { ok: false, error: '家長帳號不可修改此資料。', forbidden: true };
+    if (session.role === 'student') {
+      var key = String(data.key || '');
+      if (key.indexOf('motto:') === 0) return writeAppData(key, { text: String((data.value && data.value.text) || '').slice(0, 120) });
+      if (key.indexOf('task:') === 0) {
+        var current = getAppData(key) || {};
+        current.completion = String((data.value && data.value.completion) || '').slice(0, 20);
+        current.studentNote = String((data.value && data.value.studentNote) || '').slice(0, 1000);
+        return writeAppData(key, current);
+      }
+      return { ok: false, error: '選手不可修改此資料。', forbidden: true };
+    }
+    return writeAppData(data.key, data.value);
+  }
+  if (legacyLoginEnabled() && data.legacyRole === 'student') {
+    var legacySession = { role: 'student', studentName: normalizeName(data.legacyName) };
+    if (legacySession.studentName && appDataKeyAllowedForSession(data.key, legacySession)) {
+      var key = String(data.key || '');
+      if (key.indexOf('motto:') === 0) return writeAppData(key, { text: String((data.value && data.value.text) || '').slice(0, 120) });
+      if (key.indexOf('task:') === 0) {
+        var current = getAppData(key) || {};
+        current.completion = String((data.value && data.value.completion) || '').slice(0, 20);
+        current.studentNote = String((data.value && data.value.studentNote) || '').slice(0, 1000);
+        return writeAppData(key, current);
+      }
+    }
+  }
+  return setAppData(data.key, data.value, data);
 }
 
 // 取得某前綴的所有 key/value（例如 prefix='task:' 取全部任務）
@@ -746,13 +1423,16 @@ function pushRecordToLine(payload) {
 
 // 教練登入驗證：回傳是否通過，以及後端是否已設密碼
 function verifyAdmin(data) {
-  var key = getProp('ADMIN_KEY');
-  if (!key) return { ok: true, keySet: false }; // 尚未設密碼 → 放行（提醒去設定）
-  return { ok: (data && data.adminKey === key), keySet: true };
+  var result = coachLogin({ coachPassword: data && data.adminKey });
+  result.keySet = !!(getCoachSetting().object.coachPasswordHash || getProp('ADMIN_KEY'));
+  return result;
 }
 
 // 驗證管理密碼（若有設定 ADMIN_KEY）
 function checkAdminKey(data) {
+  var session = getAuthSession(data);
+  if (session && session.role === 'coach') return true;
+  if (!legacyLoginEnabled()) return false;
   var key = getProp('ADMIN_KEY');
   if (!key) return true; // 未設定密碼則不檢查
   return data && data.adminKey === key;
