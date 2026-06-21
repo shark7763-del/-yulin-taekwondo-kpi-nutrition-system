@@ -160,6 +160,40 @@ textarea.text-input { resize: vertical; }
   cursor: pointer;
 }
 
+/* ---- KPI 六大面向分區 ---- */
+.kpi-overall-head {
+  border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px;
+  position: sticky; top: 0; z-index: 2;
+}
+.kpi-section {
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 12px;
+}
+.kpi-section-head {
+  width: 100%; display: flex; justify-content: space-between; align-items: center;
+  background: #11151c; padding: 13px 14px; border: none; cursor: pointer;
+  font-family: inherit; color: var(--gold); font-weight: 800; font-size: 1.02rem;
+  border-left: 4px solid var(--gold); transition: background 0.15s;
+}
+.kpi-section-head:hover { background: #161b24; }
+.kpi-section-title { display: flex; align-items: center; gap: 8px; }
+.kpi-section-count {
+  font-size: 0.72rem; font-weight: 600; color: var(--text-soft);
+  background: rgba(255,255,255,0.05); border-radius: 10px; padding: 2px 8px;
+}
+.kpi-section-right { display: flex; align-items: center; gap: 10px; }
+.kpi-section-avg {
+  min-width: 34px; text-align: center; font-size: 0.92rem; font-weight: 800;
+  border-radius: 8px; padding: 3px 8px; color: #0e1116;
+}
+.kpi-section-avg.lv-green { background: var(--green); }
+.kpi-section-avg.lv-yellow { background: var(--yellow); }
+.kpi-section-avg.lv-red { background: var(--red); color: #fff; }
+.kpi-section-caret { color: var(--text-soft); font-size: 0.85rem; transition: transform 0.2s; }
+.kpi-section.collapsed .kpi-section-caret { transform: rotate(-90deg); }
+.kpi-section.collapsed .kpi-section-body { display: none; }
+.kpi-section-body { background: #0e1218; }
+.kpi-section-body .kpi-item:first-child { border-top: none; }
+
 /* ===================== 按鈕 ===================== */
 .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 .btn {

@@ -161,6 +161,12 @@ const KPI_ASPECTS = {
 // 面向順序（影響顯示與計算）
 const ASPECT_ORDER = ['technical', 'tactical', 'physical', 'focus', 'discipline', 'emotion'];
 
+// 各面向圖示（KPI 分區標題用）
+const KPI_ASPECT_ICON = {
+  technical: '🎯', tactical: '♟️', physical: '💪',
+  focus: '🧠', discipline: '🔥', emotion: '🛌'
+};
+
 // 對應到 Sheet 欄位的平均欄位名（選手自評）
 const ASPECT_AVG_FIELD = {
   physical: 'physicalAvg', technical: 'technicalAvg', focus: 'focusAvg',
@@ -829,28 +835,55 @@ function renderKpiSliders(group) {
   const container = $id('kpiContainer');
   container.innerHTML = '';
 
-  const box = document.createElement('div');
-  box.className = 'kpi-aspect';
+  // 頂部：全隊總摘要（保留 #kpiSummary 供 recalcKpiSummary 更新）
   const head = document.createElement('div');
-  head.className = 'kpi-aspect-head';
-  head.innerHTML = `<span>${escapeHtml(group)} KPI（30 項）</span><span class="kpi-aspect-avg" id="kpiSummary">總分 90 / 150・平均 3・🟡 黃燈</span>`;
-  box.appendChild(head);
+  head.className = 'kpi-aspect-head kpi-overall-head';
+  head.innerHTML = `<span>${escapeHtml(group)}　六大面向・30 項</span><span class="kpi-aspect-avg" id="kpiSummary">總分 90 / 150・平均 3・🟡 黃燈</span>`;
+  container.appendChild(head);
 
-  groupKpiItems(group).forEach((it, idx) => {
-    const item = document.createElement('div');
-    item.className = 'kpi-item';
-    item.innerHTML = `
-      <div class="kpi-item-row">
-        <span class="kpi-item-name">${it.n}</span>
-        <span class="kpi-item-score" id="score-${idx}">3 分 · 普通</span>
-      </div>
-      <input type="range" min="1" max="5" step="1" value="3"
-             class="kpi-slider" id="slider-${idx}"
-             data-aspect="${it.a}" data-item="${it.n}" data-idx="${idx}" />
-    `;
-    box.appendChild(item);
+  // 依六大面向分區塊（idx 維持 0–29 扁平編號，計分/草稿不受影響）
+  let idx = 0;
+  ASPECT_ORDER.forEach(aspectKey => {
+    const aspect = KPI_ASPECTS[aspectKey];
+    if (!aspect) return;
+
+    const section = document.createElement('section');
+    section.className = 'kpi-section';
+    section.dataset.aspect = aspectKey;
+
+    const sHead = document.createElement('button');
+    sHead.type = 'button';
+    sHead.className = 'kpi-section-head';
+    sHead.innerHTML =
+      `<span class="kpi-section-title">${KPI_ASPECT_ICON[aspectKey] || ''} ${escapeHtml(aspect.label)}` +
+      `<span class="kpi-section-count">5 項</span></span>` +
+      `<span class="kpi-section-right"><span class="kpi-section-avg" id="aspectAvg-${aspectKey}">3.0</span>` +
+      `<span class="kpi-section-caret">▾</span></span>`;
+    section.appendChild(sHead);
+
+    const body = document.createElement('div');
+    body.className = 'kpi-section-body';
+    aspect.items.forEach(itemName => {
+      const item = document.createElement('div');
+      item.className = 'kpi-item';
+      item.innerHTML = `
+        <div class="kpi-item-row">
+          <span class="kpi-item-name">${escapeHtml(itemName)}</span>
+          <span class="kpi-item-score" id="score-${idx}">3 分 · 普通</span>
+        </div>
+        <input type="range" min="1" max="5" step="1" value="3"
+               class="kpi-slider" id="slider-${idx}"
+               data-aspect="${aspectKey}" data-item="${itemName}" data-idx="${idx}" />
+      `;
+      body.appendChild(item);
+      idx++;
+    });
+    section.appendChild(body);
+
+    // 點標題收合／展開該面向，方便逐區評分
+    sHead.addEventListener('click', () => section.classList.toggle('collapsed'));
+    container.appendChild(section);
   });
-  container.appendChild(box);
 
   container.querySelectorAll('.kpi-slider').forEach(slider => {
     slider.addEventListener('input', onSliderChange);
@@ -1000,10 +1033,26 @@ function recalcKpiSummary() {
   const sliders = document.querySelectorAll('#kpiContainer .kpi-slider');
   if (!sliders.length) return;
   let sum = 0;
-  sliders.forEach(s => sum += parseInt(s.value, 10));
+  const aSum = {}, aCnt = {};
+  sliders.forEach(s => {
+    const v = parseInt(s.value, 10);
+    sum += v;
+    const a = s.dataset.aspect;
+    aSum[a] = (aSum[a] || 0) + v; aCnt[a] = (aCnt[a] || 0) + 1;
+  });
   const avg = round2(sum / sliders.length);
   const el = $id('kpiSummary');
   if (el) el.textContent = `總分 ${sum} / ${sliders.length * 5}・平均 ${avg}・${judgeStatus(avg)}`;
+
+  // 各面向平均徽章（依分數上色）
+  Object.keys(aSum).forEach(a => {
+    const badge = $id(`aspectAvg-${a}`);
+    if (!badge) return;
+    const av = round1(aSum[a] / aCnt[a]);
+    badge.textContent = av.toFixed(1);
+    badge.classList.remove('lv-red', 'lv-yellow', 'lv-green');
+    badge.classList.add(av >= 4 ? 'lv-green' : av >= 3 ? 'lv-yellow' : 'lv-red');
+  });
 }
 
 // 自由品勢額外欄位顯示用：有值才回傳一列 review-row
@@ -1827,6 +1876,17 @@ function trendChartSVG(series, range) {
   </svg></div>`;
 }
 
+// 把一筆紀錄的 KPI 表現換算成 0–100% 完成度（相容舊 /50 與新 /150 量表）。
+// 優先用平均分（1–5，兩種量表通用）×20；沒有平均分時，依總分大小推估滿分基準。
+function scorePercent(r) {
+  const avg = parseFloat(r.averageScore);
+  if (!isNaN(avg) && avg > 0) return round1(Math.min(100, avg * 20));
+  const t = parseFloat(r.totalScore);
+  if (isNaN(t) || t <= 0) return 0;
+  const base = t > 50 ? 150 : 50; // >50 一定是新版 /150；否則視為舊版 /50
+  return round1(Math.min(100, (t / base) * 100));
+}
+
 // 在 box 內渲染「可切換指標」的七天趨勢圖
 function renderTrendSection(box, records, days) {
   // 同一天只留一筆，取最近 N 天（預設 7），改為由舊到新
@@ -1837,7 +1897,10 @@ function renderTrendSection(box, records, days) {
   }
 
   const METRICS = [
-    { key: 'totalScore', label: '總分', max: 50, min: 0 },
+    // 總分改為「完成度%」：KPI 量表歷經 /50（舊）與 /150（新）兩種滿分，
+    // 直接畫原始總分會因基準不同而暴衝。改用平均分換算百分比（滿分 5 → 100%），
+    // 新舊紀錄一致可比，不再有假跳動。
+    { key: 'totalScore', label: '總分%', max: 100, min: 0, derive: scorePercent },
     { key: 'averageScore', label: '平均', max: 5, min: 0 },
     { key: 'physicalAvg', label: '體能', max: 5, min: 0 },
     { key: 'technicalAvg', label: '技術', max: 5, min: 0 },
@@ -1855,14 +1918,15 @@ function renderTrendSection(box, records, days) {
   box.innerHTML = html;
 
   function draw() {
-    const vals = recs.map(r => parseFloat(r[cur.key]) || 0);
+    const valOf = r => cur.derive ? cur.derive(r) : (parseFloat(r[cur.key]) || 0);
+    const vals = recs.map(valOf);
     let min = cur.min, max = cur.max;
     if (min === null || max === null) { // 體重：動態範圍
       const mx = Math.max.apply(null, vals), mn = Math.min.apply(null, vals);
       min = Math.floor(mn - 1); max = Math.ceil(mx + 1);
       if (max - min < 2) max = min + 2;
     }
-    const series = recs.map(r => ({ label: dateSlash(r.date).slice(5), value: parseFloat(r[cur.key]) || 0 }));
+    const series = recs.map(r => ({ label: dateSlash(r.date).slice(5), value: valOf(r) }));
     $id('trendChartBox').innerHTML = trendChartSVG(series, { min, max });
 
     const first = vals[0], last = vals[vals.length - 1];
