@@ -2005,8 +2005,11 @@ function renderTrendSection(box, records, days, opts) {
   }
   html += `<div class="trend-btns">`;
   METRICS.forEach(m => html += `<button type="button" class="trend-btn" data-key="${m.key}">${m.label}</button>`);
-  html += `</div><div id="trendChartBox"></div><div id="trendSummary" class="trend-summary"></div>`;
+  html += `</div><div class="trend-chart-box"></div><div class="trend-summary"></div>`;
   box.innerHTML = html;
+
+  const chartBox = box.querySelector('.trend-chart-box');
+  const summaryBox = box.querySelector('.trend-summary');
 
   function draw() {
     const recs = allRecs.slice(0, range).reverse(); // 取目前範圍，改為舊→新
@@ -2019,12 +2022,12 @@ function renderTrendSection(box, records, days, opts) {
       if (max - min < 2) max = min + 2;
     }
     const series = recs.map(r => ({ label: dateSlash(r.date).slice(5), value: valOf(r) }));
-    $id('trendChartBox').innerHTML = trendChartSVG(series, { min, max });
+    chartBox.innerHTML = trendChartSVG(series, { min, max });
 
     const first = vals[0], last = vals[vals.length - 1];
     const diff = round1(last - first);
     const dir = diff > 0 ? `📈 上升 ${diff}` : (diff < 0 ? `📉 下降 ${Math.abs(diff)}` : '➡️ 持平');
-    $id('trendSummary').innerHTML = `<b>${cur.label}</b>：${recs.length} 天從 <b>${round1(first)}</b> → <b>${round1(last)}</b>　<span class="${diff >= 0 ? 'up' : 'down'}">${dir}</span>`;
+    summaryBox.innerHTML = `<b>${cur.label}</b>：${recs.length} 天從 <b>${round1(first)}</b> → <b>${round1(last)}</b>　<span class="${diff >= 0 ? 'up' : 'down'}">${dir}</span>`;
 
     box.querySelectorAll('.trend-btn').forEach(b => b.classList.toggle('active', b.dataset.key === cur.key));
     box.querySelectorAll('.trend-range-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.range, 10) === range));
