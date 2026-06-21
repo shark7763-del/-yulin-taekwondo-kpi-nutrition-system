@@ -2001,10 +2001,12 @@ function renderTrendSection(box, records, days, opts) {
   html += `<div class="trend-btns">`;
   METRICS.forEach(m => html += `<button type="button" class="trend-btn" data-key="${m.key}">${m.label}</button>`);
   html += `</div><div class="trend-chart-box"></div><div class="trend-summary"></div>`;
+  html += `<button type="button" class="btn btn-secondary trend-ai-btn">🤖 AI 一鍵分析起伏</button><div class="trend-ai-box"></div>`;
   box.innerHTML = html;
 
   const chartBox = box.querySelector('.trend-chart-box');
   const summaryBox = box.querySelector('.trend-summary');
+  const aiBox = box.querySelector('.trend-ai-box');
 
   function draw() {
     const recs = allRecs.slice(0, range).reverse(); // 取目前範圍，改為舊→新
@@ -2030,13 +2032,114 @@ function renderTrendSection(box, records, days, opts) {
 
   box.querySelectorAll('.trend-btn').forEach(b => b.addEventListener('click', () => {
     cur = METRICS.find(m => m.key === b.dataset.key) || METRICS[0];
+    if (aiBox) aiBox.innerHTML = '';
     draw();
   }));
   box.querySelectorAll('.trend-range-btn').forEach(b => b.addEventListener('click', () => {
     range = Math.min(parseInt(b.dataset.range, 10), allRecs.length);
+    if (aiBox) aiBox.innerHTML = '';
     draw();
   }));
+  const aiBtn = box.querySelector('.trend-ai-btn');
+  if (aiBtn) aiBtn.addEventListener('click', () => {
+    const recs = allRecs.slice(0, range).reverse();
+    aiBox.innerHTML = analyzeTrendSeries(recs, cur, METRICS);
+  });
   draw();
+}
+
+/* ============================================================
+   AI 趨勢分析（規則式）：解讀目前指標的起伏 + 跨面向掃描
+   ------------------------------------------------------------
+   recs：舊→新排序的紀錄；cur：目前選的指標；metrics：全部指標定義。
+   純前端規則式（與 analyzeNutrition / buildCoachFeedback 同路線）。
+   ============================================================ */
+function analyzeTrendSeries(recs, cur, metrics) {
+  if (!recs || recs.length < 2) return `<div class="hint-box">至少要 2 天紀錄才能分析起伏。</div>`;
+  const valOf = (m, r) => m.derive ? m.derive(r) : (parseFloat(r[m.key]) || 0);
+  const pts = recs.map(r => ({ d: dateSlash(r.date).slice(5), v: round1(valOf(cur, r)) }));
+  const vals = pts.map(p => p.v);
+  const n = vals.length;
+  const first = vals[0], last = vals[n - 1];
+  const diff = round1(last - first);
+  const higherBetter = cur.key !== 'weightKg';
+
+  // 高峰 / 低谷
+  let pk = 0, tr = 0;
+  vals.forEach((v, i) => { if (v > vals[pk]) pk = i; if (v < vals[tr]) tr = i; });
+
+  // 波動：相鄰變化的平均絕對值，相對於平均值歸一
+  const swings = [];
+  for (let i = 1; i < n; i++) swings.push(Math.abs(vals[i] - vals[i - 1]));
+  const avgSwing = swings.length ? round1(swings.reduce((a, b) => a + b, 0) / swings.length) : 0;
+  const mean = vals.reduce((a, b) => a + b, 0) / n;
+  const ratio = mean ? avgSwing / mean : 0;
+  let volword, volcls;
+  if (ratio < 0.05) { volword = '相當穩定'; volcls = 'good'; }
+  else if (ratio < 0.12) { volword = '小幅起伏'; volcls = ''; }
+  else { volword = '起伏明顯'; volcls = 'warn'; }
+
+  // 結尾連續走向
+  let streak = 1, sign = Math.sign(round1(vals[n - 1] - vals[n - 2]) || 0);
+  for (let i = n - 2; i > 0; i--) {
+    const s = Math.sign(round1(vals[i] - vals[i - 1]) || 0);
+    if (s === sign && s !== 0) streak++; else break;
+  }
+  let momentum;
+  if (sign > 0) momentum = `近 ${streak} 個紀錄${higherBetter ? '持續上升 📈' : '持續增加'}`;
+  else if (sign < 0) momentum = `近 ${streak} 個紀錄${higherBetter ? '持續下滑 📉' : '持續下降'}`;
+  else momentum = '最近持平';
+
+  // 整體方向用語（體重中性，其他越高越好）
+  let dirword, dircls;
+  if (diff === 0) { dirword = '整體持平'; dircls = ''; }
+  else if (!higherBetter) { dirword = `體重${diff > 0 ? '上升' : '下降'} ${Math.abs(diff)}`; dircls = ''; }
+  else if (diff > 0) { dirword = `整體進步 +${diff}`; dircls = 'good'; }
+  else { dirword = `整體下滑 ${diff}`; dircls = 'warn'; }
+
+  // 跨面向掃描（六大面向，第一筆 vs 最後一筆）
+  const aspectKeys = ['physicalAvg', 'technicalAvg', 'focusAvg', 'disciplineAvg', 'emotionAvg', 'tacticalAvg'];
+  const ups = [], downs = [];
+  aspectKeys.forEach(k => {
+    const m = metrics.find(x => x.key === k); if (!m) return;
+    const a = parseFloat(recs[0][k]), b = parseFloat(recs[n - 1][k]);
+    if (isNaN(a) || isNaN(b)) return;
+    const d = round1(b - a);
+    if (d >= 0.3) ups.push(`${m.label} +${d}`);
+    else if (d <= -0.3) downs.push(`${m.label} ${d}`);
+  });
+
+  // 教練提醒
+  let tip;
+  if (!higherBetter) {
+    tip = '體重變化請搭配訓練強度與目標體重一起看，短期波動多與水分有關，不需過度緊張。';
+  } else if (diff > 0 && volcls !== 'warn') {
+    tip = '走勢向上且穩定，保持目前的訓練與作息節奏，並把進步最多的面向變成習慣。';
+  } else if (sign < 0 && streak >= 2) {
+    tip = `留意近期連續下滑，先確認睡眠、疲勞與課業壓力${downs.length ? '，特別是「' + downs[0].split(' ')[0] + '」面向' : ''}，必要時和選手聊聊。`;
+  } else if (volcls === 'warn') {
+    tip = '分數起伏偏大，可能與睡眠、心情或訓練強度不穩有關，建議穩定作息、固定回報時間。';
+  } else {
+    tip = '整體大致持平，可挑一個面向設定明確小目標，創造下一段成長。';
+  }
+
+  let h = `<div class="trend-ai-card">`;
+  h += `<div class="trend-ai-title">🤖 AI 起伏分析・<b>${escapeHtml(cur.label)}</b>（${n} 天）</div>`;
+  h += `<ul class="trend-ai-list">`;
+  h += `<li>走勢：<span class="tai ${dircls}">${dirword}</span>（${round1(first)} → ${round1(last)}）</li>`;
+  h += `<li>波動：<span class="tai ${volcls}">${volword}</span>（平均每次變化 ${avgSwing}）</li>`;
+  h += `<li>高峰：${pts[pk].d}（${pts[pk].v}）｜低谷：${pts[tr].d}（${pts[tr].v}）</li>`;
+  h += `<li>近期動能：${momentum}</li>`;
+  if (ups.length || downs.length) {
+    h += `<li>面向掃描：`;
+    if (ups.length) h += `<span class="tai good">📈 ${ups.join('、')}</span>　`;
+    if (downs.length) h += `<span class="tai warn">📉 ${downs.join('、')}</span>`;
+    h += `</li>`;
+  }
+  h += `</ul>`;
+  h += `<div class="trend-ai-tip">💡 ${tip}</div>`;
+  h += `</div>`;
+  return h;
 }
 
 // 簡單 HTML 跳脫，避免使用者輸入破壞版面

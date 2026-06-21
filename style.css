@@ -860,3 +860,19 @@ textarea.text-input { resize: vertical; }
 .kpi-pending { color: var(--yellow); font-weight: 700; }
 .kpi-remind { margin-bottom: 14px; }
 .kpi-remind-title { font-weight: 700; color: var(--blue); margin-bottom: 4px; }
+
+/* ===================== AI 趨勢起伏分析 ===================== */
+.trend-ai-btn { margin: 10px 0 4px; }
+.trend-ai-card {
+  margin-top: 10px; border: 1px solid var(--border); border-left: 4px solid var(--blue);
+  border-radius: 12px; background: #0f141c; padding: 12px 14px;
+}
+.trend-ai-title { font-weight: 800; color: var(--blue); margin-bottom: 8px; }
+.trend-ai-list { margin: 0; padding-left: 18px; }
+.trend-ai-list li { font-size: 0.9rem; line-height: 1.8; color: var(--text-main); }
+.trend-ai-tip {
+  margin-top: 10px; padding: 9px 12px; border-radius: 8px; font-size: 0.88rem;
+  background: rgba(245,197,24,0.10); border: 1px solid rgba(245,197,24,0.4); color: #f3d36b;
+}
+.tai.good { color: var(--green); font-weight: 700; }
+.tai.warn { color: #ff9c6e; font-weight: 700; }
