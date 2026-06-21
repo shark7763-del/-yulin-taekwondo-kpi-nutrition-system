@@ -1232,14 +1232,34 @@ function findKpiSession(sessionId) {
   return findObjectRow(getKpiSessionsSheet(), KPI_SESSION_HEADERS, 'sessionId', sessionId);
 }
 
+// 每位學生「最近一筆有效訓練紀錄」的組別（給 KPI 開放對象比對用）。
+// student_accounts 沒有組別欄，組別來自每日回報的 group。
+function latestGroupByName() {
+  var map = {};
+  var all;
+  try { all = getAllRecords(); } catch (e) { all = []; }
+  // getAllRecords 已是新→舊或含 timestamp；逐筆取較新的覆蓋
+  all.forEach(function (r) {
+    var name = String(r.name || '').trim();
+    var grp = String(r.group || '').trim();
+    if (!name || !grp || grp.indexOf('未出席') !== -1) return;
+    var t = new Date(r.timestamp || r.date || 0).getTime();
+    if (!map[name] || t >= map[name].t) map[name] = { group: grp, t: t };
+  });
+  var out = {};
+  Object.keys(map).forEach(function (n) { out[n] = map[n].group; });
+  return out;
+}
+
 // 一個 session 的完成統計（完成率、紅黃綠、名單）
 function kpiSessionStats(session) {
   var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS)
     .filter(function (r) { return String(r.sessionId) === String(session.sessionId); });
   var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS)
     .filter(function (a) { return a.accountStatus !== 'disabled'; });
-  // 對象名單（依 targetGroup/targetStudentIds）。account 沒有 group 欄，組別資訊用 className 退化，預設全隊。
-  var targets = accounts.filter(function (a) { return studentInTarget(session, a.studentId, a.studentName, a.className); });
+  // 對象名單（依 targetGroup/targetStudentIds）。組別來自每日回報的最新 group。
+  var groupMap = latestGroupByName();
+  var targets = accounts.filter(function (a) { return studentInTarget(session, a.studentId, a.studentName, groupMap[String(a.studentName).trim()] || ''); });
   if (!targets.length) targets = accounts; // 名單為空時退回全部，避免完成率分母為 0
   var doneNames = {};
   reports.forEach(function (r) { doneNames[String(r.studentName).trim()] = r; });
@@ -1348,16 +1368,17 @@ function getStudentKpiSession(data) {
   var who = authorizedStudentName(data, false);
   if (!who.ok) return who;
   var studentName = who.name, studentId = who.studentId || '';
+  var myGroup = latestGroupByName()[String(studentName).trim()] || '';
   var sessions = listKpiSessions();
   // 找最新一個「對這位學生有效（open/scheduled）」的 session
   var open = sessions.filter(function (s) {
     var es = effectiveSessionStatus(s);
-    return (es === 'open' || es === 'scheduled') && studentInTarget(s, studentId, studentName, '');
+    return (es === 'open' || es === 'scheduled') && studentInTarget(s, studentId, studentName, myGroup);
   }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); })[0];
 
   if (!open) {
     // 是否有最近剛截止的
-    var recentClosed = sessions.filter(function (s) { return effectiveSessionStatus(s) === 'closed' && studentInTarget(s, studentId, studentName, ''); })
+    var recentClosed = sessions.filter(function (s) { return effectiveSessionStatus(s) === 'closed' && studentInTarget(s, studentId, studentName, myGroup); })
       .sort(function (a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); })[0];
     if (recentClosed) return { ok: true, state: 'closed', session: recentClosed, message: '本次 KPI 已截止。如需補填，請洽教練重新開放。' };
     return { ok: true, state: 'none', message: '本週 KPI 尚未開放，請依照教練通知時間填寫。' };
@@ -1386,7 +1407,8 @@ function submitWeeklyKpi(data) {
   if (!found) return { ok: false, error: '找不到此 KPI 回報。' };
   var session = found.object;
   if (effectiveSessionStatus(session) !== 'open') return { ok: false, error: '本次 KPI 已截止或尚未開放。' };
-  if (!studentInTarget(session, studentId, studentName, '')) return { ok: false, error: '本次 KPI 不需要你填寫。' };
+  var myGroup = latestGroupByName()[String(studentName).trim()] || '';
+  if (!studentInTarget(session, studentId, studentName, myGroup)) return { ok: false, error: '本次 KPI 不需要你填寫。' };
 
   var sh = getWeeklyKpiReportsSheet();
   var reports = readSheetObjects(sh, WEEKLY_KPI_REPORT_HEADERS);

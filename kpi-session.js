@@ -32,7 +32,14 @@
     { v: 'weekly', label: '一般週KPI' }, { v: 'match', label: '賽後KPI' },
     { v: 'camp', label: '集訓KPI' }, { v: 'makeup', label: '補填KPI' }, { v: 'simple', label: '簡化KPI' }
   ];
-  var TARGET_GROUPS = ['全隊', '品勢組', '對練組', '黑帶組'];
+  // 開放對象＝系統實際組別（讀 app.js 的 GROUP_OPTIONS，排除「未出席訓練」），開頭加「全隊」
+  function targetGroups() {
+    var groups = [];
+    try { if (typeof GROUP_OPTIONS !== 'undefined' && GROUP_OPTIONS.length) groups = GROUP_OPTIONS.slice(); } catch (e) {}
+    groups = groups.filter(function (g) { return g && g.indexOf('未出席') === -1; });
+    if (!groups.length) groups = ['跆拳道對練', '跆拳道品勢', '自由品勢', '武術套路', '散打'];
+    return ['全隊'].concat(groups);
+  }
   var CLOSE_PRESETS = [
     { v: 'tonight21', label: '今晚 21:00' }, { v: 'tomorrow21', label: '明天 21:00' },
     { v: 'sunday21', label: '週日 21:00' }, { v: 'custom', label: '自訂時間' }
@@ -112,7 +119,7 @@
     f.innerHTML =
       field('回報名稱', '<input id="kpiName" class="text-input" placeholder="例如：第25週 KPI 成長回報" />') +
       field('回報類型', sel('kpiType', SESSION_TYPES.map(function (t) { return { v: t.v, label: t.label }; }))) +
-      field('開放對象', sel('kpiTarget', TARGET_GROUPS.map(function (g) { return { v: g, label: g }; }))) +
+      field('開放對象', sel('kpiTarget', targetGroups().map(function (g) { return { v: g, label: g }; }))) +
       field('截止時間', sel('kpiClose', CLOSE_PRESETS.map(function (c) { return { v: c.v, label: c.label }; }))) +
       '<div id="kpiCloseCustomWrap" style="display:none">' + field('自訂截止', '<input id="kpiCloseCustom" class="text-input" type="datetime-local" />') + '</div>' +
       '<div class="kpi-new-toggles">' +
