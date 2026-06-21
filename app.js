@@ -2476,6 +2476,9 @@ async function doSubmitInner(mode) {
   // 更新選手成長卡（連續天數／段位即時反映今天這筆）
   renderPlayerCard(rec.name);
 
+  // 回報完成 → 抽運動心理小卡（純前端，集卡＋連續天數加成）
+  if (window.PsychCards) try { window.PsychCards.onReportSubmitted(rec.name); } catch (e) {}
+
   // 捲動到 AI 教練回饋卡
   $id('coachFeedbackCard').scrollIntoView({ behavior: 'smooth' });
 
@@ -2523,6 +2526,7 @@ async function doSubmitAbsence(mode, rec) {
   $id('nutritionCard').style.display = 'none';
   renderLineCard(lineTexts);
   renderPlayerCard(rec.name);
+  if (window.PsychCards) try { window.PsychCards.onReportSubmitted(rec.name); } catch (e) {}
   $id('coachFeedbackCard').scrollIntoView({ behavior: 'smooth' });
   return saved;
 }

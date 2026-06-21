@@ -876,3 +876,68 @@ textarea.text-input { resize: vertical; }
 }
 .tai.good { color: var(--green); font-weight: 700; }
 .tai.warn { color: #ff9c6e; font-weight: 700; }
+
+/* ===================== 運動心理小卡 ===================== */
+.pc-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.72); display: none; align-items: center; justify-content: center;
+  padding: 16px; backdrop-filter: blur(3px);
+}
+.pc-modal {
+  position: relative; width: 100%; max-width: 420px; max-height: 92vh; overflow-y: auto;
+  background: linear-gradient(160deg, var(--bg-card) 0%, var(--bg-card-2) 100%);
+  border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow);
+  padding: 20px 18px; text-align: center;
+}
+.pc-close {
+  position: absolute; top: 10px; right: 12px; background: transparent; border: none;
+  color: var(--text-soft); font-size: 1.2rem; cursor: pointer;
+}
+.pc-head { font-size: 1.12rem; font-weight: 800; color: var(--gold); margin-bottom: 6px; }
+.pc-streak { font-size: 0.9rem; color: var(--text-soft); margin-bottom: 14px; }
+.pc-streak b { color: var(--orange); }
+.pc-collect { margin: 14px 0 4px; font-size: 0.92rem; color: var(--text-main); }
+.pc-collect b { color: var(--gold); }
+.pc-actions { display: flex; gap: 10px; margin-top: 16px; }
+.pc-actions .btn { flex: 1; }
+
+/* 卡片（翻面揭曉） */
+.pc-card { width: 230px; height: 320px; margin: 0 auto; perspective: 1000px; cursor: pointer; }
+.pc-card-inner { position: relative; width: 100%; height: 100%; transition: transform 0.6s; transform-style: preserve-3d; }
+.pc-card.flipped .pc-card-inner { transform: rotateY(180deg); }
+.pc-card-back, .pc-card-front {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border: 2px solid var(--pc-accent, var(--blue));
+}
+.pc-card-back {
+  background: repeating-linear-gradient(45deg, #11151c, #11151c 10px, #161b24 10px, #161b24 20px);
+}
+.pc-back-mark { font-size: 3.4rem; }
+.pc-back-text { margin-top: 12px; color: var(--text-soft); font-size: 0.85rem; }
+.pc-card-front {
+  transform: rotateY(180deg); padding: 16px 14px;
+  background: radial-gradient(circle at 50% 25%, rgba(255,255,255,0.06), #0f141c 70%);
+}
+.pc-card-top { display: flex; justify-content: space-between; width: 100%; font-size: 0.78rem; font-weight: 700; }
+.pc-theme { color: var(--pc-accent, var(--blue)); }
+.pc-rarity { color: var(--gold); }
+.pc-card-emoji { font-size: 3.2rem; margin: 14px 0; }
+.pc-card-quote { font-size: 1.05rem; font-weight: 700; line-height: 1.7; color: var(--text-main); }
+.pc-card-foot { margin-top: auto; font-size: 0.72rem; color: var(--text-soft); letter-spacing: 2px; }
+.pc-card.r-rare .pc-card-front { box-shadow: inset 0 0 24px rgba(46,125,209,0.35); }
+.pc-card.r-epic .pc-card-front { box-shadow: inset 0 0 30px rgba(245,197,24,0.45); border-color: var(--gold); }
+.pc-card.r-epic .pc-card-back { border-color: var(--gold); }
+
+/* 卡冊 */
+.pc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 8px 0; }
+.pc-mini {
+  border: 1px solid var(--pc-accent, var(--border)); border-radius: 10px; padding: 10px 8px;
+  background: #0f141c; min-height: 96px; display: flex; flex-direction: column; gap: 4px;
+}
+.pc-mini.locked { border-color: var(--border); opacity: 0.5; }
+.pc-mini-top { font-size: 1.4rem; }
+.pc-mini-q { font-size: 0.78rem; color: var(--text-main); line-height: 1.5; }
+.pc-mini-foot { margin-top: auto; font-size: 0.72rem; color: var(--gold); }
+.pc-mini.locked .pc-mini-foot { color: var(--text-soft); }
+.pc-mini.r-epic { box-shadow: inset 0 0 14px rgba(245,197,24,0.25); }
