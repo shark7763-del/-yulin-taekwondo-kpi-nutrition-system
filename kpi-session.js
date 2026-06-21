@@ -161,11 +161,7 @@
 
   async function coachOp(op, id) {
     if (op === 'detail') return toggleDetail(id);
-    if (op === 'report') {
-      if (typeof window.MonthlyReport !== 'undefined') notify('請到「每月訪視報表」產生完整週/月報');
-      else notify('週報整合於月報模組');
-      return toggleDetail(id);
-    }
+    if (op === 'report') return generateWeeklyReport(id);
     if (op === 'remind') return sendRemind(id);
     var actionMap = { close: 'closeKpiSession', reopen: 'reopenKpiSession', extend: 'extendKpiSession' };
     var action = actionMap[op];
@@ -206,6 +202,119 @@
         '　🟢' + st.green + ' 🟡' + st.yellow + ' 🔴' + st.red + '</div>' +
         '<div class="table-scroll"><table class="record-table"><thead><tr><th>選手</th><th>狀態</th><th>送出時間</th><th>總分</th><th>較上次</th><th>燈號</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     } catch (e) { box.innerHTML = '<div class="hint-box warn">讀取失敗</div>'; }
+  }
+
+  /* ===================== 獨立週報 ===================== */
+  function num(v) { var n = parseFloat(v); return isNaN(n) ? null : n; }
+  function avg(arr) { var xs = arr.filter(function (n) { return n != null; }); return xs.length ? Math.round((xs.reduce(function (a, b) { return a + b; }, 0) / xs.length) * 10) / 10 : null; }
+
+  async function generateWeeklyReport(id) {
+    var box = el('kpiDetail-' + id);
+    if (box) box.innerHTML = '產生週報中...';
+    var res;
+    try { res = await api({ action: 'getKpiSessionDetail', sessionId: id }); }
+    catch (e) { if (box) box.innerHTML = '<div class="hint-box warn">讀取失敗</div>'; return; }
+    if (!res || !res.ok) { if (box) box.innerHTML = '<div class="hint-box warn">' + esc((res && res.error) || '讀取失敗') + '</div>'; return; }
+    var session = res.session, st = res.stats || {};
+    var reports = st.reports || [];
+    if (!reports.length) { if (box) box.innerHTML = '<div class="hint-box">本次 KPI 尚無人填寫，無法產生週報。</div>'; return; }
+
+    var html = buildWeeklyReportHtml(session, st, reports);
+    if (box) {
+      box.innerHTML =
+        '<div class="btn-group"><button type="button" class="btn btn-secondary kpi-wr-print">🖨 列印 / 存 PDF</button>' +
+        '<button type="button" class="btn btn-ghost kpi-wr-close">收合</button></div>' +
+        '<div class="kpi-weekly-report" id="kpiWR-' + esc(id) + '">' + html + '</div>';
+      box.querySelector('.kpi-wr-print').addEventListener('click', function () { printWeeklyReport(session, html); });
+      box.querySelector('.kpi-wr-close').addEventListener('click', function () { box.innerHTML = ''; });
+    }
+  }
+
+  function buildWeeklyReportHtml(session, st, reports) {
+    // 六面向全隊平均
+    var aspectAvgs = WK_DIMS.map(function (d) {
+      return { label: d.label, icon: d.icon, val: avg(reports.map(function (r) { return num(r[d.key]); })) };
+    });
+    var teamAvg = avg(reports.map(function (r) { return num(r.averageScore); }));
+    // 進步最多 / 需關懷
+    var improved = reports.filter(function (r) { return num(r.changeScore) != null && num(r.changeScore) > 0; })
+      .sort(function (a, b) { return num(b.changeScore) - num(a.changeScore); }).slice(0, 5);
+    var care = reports.filter(function (r) { return String(r.riskLevel || '').indexOf('紅') !== -1; });
+
+    var h = '';
+    h += '<div class="kpi-wr-head"><div class="kpi-wr-title">育林國中技擊隊　每週 KPI 成長週報</div>' +
+      '<div class="kpi-wr-sub">' + esc(session.sessionName || '') + '　｜　' + esc(typeLabel(session.sessionType)) + '　｜　' + esc(session.weekId || '') + '</div>' +
+      '<div class="kpi-wr-sub">產生日期：' + new Date().toLocaleDateString('zh-TW') + '</div></div>';
+
+    // 摘要卡
+    h += '<div class="kpi-wr-cards">' +
+      wrCard('完成率', st.completionRate + '%', st.doneCount + '/' + st.total) +
+      wrCard('全隊平均', teamAvg == null ? '—' : teamAvg, '/ 5') +
+      wrCard('🟢 綠燈', st.green, '人') +
+      wrCard('🟡 黃燈', st.yellow, '人') +
+      wrCard('🔴 紅燈', st.red, '人') +
+      wrCard('未完成', st.pendingCount, '人') +
+      '</div>';
+
+    // 六面向
+    h += '<div class="kpi-wr-sech">六面向全隊平均</div><div class="kpi-wr-aspects">';
+    aspectAvgs.forEach(function (a) {
+      var tone = a.val == null ? '' : a.val >= 4 ? 'good' : a.val >= 3 ? 'mid' : 'low';
+      h += '<div class="kpi-wr-aspect ' + tone + '"><div class="kpi-wr-aspect-ic">' + a.icon + '</div>' +
+        '<div class="kpi-wr-aspect-v">' + (a.val == null ? '—' : a.val) + '</div>' +
+        '<div class="kpi-wr-aspect-l">' + esc(a.label) + '</div></div>';
+    });
+    h += '</div>';
+
+    // 進步最多
+    if (improved.length) {
+      h += '<div class="kpi-wr-sech">📈 本週進步最多</div><ul class="kpi-wr-list">';
+      improved.forEach(function (r) { h += '<li>' + esc(r.studentName) + '：' + (num(r.changeScore) > 0 ? '+' : '') + r.changeScore + '（' + (r.averageScore || '—') + ' / 5）</li>'; });
+      h += '</ul>';
+    }
+    // 需關懷
+    if (care.length) {
+      h += '<div class="kpi-wr-sech">💛 需關懷（紅燈）</div><ul class="kpi-wr-list">';
+      care.forEach(function (r) { h += '<li>' + esc(r.studentName) + '：平均 ' + (r.averageScore || '—') + '，' + esc(r.needImproveThisWeek || '需個別了解') + '</li>'; });
+      h += '</ul>';
+    }
+
+    // 全隊明細表
+    h += '<div class="kpi-wr-sech">全隊明細</div><div class="table-scroll"><table class="record-table"><thead><tr><th>選手</th>';
+    WK_DIMS.forEach(function (d) { h += '<th>' + d.label + '</th>'; });
+    h += '<th>平均</th><th>較上次</th><th>燈號</th></tr></thead><tbody>';
+    reports.forEach(function (r) {
+      h += '<tr><td>' + esc(r.studentName) + '</td>';
+      WK_DIMS.forEach(function (d) { h += '<td>' + (r[d.key] || '—') + '</td>'; });
+      h += '<td>' + (r.averageScore || '—') + '</td><td>' + (r.changeScore === '' || r.changeScore == null ? '—' : (num(r.changeScore) > 0 ? '+' : '') + r.changeScore) + '</td><td>' + esc(r.riskLevel || '—') + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+
+    // 未完成名單
+    if (st.pendingNames && st.pendingNames.length) {
+      h += '<div class="kpi-wr-sech">未完成名單</div><div class="kpi-wr-pending">' + st.pendingNames.map(esc).join('、') + '</div>';
+    }
+    h += '<div class="kpi-wr-foot">本報表供校內訓練管理使用。</div>';
+    return h;
+  }
+
+  function wrCard(label, val, sub) {
+    return '<div class="kpi-wr-card"><div class="kpi-wr-card-v">' + val + '</div><div class="kpi-wr-card-l">' + esc(label) + '</div>' + (sub ? '<div class="kpi-wr-card-s">' + esc(sub) + '</div>' : '') + '</div>';
+  }
+
+  function printWeeklyReport(session, innerHtml) {
+    var win = window.open('', '_blank');
+    if (!win) { notify('請允許彈出視窗以列印'); return; }
+    win.document.write(
+      '<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8" />' +
+      '<title>週報_' + esc(session.sessionName || '') + '</title>' +
+      '<link rel="stylesheet" href="style.css?v=20260622e" />' +
+      '<style>body{background:#fff;color:#111;margin:0;padding:18px;font-family:"Microsoft JhengHei",sans-serif;}' +
+      '.kpi-weekly-report{max-width:760px;margin:0 auto;}</style>' +
+      '</head><body><div class="kpi-weekly-report">' + innerHtml + '</div>' +
+      '<script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>'
+    );
+    win.document.close();
   }
 
   async function sendRemind(id) {
