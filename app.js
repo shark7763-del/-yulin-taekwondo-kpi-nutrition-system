@@ -702,6 +702,80 @@ function updateMoodCareNote() {
     note.innerHTML = '';
   }
 }
+/* ---- 睡眠：用就寢/起床時間算時長，AI 判讀是否充足 ---- */
+// 跨午夜處理：起床早於就寢時自動 +24 小時
+function computeSleepHours(bed, wake) {
+  if (!bed || !wake) return null;
+  const b = bed.split(':').map(Number), w = wake.split(':').map(Number);
+  if (b.length < 2 || w.length < 2 || [b[0], b[1], w[0], w[1]].some(isNaN)) return null;
+  let mins = (w[0] * 60 + w[1]) - (b[0] * 60 + b[1]);
+  if (mins <= 0) mins += 24 * 60;
+  return Math.round((mins / 60) * 10) / 10;
+}
+// 國中生建議睡眠 8–10 小時
+function sleepVerdict(h) {
+  if (h == null) return null;
+  if (h < 6) return { label: '明顯不足', cls: 'bad', tip: '睡不到 6 小時，恢復會打折，今天訓練特別留意疲勞與專注。' };
+  if (h < 7) return { label: '偏少', cls: 'warn', tip: '低於建議量（國中生建議 8–10 小時），盡量提早就寢補回來。' };
+  if (h <= 10) return { label: '充足', cls: 'good', tip: '睡眠充足，有利恢復、長高與專注，繼續保持 👍' };
+  return { label: '偏多', cls: 'warn', tip: '睡很久也可能代表身體太累或作息不規律，注意固定作息。' };
+}
+function updateSleepCalc() {
+  const bedEl = $id('bedTime'), wakeEl = $id('wakeTime'), hidden = $id('sleepHours');
+  if (!bedEl || !wakeEl || !hidden) return;
+  const h = computeSleepHours(bedEl.value, wakeEl.value);
+  hidden.value = (h == null ? '' : h);
+  const box = $id('sleepCalc');
+  if (!box) return;
+  if (h == null) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const v = sleepVerdict(h);
+  box.style.display = '';
+  box.className = 'sleep-calc ' + v.cls;
+  box.innerHTML = `🛌 睡眠時長 <b>${h}</b> 小時・AI 判讀：<b>${v.label}</b><br><span class="sleep-tip">${v.tip}</span>`;
+}
+
+/* ---- 受傷疼痛指數 0–10：依分級顯示體感與關懷 ---- */
+function painGrade(n) {
+  if (n <= 0) return { label: '完全不痛', cls: 'p0' };
+  if (n <= 3) return { label: '輕度疼痛', cls: 'p1' };
+  if (n <= 6) return { label: '中度疼痛', cls: 'p2' };
+  if (n <= 9) return { label: '重度疼痛', cls: 'p3' };
+  return { label: '痛到極限', cls: 'p4' };
+}
+function updatePainReadout() {
+  const sl = $id('painScore');
+  if (!sl) return;
+  const n = parseInt(sl.value, 10) || 0;
+  const g = painGrade(n);
+  if ($id('painNum')) $id('painNum').textContent = n;
+  if ($id('painLabel')) $id('painLabel').textContent = g.label;
+  const ro = $id('painReadout'); if (ro) ro.className = 'pain-readout ' + g.cls;
+  const care = $id('painCare');
+  if (care) {
+    if (n >= 7) { care.style.display = ''; care.className = 'pain-care bad'; care.textContent = '⚠️ 疼痛偏高，請務必告知教練，今天先不要勉強做專項訓練，必要時請就醫檢查。'; }
+    else if (n >= 4) { care.style.display = ''; care.className = 'pain-care warn'; care.textContent = '💛 中度疼痛，建議降低該部位訓練強度，並讓教練知道狀況。'; }
+    else { care.style.display = 'none'; care.textContent = ''; }
+  }
+}
+
+/* ---- 尿液顏色監控：脫水快篩 ---- */
+const URINE_NOTE = {
+  '透明無色': ['', '水分可能略過量，正常喝就好，不用一直灌水。'],
+  '淡黃清澈': ['good', '水分充足，補水狀態理想，繼續保持 👍'],
+  '黃色': ['warn', '水分稍微不足，再補一些開水。'],
+  '深黃': ['bad', '身體缺水了，請盡快補充 500ml 以上開水。'],
+  '琥珀色': ['bad', '嚴重缺水！請立即補水並告知教練，避免熱衰竭或抽筋。']
+};
+function updateUrineNote() {
+  const sel = $id('urineStatus'), box = $id('urineNote');
+  if (!sel || !box) return;
+  const v = sel.value, info = URINE_NOTE[v];
+  if (!v || !info) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  box.className = 'urine-note ' + (info[0] || '');
+  box.innerHTML = '💧 ' + info[1];
+}
+
 // 心情原因：moodReasonChips 用 buildChipToggler 綁到一個隱藏欄位；這裡直接讀已選 chip
 function getMoodReason() {
   const box = $id('moodReasonChips');
@@ -1112,17 +1186,19 @@ function judgeStatus(average) {
 
 /*
    疲勞與恢復指數：100 起扣分 → 對應五級恢復狀態。
-   input: { sleepHours, sleepQuality, rpe, soreness, bodyStatus }
+   input: { sleepHours, sleepQuality, rpe, soreness, bodyStatus, painScore }
 */
 function computeRecovery(input) {
   let score = 100;
   const sh = parseFloat(input.sleepHours);
   const rpe = parseFloat(input.rpe);
   const sore = parseFloat(input.soreness);
+  const pain = parseFloat(input.painScore);
   if (!isNaN(sh) && sh < 6) score -= 25;
   if (input.sleepQuality === '差') score -= 20;
   if (!isNaN(rpe) && rpe > 8) score -= 20;
   if (!isNaN(sore) && sore >= 4) score -= 20;
+  if (!isNaN(pain)) { if (pain >= 7) score -= 30; else if (pain >= 4) score -= 15; }
   if (input.bodyStatus === '疲勞') score -= 15;
   else if (input.bodyStatus === '不舒服') score -= 25;
   else if (input.bodyStatus === '受傷中') score -= 40;
@@ -2006,12 +2082,17 @@ function buildRecord() {
   const weightGap = computeWeightGap(weightKg, targetWeightKg);
   const bodyStatus = $id('bodyStatus').value;
 
-  // 新增：睡眠 / RPE / 痠痛 / 受傷部位
+  // 新增：睡眠 / RPE / 痠痛 / 受傷部位 / 疼痛指數 / 尿液監控
+  const bedTime = $id('bedTime') ? $id('bedTime').value : '';
+  const wakeTime = $id('wakeTime') ? $id('wakeTime').value : '';
   const sleepHours = $id('sleepHours') ? $id('sleepHours').value : '';
   const sleepQuality = $id('sleepQuality') ? $id('sleepQuality').value : '';
   const soreness = $id('soreness') ? $id('soreness').value : '';
   const rpe = $id('rpe') ? $id('rpe').value : '';
   const injuryArea = $id('injuryArea') ? $id('injuryArea').value : '';
+  const painScore = $id('painScore') ? $id('painScore').value : '';
+  const painLevel = (painScore === '' ? '' : painGrade(parseInt(painScore, 10) || 0).label);
+  const urineStatus = $id('urineStatus') ? $id('urineStatus').value : '';
 
   // 餐點：文字（學生打的字，給關鍵字分析用）＋快速勾選標籤（給標籤分析用）
   const mealTags = getAllMealTags();
@@ -2043,10 +2124,10 @@ function buildRecord() {
     ? { risks: [], student: '', parent: '', coach: { advice: '' }, nextGoal: '' }
     : analyzeNutrition(nutritionInput);
 
-  // 恢復指數 + 紅燈原因分類
+  // 恢復指數 + 紅燈原因分類（疼痛指數一併納入）
   const recovery = absenceMode
     ? { score: '', state: '' }
-    : computeRecovery({ sleepHours, sleepQuality, rpe, soreness, bodyStatus });
+    : computeRecovery({ sleepHours, sleepQuality, rpe, soreness, bodyStatus, painScore });
   const nutritionRisks = nutrition.risks.join('、') || '無明顯風險';
   const redCats = absenceMode ? [] : redLightCategories(scores, nutritionRisks, recovery.state);
 
@@ -2069,11 +2150,16 @@ function buildRecord() {
     bodyStatus: bodyStatus,
     moodIndex: getMoodIndex(),
     moodReason: getMoodReason(),
+    bedTime: bedTime,
+    wakeTime: wakeTime,
     sleepHours: sleepHours,
     sleepQuality: sleepQuality,
     soreness: soreness,
     rpe: rpe,
     injuryArea: injuryArea,
+    painScore: painScore,
+    painLevel: painLevel,
+    urineStatus: urineStatus,
     heightCm: heightCm,
     weightKg: weightKg,
     targetWeightKg: targetWeightKg,
@@ -5711,6 +5797,16 @@ function init() {
     $id(id).addEventListener('input', updateBmiDisplay);
   });
 
+  // 睡眠（就寢/起床時間）→ 即時算時長 + AI 判讀
+  ['bedTime', 'wakeTime'].forEach(id => { const el = $id(id); if (el) el.addEventListener('input', updateSleepCalc); });
+  // 受傷疼痛指數 0–10
+  { const p = $id('painScore'); if (p) p.addEventListener('input', updatePainReadout); }
+  { const pr = $id('painRefToggle'); if (pr) pr.addEventListener('click', () => { const r = $id('painRef'); if (r) r.style.display = (r.style.display === 'none' ? '' : 'none'); }); }
+  // 尿液顏色監控
+  { const u = $id('urineStatus'); if (u) u.addEventListener('change', updateUrineNote); }
+  // 初次顯示
+  updateSleepCalc(); updatePainReadout(); updateUrineNote();
+
   // 表單草稿自動保存（填一半關掉也不會不見）
   const saveDraftDebounced = debounce(saveDraft, 400);
   const studentForm = $id('studentForm');
@@ -5835,6 +5931,12 @@ function clearForm() {
   toggleAbsenceReason($id('group').value);
   if ($id('encourageTeammate')) $id('encourageTeammate').selectedIndex = 0;
   $id('lateNightSnack').value = '無';
+  // 睡眠 / 疼痛 / 尿液：清空並刷新 AI 顯示
+  ['bedTime', 'wakeTime', 'sleepHours', 'soreness', 'rpe', 'injuryArea'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
+  if ($id('sleepQuality')) $id('sleepQuality').value = '普通';
+  if ($id('urineStatus')) $id('urineStatus').value = '';
+  if ($id('painScore')) $id('painScore').value = 0;
+  updateSleepCalc(); updatePainReadout(); updateUrineNote();
   clearMood();
   // 清空自由品勢額外欄位
   FREESTYLE_EXTRA_IDS.forEach(id => { const el = $id(id); if (el) { if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = ''; } });
@@ -5859,8 +5961,9 @@ function clearForm() {
 // 草稿要保存的欄位（簡單欄位，KPI 拉桿另外處理）
 const DRAFT_FIELDS = [
   'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'absenceHonesty', 'bodyStatus',
+  'bedTime', 'wakeTime', 'sleepQuality', 'soreness', 'rpe', 'injuryArea', 'painScore',
   'heightCm', 'weightKg', 'targetWeightKg',
-  'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'lateNightSnack', 'trainingIntensity',
+  'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'urineStatus', 'lateNightSnack', 'trainingIntensity',
   'reflection', 'tomorrowGoal', 'gratitude', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday'
 ].concat(FREESTYLE_EXTRA_IDS);
 
@@ -5909,6 +6012,7 @@ function restoreDraft() {
   if (d._mood) setMoodIndex(d._mood);
   if (d._moodReason) setMoodReason(d._moodReason);
   updateBmiDisplay();
+  updateSleepCalc(); updatePainReadout(); updateUrineNote();
   return true;
 }
 

@@ -194,6 +194,53 @@ textarea.text-input { resize: vertical; }
 .kpi-section-body { background: #0e1218; }
 .kpi-section-body .kpi-item:first-child { border-top: none; }
 
+/* ---- 睡眠 AI 判讀 ---- */
+.sleep-calc {
+  margin: 8px 0 4px; padding: 10px 12px; border-radius: 10px; font-size: 0.9rem;
+  border: 1px solid var(--border); border-left: 4px solid var(--blue); background: #0f141c;
+}
+.sleep-calc.good { border-left-color: var(--green); background: rgba(46,204,113,0.10); }
+.sleep-calc.warn { border-left-color: var(--yellow); background: rgba(241,196,15,0.10); }
+.sleep-calc.bad { border-left-color: var(--red); background: rgba(226,59,59,0.12); }
+.sleep-tip { color: var(--text-soft); font-size: 0.82rem; }
+
+/* ---- 受傷疼痛指數 0–10 ---- */
+.inline-ref-btn {
+  margin-left: 8px; font-size: 0.74rem; font-weight: 700; cursor: pointer;
+  background: rgba(46,125,209,0.15); color: #7db8ec; border: 1px solid var(--blue);
+  border-radius: 12px; padding: 2px 10px; font-family: inherit;
+}
+.pain-slider {
+  width: 100%; -webkit-appearance: none; appearance: none; height: 8px; border-radius: 6px;
+  background: linear-gradient(to right, var(--green) 0%, var(--yellow) 45%, #ff8c00 70%, var(--red) 100%); outline: none; margin: 6px 0;
+}
+.pain-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 3px solid #0e1116; cursor: pointer; }
+.pain-slider::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 3px solid #0e1116; cursor: pointer; }
+.pain-readout { font-weight: 800; font-size: 0.95rem; margin-bottom: 4px; }
+.pain-readout.p0 { color: var(--green); }
+.pain-readout.p1 { color: #b7d63a; }
+.pain-readout.p2 { color: #ff8c00; }
+.pain-readout.p3 { color: var(--red); }
+.pain-readout.p4 { color: #ff3b3b; }
+.pain-care { margin: 4px 0 8px; padding: 9px 12px; border-radius: 8px; font-size: 0.86rem; }
+.pain-care.warn { background: rgba(241,196,15,0.12); border: 1px solid var(--yellow); color: #f1c40f; }
+.pain-care.bad { background: rgba(226,59,59,0.14); border: 1px solid var(--red); color: #ff7b7b; }
+.pain-ref { margin: 6px 0 10px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.pain-ref-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.pain-ref-table th { background: #11151c; color: var(--blue); padding: 7px 8px; text-align: left; }
+.pain-ref-table td { padding: 7px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+.pain-ref-table td.p0 { color: var(--green); font-weight: 700; white-space: nowrap; }
+.pain-ref-table td.p1 { color: #b7d63a; font-weight: 700; white-space: nowrap; }
+.pain-ref-table td.p2 { color: #ff8c00; font-weight: 700; white-space: nowrap; }
+.pain-ref-table td.p3 { color: var(--red); font-weight: 700; white-space: nowrap; }
+.pain-ref-table td.p4 { color: #ff3b3b; font-weight: 700; white-space: nowrap; }
+
+/* ---- 尿液顏色監控 ---- */
+.urine-note { margin: 6px 0 4px; padding: 9px 12px; border-radius: 8px; font-size: 0.86rem; border: 1px solid var(--border); border-left: 4px solid var(--blue); background: #0f141c; }
+.urine-note.good { border-left-color: var(--green); background: rgba(46,204,113,0.10); color: #8be0ad; }
+.urine-note.warn { border-left-color: var(--yellow); background: rgba(241,196,15,0.10); color: #f1c40f; }
+.urine-note.bad { border-left-color: var(--red); background: rgba(226,59,59,0.12); color: #ff7b7b; }
+
 /* ===================== 按鈕 ===================== */
 .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 .btn {

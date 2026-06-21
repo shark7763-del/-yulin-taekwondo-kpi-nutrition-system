@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260621b" />
+  <link rel="stylesheet" href="style.css?v=20260621c" />
   <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
 </head>
 <body>
@@ -153,8 +153,14 @@
             <div id="moodReasonChips" class="quick-chips"></div>
             <div id="moodCareNote" class="mood-care" style="display:none;"></div>
 
-            <label class="field-label">昨晚睡眠時數</label>
-            <input type="number" id="sleepHours" class="text-input" step="0.5" min="0" max="12" placeholder="例如：7.5" />
+            <label class="field-label">昨晚就寢時間 🌙</label>
+            <input type="time" id="bedTime" class="text-input" />
+
+            <label class="field-label">今晨起床時間 ☀️</label>
+            <input type="time" id="wakeTime" class="text-input" />
+
+            <input type="hidden" id="sleepHours" />
+            <div id="sleepCalc" class="sleep-calc" style="display:none;"></div>
 
             <label class="field-label">睡眠品質</label>
             <select id="sleepQuality" class="text-input">
@@ -172,6 +178,25 @@
 
             <label class="field-label">受傷／不適部位</label>
             <input type="text" id="injuryArea" class="text-input" placeholder="沒有可留空，例如：右膝、腳踝" />
+
+            <label class="field-label">受傷部位疼痛指數（0–10）
+              <button type="button" id="painRefToggle" class="inline-ref-btn">📖 分級說明</button>
+            </label>
+            <input type="range" id="painScore" class="pain-slider" min="0" max="10" step="1" value="0" />
+            <div class="pain-readout p0" id="painReadout"><b id="painNum">0</b> 分・<span id="painLabel">完全不痛</span></div>
+            <div class="pain-care" id="painCare" style="display:none;"></div>
+            <div class="pain-ref" id="painRef" style="display:none;">
+              <table class="pain-ref-table">
+                <thead><tr><th>分數</th><th>分級</th><th>實際體感與表現</th></tr></thead>
+                <tbody>
+                  <tr><td>0</td><td class="p0">完全不痛</td><td>身體完全正常，能發揮 100% 運動表現。</td></tr>
+                  <tr><td>1–3</td><td class="p1">輕度疼痛</td><td>隱隱作痛或局部緊繃，不影響動作，高強度發力才察覺異樣。</td></tr>
+                  <tr><td>4–6</td><td class="p2">中度疼痛</td><td>動作時明顯刺痛或痠痛，力量輸出下降，需降低訓練強度。</td></tr>
+                  <tr><td>7–9</td><td class="p3">重度疼痛</td><td>劇烈疼痛，靜止時也持續抽痛，無法專項訓練，日常活動受嚴重干擾。</td></tr>
+                  <tr><td>10</td><td class="p4">痛到極限</td><td>無法忍受的撕裂性劇痛（如骨折、韌帶斷裂），伴隨無法動彈或冒冷汗。</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </fieldset>
 
@@ -218,6 +243,17 @@
 
           <label class="field-label">今日水量 <span class="req">*</span></label>
           <select id="waterIntake" class="text-input"></select>
+
+          <label class="field-label">尿液顏色監控 💧 <span class="mood-note">（脫水快篩，上完廁所順手選）</span></label>
+          <select id="urineStatus" class="text-input">
+            <option value="">未填</option>
+            <option value="透明無色">透明無色（可能喝太多）</option>
+            <option value="淡黃清澈">淡黃清澈（理想 ✅）</option>
+            <option value="黃色">黃色（正常偏少）</option>
+            <option value="深黃">深黃（缺水）</option>
+            <option value="琥珀色">琥珀色／濃茶色（嚴重缺水 ⚠️）</option>
+          </select>
+          <div class="urine-note" id="urineNote" style="display:none;"></div>
 
           <label class="field-label">今日是否有宵夜</label>
           <select id="lateNightSnack" class="text-input"></select>
@@ -755,7 +791,7 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260621b"></script>
+  <script src="app.js?v=20260621c"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260620a"></script>
