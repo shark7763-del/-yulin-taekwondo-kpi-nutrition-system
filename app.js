@@ -2142,7 +2142,8 @@ function scorePercent(r) {
 function renderTrendSection(box, records, days, opts) {
   opts = opts || {};
   // 同一天只留一筆（新→舊）。不在這裡切片，改由「範圍選擇器」決定要看幾天。
-  const allRecs = dedupeLatestByDate(records);
+  // 過濾未出席紀錄：請假日沒有 KPI/體重分數，留著會被當 0 分，使曲線假性暴跌、誤導 AI 分析。
+  const allRecs = dedupeLatestByDate(records).filter(r => !isAbsenceRecord(r));
   if (allRecs.length < 2) {
     box.innerHTML = '<div class="hint-box">至少要 2 天的紀錄才看得出趨勢，繼續每天紀錄就會出現成長曲線！</div>';
     return;

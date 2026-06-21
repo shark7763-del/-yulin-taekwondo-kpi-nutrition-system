@@ -705,7 +705,9 @@ function authRecordResult(data, mode) {
   var identity = authorizedStudentName(data, true);
   if (!identity.ok) return identity;
   var rows = recordsForIdentity(identity).sort(byTimestampDesc);
-  if (identity.session && identity.session.role === 'parent') rows = rows.map(parentRecordSummary);
+  // 家長（含舊制以姓名登入的家長）只能拿摘要，不得收到完整 KPI/體重/疼痛/尿液等敏感欄位
+  var isParent = (identity.session && identity.session.role === 'parent') || (identity.legacy && data.legacyRole === 'parent');
+  if (isParent) rows = rows.map(parentRecordSummary);
   return { ok: true, data: mode === 'last' ? (rows[0] || null) : rows.slice(0, Number(data.limit || 7)) };
 }
 
@@ -713,7 +715,8 @@ function parentRecordSummary(r) {
   return {
     recordId: r.recordId, studentId: r.studentId, name: r.name, date: r.date,
     group: r.group, trainingTopic: r.trainingTopic, status: r.status,
-    absenceReason: r.absenceReason, tomorrowGoal: r.tomorrowGoal,
+    absenceReason: r.absenceReason, absenceReflection: r.absenceReflection,
+    tomorrowGoal: r.tomorrowGoal,
     nutritionAdviceParent: r.nutritionAdviceParent, coachReply: r.coachReply,
     parentNote: r.parentNote, timestamp: r.timestamp
   };
@@ -749,7 +752,9 @@ function authAttendanceByStudent(data) {
   var identity = authorizedStudentName(data, true);
   if (!identity.ok) return identity;
   var rows = getAttendanceReportsByName(identity.name, data.limit || 60);
-  if (identity.session && identity.session.role !== 'coach') rows = rows.map(function (r) {
+  // 只有教練看得到教練內部備註；學生／家長（含舊制以姓名登入者）一律去除
+  var isCoach = identity.session && identity.session.role === 'coach';
+  if (!isCoach) rows = rows.map(function (r) {
     var copy = {};
     Object.keys(r).forEach(function (key) { if (key !== 'coachPrivateNote') copy[key] = r[key]; });
     return copy;
