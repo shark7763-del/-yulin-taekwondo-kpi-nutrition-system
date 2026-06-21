@@ -1964,10 +1964,11 @@ function scorePercent(r) {
 }
 
 // 在 box 內渲染「可切換指標」的七天趨勢圖
-function renderTrendSection(box, records, days) {
-  // 同一天只留一筆，取最近 N 天（預設 7），改為由舊到新
-  const recs = dedupeLatestByDate(records).slice(0, days || 7).reverse();
-  if (recs.length < 2) {
+function renderTrendSection(box, records, days, opts) {
+  opts = opts || {};
+  // 同一天只留一筆（新→舊）。不在這裡切片，改由「範圍選擇器」決定要看幾天。
+  const allRecs = dedupeLatestByDate(records);
+  if (allRecs.length < 2) {
     box.innerHTML = '<div class="hint-box">至少要 2 天的紀錄才看得出趨勢，繼續每天紀錄就會出現成長曲線！</div>';
     return;
   }
@@ -1988,12 +1989,27 @@ function renderTrendSection(box, records, days) {
   ];
   let cur = METRICS[0];
 
-  let html = `<div class="trend-btns">`;
+  // 範圍選擇器：讓使用者把較舊的紀錄（如 5 月）也整合進來看
+  // opts.picker === false（個人檔案的固定 7/30 兩張圖）則不顯示選擇器
+  const showPicker = opts.picker !== false && allRecs.length > 7;
+  const RANGES = [{ n: 7, label: '近 7 天' }];
+  if (allRecs.length > 7) RANGES.push({ n: 30, label: '近 30 天' });
+  if (allRecs.length > 30) RANGES.push({ n: 99999, label: '全部' });
+  let range = Math.min(days || 7, allRecs.length);
+
+  let html = '';
+  if (showPicker) {
+    html += `<div class="trend-range">`;
+    RANGES.forEach(r => html += `<button type="button" class="trend-range-btn" data-range="${r.n}">${r.label}</button>`);
+    html += `</div>`;
+  }
+  html += `<div class="trend-btns">`;
   METRICS.forEach(m => html += `<button type="button" class="trend-btn" data-key="${m.key}">${m.label}</button>`);
   html += `</div><div id="trendChartBox"></div><div id="trendSummary" class="trend-summary"></div>`;
   box.innerHTML = html;
 
   function draw() {
+    const recs = allRecs.slice(0, range).reverse(); // 取目前範圍，改為舊→新
     const valOf = r => cur.derive ? cur.derive(r) : (parseFloat(r[cur.key]) || 0);
     const vals = recs.map(valOf);
     let min = cur.min, max = cur.max;
@@ -2011,10 +2027,15 @@ function renderTrendSection(box, records, days) {
     $id('trendSummary').innerHTML = `<b>${cur.label}</b>：${recs.length} 天從 <b>${round1(first)}</b> → <b>${round1(last)}</b>　<span class="${diff >= 0 ? 'up' : 'down'}">${dir}</span>`;
 
     box.querySelectorAll('.trend-btn').forEach(b => b.classList.toggle('active', b.dataset.key === cur.key));
+    box.querySelectorAll('.trend-range-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.range, 10) === range));
   }
 
   box.querySelectorAll('.trend-btn').forEach(b => b.addEventListener('click', () => {
     cur = METRICS.find(m => m.key === b.dataset.key) || METRICS[0];
+    draw();
+  }));
+  box.querySelectorAll('.trend-range-btn').forEach(b => b.addEventListener('click', () => {
+    range = Math.min(parseInt(b.dataset.range, 10), allRecs.length);
     draw();
   }));
   draw();
@@ -4624,7 +4645,7 @@ async function loadLastPerfPage() {
   // 同時抓最近一筆與歷史（畫趨勢圖）
   const [rec, history] = await Promise.all([
     fetchLastRecord(name),
-    fetchRecentRecords(name, 60)
+    fetchRecentRecords(name, 180)
   ]);
   const card = $id('lastPerfResultCard');
   const box = $id('lastPerfResult');
@@ -4956,7 +4977,7 @@ async function loadProfile() {
   if (!box) return;
   if (!name) { toast('請選擇選手'); return; }
   toast('讀取個人檔案中...');
-  const history = await fetchRecentRecords(name, 60);
+  const history = await fetchRecentRecords(name, 180);
   const recs = dedupeLatestByDate(history || []); // 新→舊
   renderProfile(name, recs);
   if (card) card.style.display = 'block';
@@ -5021,8 +5042,8 @@ function renderProfile(name, recs) {
   box.innerHTML = html;
 
   // 趨勢圖
-  const t7 = $id('profileTrend7'); if (t7) renderTrendSection(t7, recs, 7);
-  const t30 = $id('profileTrend30'); if (t30) renderTrendSection(t30, recs, 30);
+  const t7 = $id('profileTrend7'); if (t7) renderTrendSection(t7, recs, 7, { picker: false });
+  const t30 = $id('profileTrend30'); if (t30) renderTrendSection(t30, recs, 30, { picker: false });
 
   // 目標區（教練可編輯）
   appGet(appKeyProfile(name), data => setupProfileGoals(name, data, coachView, parentView));

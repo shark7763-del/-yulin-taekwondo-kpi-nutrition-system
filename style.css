@@ -723,6 +723,17 @@ textarea.text-input { resize: vertical; }
 .trend-btn:hover { border-color: var(--blue); color: var(--text-main); }
 .trend-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
 .trend-wrap { width: 100%; overflow-x: auto; }
+
+/* 趨勢圖時間範圍切換（近7天／近30天／全部） */
+.trend-range { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.trend-range-btn {
+  background: transparent; color: var(--text-soft);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px 12px; font-size: 0.82rem; font-weight: 700; cursor: pointer;
+  transition: all .15s;
+}
+.trend-range-btn:hover { border-color: var(--gold); color: var(--text-main); }
+.trend-range-btn.active { background: var(--gold); border-color: var(--gold); color: #1a1a1a; }
 .trend-chart { width: 100%; min-width: 340px; height: auto; display: block; }
 .trend-summary { margin-top: 8px; font-size: 0.95rem; color: var(--text-main); }
 .trend-summary .up { color: var(--green); font-weight: 700; }
