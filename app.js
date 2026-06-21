@@ -5502,6 +5502,7 @@ function switchTab(tabName) {
 
 const ROLE_KEY = 'yulin_role';
 let AUTH_CONFIG = { legacyLoginEnabled: true };
+let ACCOUNT_ADMIN_DATA = { students: [], parents: [] };
 
 function getRole() {
   try { return JSON.parse(localStorage.getItem(ROLE_KEY)); } catch (e) { return null; }
@@ -5937,6 +5938,7 @@ async function refreshAccountAdmin() {
     const res = await postToWebApp({ action: 'getAccountAdminData' });
     if (!res || !res.ok) throw new Error((res && res.error) || '讀取失敗');
     const data = res.data || { students: [], parents: [] };
+    ACCOUNT_ADMIN_DATA = data;
     $id('legacyLoginEnabled').checked = !!data.legacyLoginEnabled;
 
     studentBox.innerHTML = `<table><thead><tr><th>選手</th><th>狀態</th><th>最近登入</th><th>PIN</th><th>操作</th></tr></thead><tbody>${
@@ -5976,6 +5978,8 @@ function setupAccountAdminHandlers() {
   const card = $id('accountAdminCard');
   if (!card) return;
   $id('btnRefreshAccounts').addEventListener('click', refreshAccountAdmin);
+  $id('btnGeneratePendingCodes').addEventListener('click', generatePendingActivationCodes);
+  $id('btnCopyActivationCodes').addEventListener('click', () => copyText($id('activationBatchText').value));
   $id('legacyLoginEnabled').addEventListener('change', async e => {
     const res = await postToWebApp({ action: 'setLegacyLoginEnabled', enabled: e.target.checked });
     if (!res || !res.ok) { e.target.checked = !e.target.checked; toast((res && res.error) || '設定失敗'); return; }
@@ -6015,6 +6019,30 @@ function setupAccountAdminHandlers() {
       refreshAccountAdmin();
     }
   });
+}
+
+async function generatePendingActivationCodes() {
+  const pending = (ACCOUNT_ADMIN_DATA.students || []).filter(s => s.accountStatus !== 'disabled' && (!s.pinSet || s.pinResetRequired));
+  if (!pending.length) { toast('目前沒有待啟用的選手'); return; }
+  const button = $id('btnGeneratePendingCodes');
+  const lines = [];
+  button.disabled = true;
+  try {
+    for (let i = 0; i < pending.length; i++) {
+      button.textContent = `產生中 ${i + 1}/${pending.length}`;
+      const student = pending[i];
+      const res = await postToWebApp({ action: 'studentAccountAction', studentId: student.studentId, accountAction: 'generateActivation' });
+      if (res && res.ok && res.activationCode) lines.push(`${student.studentName}：${res.activationCode}（72 小時內有效）`);
+      else lines.push(`${student.studentName}：產生失敗`);
+    }
+    $id('activationBatchText').value = lines.join('\n');
+    $id('activationBatchResult').style.display = 'block';
+    toast(`已產生 ${lines.filter(line => line.indexOf('產生失敗') === -1).length} 組啟用碼`);
+    refreshAccountAdmin();
+  } finally {
+    button.disabled = false;
+    button.textContent = '批次產生待啟用碼';
+  }
 }
 
 /* ============================================================

@@ -545,6 +545,15 @@ textarea.text-input { resize: vertical; }
 .account-actions { display: flex; flex-wrap: wrap; gap: 5px; min-width: 220px; }
 .account-actions button { border: 1px solid var(--border); border-radius: 7px; background: var(--bg-card-2); color: var(--text-main); padding: 5px 8px; cursor: pointer; font-size: .78rem; }
 .account-actions button:hover { border-color: var(--blue); }
+.activation-batch-result { margin: 12px 0; padding: 12px; border: 1px solid var(--gold); border-radius: 10px; background: rgba(245,197,24,.06); }
+.activation-batch-result textarea { font-family: ui-monospace, Consolas, monospace; line-height: 1.6; }
+
+@media (max-width: 640px) {
+  #accountAdminCard .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  #accountAdminCard table { min-width: 760px; }
+  .account-admin-toolbar > * { flex: 1 1 100%; }
+  .account-actions { min-width: 190px; }
+}
 .login-back { background: transparent; border: 1px solid var(--border); color: var(--text-soft); border-radius: 12px; padding: 14px; flex: 1; cursor: pointer; font-weight: 700; }
 
 /* 登入姓名搜尋選擇器（人數多也好找） */
