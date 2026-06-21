@@ -155,6 +155,15 @@
     var trees = calculateAllAthleteGrowthTrees(monthKpi, names);
     var ryg = calculateRedYellowGreenStatus({ names: names, monthKpi: monthKpi, attendance: attendance, recovery: recovery, nutrition: nutrition, trees: trees });
 
+    // 每週 KPI session（Phase 2/3）：當月列入月報者。後端未部署或無資料則為空陣列，不影響其他頁。
+    var weeklyKpiSessions = [];
+    try {
+      if (typeof postToWebApp === 'function') {
+        var wk = await postToWebApp({ action: 'getMonthlyKpiSessions', month: month });
+        if (wk && wk.ok && Array.isArray(wk.data)) weeklyKpiSessions = wk.data;
+      }
+    } catch (e) { weeklyKpiSessions = []; }
+
     var data = {
       empty: false,
       month: month,
@@ -170,7 +179,8 @@
       recovery: recovery,
       nutrition: nutrition,
       trees: trees,
-      ryg: ryg
+      ryg: ryg,
+      weeklyKpiSessions: weeklyKpiSessions
     };
     data.coachSummary = generateCoachMonthlySummary(data);
     return data;
@@ -757,6 +767,28 @@
       });
       h += '</tbody></table>';
     } else { h += '<div class="mr-empty">本月資料不足，無法計算進步幅度（需至少 2 筆紀錄）</div>'; }
+
+    // 每週 KPI 回報（教練手動開啟的 session，列入月報者）
+    var wks = data.weeklyKpiSessions || [];
+    if (wks.length) {
+      var ASP = [
+        { k: 'technicalScore', l: '技術' }, { k: 'tacticalScore', l: '戰術' }, { k: 'physicalScore', l: '體能' },
+        { k: 'mentalScore', l: '心理' }, { k: 'attitudeScore', l: '態度' }, { k: 'recoveryScore', l: '恢復' }
+      ];
+      h += '<div class="mr-sec-h">🗓️ 本月每週 KPI 回報</div>';
+      h += '<table class="mr-table"><thead><tr><th>回報</th><th>完成率</th><th>平均</th>';
+      ASP.forEach(function (a) { h += '<th>' + a.l + '</th>'; });
+      h += '<th>🟢🟡🔴</th></tr></thead><tbody>';
+      wks.forEach(function (s) {
+        h += '<tr><td>' + esc(s.sessionName || '') + '</td>' +
+          '<td>' + NA(s.completionRate, '%') + '（' + s.doneCount + '/' + s.total + '）</td>' +
+          '<td>' + NA(s.avgScore) + '</td>';
+        ASP.forEach(function (a) { h += '<td>' + NA(s.aspects ? s.aspects[a.k] : null) + '</td>'; });
+        h += '<td>' + (s.green || 0) + '/' + (s.yellow || 0) + '/' + (s.red || 0) + '</td></tr>';
+      });
+      h += '</tbody></table>';
+    }
+
     h += pageFoot(3) + '</section>';
     return h;
   }

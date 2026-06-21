@@ -240,6 +240,8 @@ function handleAction(action, data) {
       return jsonOut(getKpiSessionDetail(data));
     case 'getKpiReminderTexts':   // 教練：產生三種 LINE 提醒文案
       return jsonOut(getKpiReminderTexts(data));
+    case 'getMonthlyKpiSessions': // 月報：當月列入月報的每週 KPI session（含六面向平均）
+      return jsonOut(getMonthlyKpiSessions(data));
     case 'getStudentKpiSession':  // 學生：目前該填的 KPI 狀態
       return jsonOut(getStudentKpiSession(data));
     case 'submitWeeklyKpi':       // 學生：送出每週 KPI
@@ -1479,6 +1481,39 @@ function getKpiReminderTexts(data) {
     try { pushed = pushToLine(texts[data.send]); } catch (e) { pushed = { ok: false, error: String(e) }; }
   }
   return { ok: true, texts: texts, pushed: pushed };
+}
+
+// 月報用：當月「列入月報」的每週 KPI session（含完成率與六面向全隊平均）
+function getMonthlyKpiSessions(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var month = String(data.month || '').slice(0, 7);
+  var aspectKeys = ['technicalScore', 'tacticalScore', 'physicalScore', 'mentalScore', 'attitudeScore', 'recoveryScore'];
+  var sessions = listKpiSessions().filter(function (s) {
+    if (String(s.includeInMonthlyReport) === 'false') return false;
+    var d = String(s.openAt || s.createdAt || '').slice(0, 7);
+    return !month || d === month;
+  });
+  var out = sessions.map(function (s) {
+    var stats = kpiSessionStats(s);
+    var reports = stats.reports || [];
+    var aspects = {};
+    aspectKeys.forEach(function (k) {
+      var xs = reports.map(function (r) { return parseFloat(r[k]); }).filter(function (n) { return !isNaN(n); });
+      aspects[k] = xs.length ? Math.round((xs.reduce(function (a, b) { return a + b; }, 0) / xs.length) * 10) / 10 : null;
+    });
+    // 進步最多（changeScore）
+    var improved = reports.filter(function (r) { return parseFloat(r.changeScore) > 0; })
+      .sort(function (a, b) { return parseFloat(b.changeScore) - parseFloat(a.changeScore); })
+      .slice(0, 3).map(function (r) { return { name: r.studentName, change: parseFloat(r.changeScore) }; });
+    return {
+      sessionId: s.sessionId, sessionName: s.sessionName, sessionType: s.sessionType, weekId: s.weekId,
+      completionRate: stats.completionRate, doneCount: stats.doneCount, total: stats.total,
+      avgScore: stats.avgScore, red: stats.red, yellow: stats.yellow, green: stats.green,
+      aspects: aspects, improved: improved
+    };
+  });
+  return { ok: true, data: out };
 }
 
 function getAllAttendanceReports() {
