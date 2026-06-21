@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260621g" />
+  <link rel="stylesheet" href="style.css?v=20260622a" />
   <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
 </head>
 <body>
@@ -95,8 +95,14 @@
         <div id="taskContent"></div>
       </div>
 
+      <!-- 每週 KPI 回報（教練手動開啟時才顯示填寫入口） -->
+      <div class="card" id="studentKpiCard" style="display:none;">
+        <h3 class="card-title">📈 每週 KPI 回報</h3>
+        <div id="studentKpiBody"></div>
+      </div>
+
       <form id="studentForm" class="card">
-        <h3 class="card-title">📝 學生填寫</h3>
+        <h3 class="card-title">📝 學生填寫（每日回報）</h3>
 
         <!-- 基本資料 -->
         <fieldset class="form-section">
@@ -569,6 +575,15 @@
       </div>
 
       <!-- ========================================================= -->
+      <!-- KPI 回報管理（教練手動開啟）                              -->
+      <!-- ========================================================= -->
+      <div class="card" id="coachKpiManageCard">
+        <h3 class="card-title">📋 KPI 回報管理</h3>
+        <p class="review-label" style="margin-bottom:12px">每日回報每天開放；每週 KPI 由教練在此手動開啟。手動設定優先於系統預設。</p>
+        <div id="coachKpiManage"><div class="hint-box">讀取中...</div></div>
+      </div>
+
+      <!-- ========================================================= -->
       <!-- 每月訪視專用報表                                          -->
       <!-- ========================================================= -->
       <div class="card mr-control-card">
@@ -827,5 +842,7 @@
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260620a"></script>
+  <!-- KPI 回報手動開啟（教練後台 + 學生端每週 KPI）-->
+  <script src="kpi-session.js?v=20260622a"></script>
 </body>
 </html>

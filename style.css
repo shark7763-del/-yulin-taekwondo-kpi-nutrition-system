@@ -835,3 +835,28 @@ textarea.text-input { resize: vertical; }
   .wk-num, .review-value, .card-title { color: #111 !important; }
   .hint-box { background: #f7f7f7; color: #111; }
 }
+
+/* ===================== KPI 回報管理（Phase 2）===================== */
+.kpi-session-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.kpi-session-item { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: #0f141c; }
+.kpi-session-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.kpi-session-name { font-weight: 800; color: var(--text-main); font-size: 1.02rem; }
+.kpi-session-sub { font-size: 0.8rem; color: var(--text-soft); }
+.kpi-session-meta { font-size: 0.82rem; color: var(--text-soft); margin: 6px 0; }
+.kpi-session-stat { font-size: 0.9rem; color: var(--text-main); margin-bottom: 10px; }
+.kpi-session-ops { display: flex; flex-wrap: wrap; gap: 8px; }
+.kpi-session-ops .btn { flex: 0 1 auto; padding: 8px 12px; font-size: 0.85rem; }
+.kpi-session-detail:not(:empty) { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.kpi-badge { font-size: 0.74rem; font-weight: 700; padding: 2px 10px; border-radius: 12px; margin-left: 6px; vertical-align: middle; }
+.kpi-st-open { background: rgba(46,204,113,0.18); color: var(--green); border: 1px solid var(--green); }
+.kpi-st-closed { background: rgba(226,59,59,0.15); color: #ff9c9c; border: 1px solid var(--red); }
+.kpi-st-sched { background: rgba(241,196,15,0.15); color: var(--yellow); border: 1px solid var(--yellow); }
+.kpi-new-form { margin-top: 14px; border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #0f141c; }
+.kpi-new-toggles { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0; }
+.kpi-check { display: flex; align-items: center; gap: 6px; font-size: 0.88rem; color: var(--text-main); }
+.kpi-check input { width: 18px; height: 18px; }
+.kpi-detail-summary { font-weight: 700; margin-bottom: 10px; color: var(--text-main); }
+.kpi-done { color: var(--green); font-weight: 700; }
+.kpi-pending { color: var(--yellow); font-weight: 700; }
+.kpi-remind { margin-bottom: 14px; }
+.kpi-remind-title { font-weight: 700; color: var(--blue); margin-bottom: 4px; }

@@ -32,6 +32,20 @@ var PARENTS_SHEET = 'parents';
 var ATTENDANCE_REPORTS_SHEET = 'attendance_reports';
 var STUDENT_ACCOUNTS_SHEET = 'student_accounts';
 var COACH_SETTINGS_SHEET = 'coach_settings';
+// Phase 2：KPI 回報由教練手動開啟（session）＋每週 KPI 報告
+var KPI_SESSIONS_SHEET = 'kpi_sessions';
+var WEEKLY_KPI_REPORTS_SHEET = 'weekly_kpi_reports';
+var KPI_SESSION_HEADERS = [
+  'sessionId', 'sessionName', 'sessionType', 'weekId', 'openMode', 'targetGroup',
+  'targetStudentIds', 'openAt', 'closeAt', 'status', 'includeInWeeklyReport',
+  'includeInMonthlyReport', 'lineNotify', 'createdBy', 'createdAt', 'updatedAt'
+];
+var WEEKLY_KPI_REPORT_HEADERS = [
+  'reportId', 'sessionId', 'weekId', 'studentId', 'studentName',
+  'technicalScore', 'tacticalScore', 'physicalScore', 'mentalScore', 'attitudeScore', 'recoveryScore',
+  'totalScore', 'averageScore', 'lastWeekScore', 'changeScore', 'riskLevel',
+  'bestThingThisWeek', 'needImproveThisWeek', 'nextWeekGoal', 'submittedAt'
+];
 
 // 前 7 欄保留舊 parents 表順序，避免既有家長資料在升級時錯位；新版欄位接在右側。
 var PARENT_HEADERS = [
@@ -210,6 +224,27 @@ function handleAction(action, data) {
       return jsonOut(setLegacyLoginEnabled(data));
     case 'setCoachPassword':
       return jsonOut(setCoachPassword(data));
+
+    /* ===== Phase 2：KPI 回報手動開啟（教練）＋學生 KPI 狀態 ===== */
+    case 'createKpiSession':      // 手動開啟 KPI
+      return jsonOut(createKpiSession(data));
+    case 'closeKpiSession':       // 關閉本次 KPI
+      return jsonOut(updateKpiSessionStatus(data, 'closed'));
+    case 'extendKpiSession':      // 延長截止時間
+      return jsonOut(extendKpiSession(data));
+    case 'reopenKpiSession':      // 重新開放補填
+      return jsonOut(updateKpiSessionStatus(data, 'open'));
+    case 'getKpiSessions':        // 教練：所有 session（含完成率統計）
+      return jsonOut(getKpiSessions(data));
+    case 'getKpiSessionDetail':   // 教練：單一 session 完成率表格
+      return jsonOut(getKpiSessionDetail(data));
+    case 'getKpiReminderTexts':   // 教練：產生三種 LINE 提醒文案
+      return jsonOut(getKpiReminderTexts(data));
+    case 'getStudentKpiSession':  // 學生：目前該填的 KPI 狀態
+      return jsonOut(getStudentKpiSession(data));
+    case 'submitWeeklyKpi':       // 學生：送出每週 KPI
+      return jsonOut(submitWeeklyKpi(data));
+
     // ---- 通用同步儲存（任務、個人檔案目標/備註等）----
     case 'getAppData':
       return jsonOut(getAppDataAuthorized(data));
@@ -308,8 +343,10 @@ function setupSheet() {
   getAppDataSheet();
   getStudentAccountsSheet();
   getCoachSettingsSheet();
+  getKpiSessionsSheet();
+  getWeeklyKpiReportsSheet();
   syncStudentAccountsFromRoster();
-  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings 工作表。';
+  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings、kpi_sessions、weekly_kpi_reports 工作表。';
 }
 
 // 今天日期字串 yyyy-MM-dd
@@ -1131,6 +1168,295 @@ function setCoachPassword(data) {
     failedLoginCount: 0, lockedUntil: '', updatedAt: nowIso()
   });
   return { ok: true };
+}
+
+/* ============================================================
+   Phase 2：KPI 回報手動開啟（kpi_sessions / weekly_kpi_reports）
+   ------------------------------------------------------------
+   - 每日回報每天開放（沿用既有 addRecord，不受影響）。
+   - 每週 KPI 由教練後台手動開啟 session，學生端依 session 狀態顯示。
+   - 所有教練操作需 coach session；學生送出需 student/parent? → 僅 student。
+   ============================================================ */
+
+function getKpiSessionsSheet() { return getSheetWithHeaders(KPI_SESSIONS_SHEET, KPI_SESSION_HEADERS); }
+function getWeeklyKpiReportsSheet() { return getSheetWithHeaders(WEEKLY_KPI_REPORTS_SHEET, WEEKLY_KPI_REPORT_HEADERS); }
+
+// ISO 週代號（yyyy-Www），給 weekId 用
+function isoWeekId(d) {
+  var date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  var day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  var yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  var week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return date.getUTCFullYear() + '-W' + ('0' + week).slice(-2);
+}
+
+// 把 closeAt 預設值（今晚21:00 / 明天21:00 / 週日21:00）轉成 ISO
+function resolveCloseAt(preset, custom) {
+  var tz = Session.getScriptTimeZone() || 'Asia/Taipei';
+  if (preset === 'custom' && custom) return new Date(custom).toISOString();
+  var now = new Date();
+  var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 21, 0, 0);
+  if (preset === 'tomorrow21') d.setDate(d.getDate() + 1);
+  else if (preset === 'sunday21') { var add = (7 - d.getDay()) % 7; d.setDate(d.getDate() + add); }
+  else if (preset === 'tonight21' && now.getHours() >= 21) d.setDate(d.getDate() + 1); // 已過今晚 21 點則順延
+  return d.toISOString();
+}
+
+// 取目前「實際」狀態：考慮 closeAt 過期 → closed
+function effectiveSessionStatus(s) {
+  if (s.status === 'closed') return 'closed';
+  if (s.status === 'draft') return 'draft';
+  var now = Date.now();
+  var openAt = s.openAt ? new Date(s.openAt).getTime() : 0;
+  var closeAt = s.closeAt ? new Date(s.closeAt).getTime() : 0;
+  if (openAt && now < openAt) return 'scheduled';
+  if (closeAt && now > closeAt) return 'closed';
+  return 'open';
+}
+
+// 學生是否在此 session 對象內
+function studentInTarget(session, studentId, studentName, group) {
+  var ids = String(session.targetStudentIds || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+  if (ids.length) return ids.indexOf(studentId) !== -1 || ids.indexOf(studentName) !== -1;
+  var tg = String(session.targetGroup || '全隊');
+  if (!tg || tg === '全隊' || tg === 'all') return true;
+  return String(group || '').indexOf(tg) !== -1;
+}
+
+function listKpiSessions() {
+  return readSheetObjects(getKpiSessionsSheet(), KPI_SESSION_HEADERS).filter(function (s) { return s.sessionId; });
+}
+
+function findKpiSession(sessionId) {
+  return findObjectRow(getKpiSessionsSheet(), KPI_SESSION_HEADERS, 'sessionId', sessionId);
+}
+
+// 一個 session 的完成統計（完成率、紅黃綠、名單）
+function kpiSessionStats(session) {
+  var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS)
+    .filter(function (r) { return String(r.sessionId) === String(session.sessionId); });
+  var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS)
+    .filter(function (a) { return a.accountStatus !== 'disabled'; });
+  // 對象名單（依 targetGroup/targetStudentIds）。account 沒有 group 欄，組別資訊用 className 退化，預設全隊。
+  var targets = accounts.filter(function (a) { return studentInTarget(session, a.studentId, a.studentName, a.className); });
+  if (!targets.length) targets = accounts; // 名單為空時退回全部，避免完成率分母為 0
+  var doneNames = {};
+  reports.forEach(function (r) { doneNames[String(r.studentName).trim()] = r; });
+  var done = [], pending = [], red = 0, yellow = 0, green = 0, sum = 0, cnt = 0;
+  targets.forEach(function (a) {
+    var rep = doneNames[String(a.studentName).trim()];
+    if (rep) {
+      done.push(a.studentName);
+      var avg = parseFloat(rep.averageScore); if (!isNaN(avg)) { sum += avg; cnt++; }
+      var rl = String(rep.riskLevel || '');
+      if (rl.indexOf('紅') !== -1 || rl === 'red') red++;
+      else if (rl.indexOf('黃') !== -1 || rl === 'yellow') yellow++;
+      else if (rl.indexOf('綠') !== -1 || rl === 'green') green++;
+    } else { pending.push(a.studentName); }
+  });
+  var total = targets.length;
+  return {
+    total: total, doneCount: done.length, pendingCount: pending.length,
+    completionRate: total ? Math.round((done.length / total) * 100) : 0,
+    avgScore: cnt ? Math.round((sum / cnt) * 10) / 10 : null,
+    red: red, yellow: yellow, green: green,
+    doneNames: done, pendingNames: pending, reports: reports
+  };
+}
+
+// 教練：手動開啟 KPI（建立 session）
+function createKpiSession(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var now = nowIso();
+  var openMode = data.openMode === 'autoReminder' ? 'autoReminder' : 'manual';
+  var openAt = (data.openAt === 'schedule' && data.openAtTime) ? new Date(data.openAtTime).toISOString() : now;
+  var closeAt = resolveCloseAt(data.closeAtPreset || 'tonight21', data.closeAtTime);
+  var status = (data.openAt === 'schedule' && new Date(openAt).getTime() > Date.now()) ? 'draft' : 'open';
+  var session = {
+    sessionId: 'kpi_' + Date.now() + '_' + Math.floor(Math.random() * 100000),
+    sessionName: String(data.sessionName || '本週 KPI 成長回報').trim(),
+    sessionType: data.sessionType || 'weekly',
+    weekId: data.weekId || isoWeekId(new Date()),
+    openMode: openMode,
+    targetGroup: data.targetGroup || '全隊',
+    targetStudentIds: Array.isArray(data.targetStudentIds) ? data.targetStudentIds.join(',') : (data.targetStudentIds || ''),
+    openAt: openAt,
+    closeAt: closeAt,
+    status: status,
+    includeInWeeklyReport: data.includeInWeeklyReport === false ? false : true,
+    includeInMonthlyReport: data.includeInMonthlyReport === false ? false : true,
+    lineNotify: !!data.lineNotify,
+    createdBy: 'coach',
+    createdAt: now,
+    updatedAt: now
+  };
+  var sh = getKpiSessionsSheet();
+  sh.appendRow(KPI_SESSION_HEADERS.map(function (h) { return session[h] == null ? '' : session[h]; }));
+  // 可選：開啟即發 LINE 學生版提醒
+  if (session.lineNotify && status === 'open') {
+    try { pushToLine(kpiReminderText('student', session, null)); } catch (e) {}
+  }
+  return { ok: true, session: session };
+}
+
+function updateKpiSessionStatus(data, status) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var found = findKpiSession(data.sessionId);
+  if (!found) return { ok: false, error: '找不到此 KPI 回報。' };
+  var fields = { status: status, updatedAt: nowIso() };
+  if (status === 'open' && data.closeAtPreset) fields.closeAt = resolveCloseAt(data.closeAtPreset, data.closeAtTime);
+  updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, fields);
+  return { ok: true };
+}
+
+function extendKpiSession(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var found = findKpiSession(data.sessionId);
+  if (!found) return { ok: false, error: '找不到此 KPI 回報。' };
+  var newClose = resolveCloseAt(data.closeAtPreset || 'custom', data.closeAtTime);
+  updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, { closeAt: newClose, status: 'open', updatedAt: nowIso() });
+  return { ok: true, closeAt: newClose };
+}
+
+function getKpiSessions(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var sessions = listKpiSessions().map(function (s) {
+    s.effectiveStatus = effectiveSessionStatus(s);
+    s.stats = kpiSessionStats(s);
+    return s;
+  }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+  return { ok: true, data: sessions };
+}
+
+function getKpiSessionDetail(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var found = findKpiSession(data.sessionId);
+  if (!found) return { ok: false, error: '找不到此 KPI 回報。' };
+  var session = found.object;
+  session.effectiveStatus = effectiveSessionStatus(session);
+  return { ok: true, session: session, stats: kpiSessionStats(session) };
+}
+
+// 學生端：目前該填的 KPI 狀態（section 十）
+function getStudentKpiSession(data) {
+  var who = authorizedStudentName(data, false);
+  if (!who.ok) return who;
+  var studentName = who.name, studentId = who.studentId || '';
+  var sessions = listKpiSessions();
+  // 找最新一個「對這位學生有效（open/scheduled）」的 session
+  var open = sessions.filter(function (s) {
+    var es = effectiveSessionStatus(s);
+    return (es === 'open' || es === 'scheduled') && studentInTarget(s, studentId, studentName, '');
+  }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); })[0];
+
+  if (!open) {
+    // 是否有最近剛截止的
+    var recentClosed = sessions.filter(function (s) { return effectiveSessionStatus(s) === 'closed' && studentInTarget(s, studentId, studentName, ''); })
+      .sort(function (a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); })[0];
+    if (recentClosed) return { ok: true, state: 'closed', session: recentClosed, message: '本次 KPI 已截止。如需補填，請洽教練重新開放。' };
+    return { ok: true, state: 'none', message: '本週 KPI 尚未開放，請依照教練通知時間填寫。' };
+  }
+  var es = effectiveSessionStatus(open);
+  if (es === 'scheduled') return { ok: true, state: 'scheduled', session: open, message: '本週 KPI 尚未開放，請依照教練通知時間填寫。' };
+
+  // 是否已填過此 session
+  var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS);
+  var already = reports.some(function (r) {
+    return String(r.sessionId) === String(open.sessionId) && String(r.studentName).trim() === String(studentName).trim();
+  });
+  if (already) return { ok: true, state: 'done', session: open, message: '你已完成本次 KPI 回報，可以查看本週成長報告。' };
+  return {
+    ok: true, state: 'open', session: open,
+    message: '本次 KPI 回報已開放。請用這段時間的整體表現誠實填寫。這不是考試分數，而是幫助教練了解你的訓練狀態。'
+  };
+}
+
+// 學生端：送出每週 KPI（section 九）
+function submitWeeklyKpi(data) {
+  var who = authorizedStudentName(data, false);
+  if (!who.ok) return who;
+  var studentName = who.name, studentId = who.studentId || '';
+  var found = findKpiSession(data.sessionId);
+  if (!found) return { ok: false, error: '找不到此 KPI 回報。' };
+  var session = found.object;
+  if (effectiveSessionStatus(session) !== 'open') return { ok: false, error: '本次 KPI 已截止或尚未開放。' };
+  if (!studentInTarget(session, studentId, studentName, '')) return { ok: false, error: '本次 KPI 不需要你填寫。' };
+
+  var sh = getWeeklyKpiReportsSheet();
+  var reports = readSheetObjects(sh, WEEKLY_KPI_REPORT_HEADERS);
+  var dup = reports.filter(function (r) { return String(r.sessionId) === String(session.sessionId) && String(r.studentName).trim() === String(studentName).trim(); });
+  if (dup.length) return { ok: false, error: '你已完成本次 KPI 回報。' };
+
+  var sc = data.scores || {};
+  var keys = ['technicalScore', 'tacticalScore', 'physicalScore', 'mentalScore', 'attitudeScore', 'recoveryScore'];
+  var nums = keys.map(function (k) { return parseFloat(sc[k]); }).filter(function (n) { return !isNaN(n); });
+  var total = nums.reduce(function (a, b) { return a + b; }, 0);
+  var avg = nums.length ? Math.round((total / nums.length) * 10) / 10 : '';
+  // 與上次比較：同一學生上一筆（不同 session）的 averageScore
+  var prev = reports.filter(function (r) { return String(r.studentName).trim() === String(studentName).trim(); })
+    .sort(function (a, b) { return String(b.submittedAt).localeCompare(String(a.submittedAt)); })[0];
+  var lastWeek = prev ? parseFloat(prev.averageScore) : NaN;
+  var change = (!isNaN(lastWeek) && avg !== '') ? Math.round((avg - lastWeek) * 10) / 10 : '';
+  var risk = avg === '' ? '' : (avg >= 4 ? '🟢 綠燈' : avg >= 3 ? '🟡 黃燈' : '🔴 紅燈');
+
+  var row = {
+    reportId: 'wk_' + Date.now() + '_' + Math.floor(Math.random() * 100000),
+    sessionId: session.sessionId, weekId: session.weekId, studentId: studentId, studentName: studentName,
+    technicalScore: sc.technicalScore || '', tacticalScore: sc.tacticalScore || '', physicalScore: sc.physicalScore || '',
+    mentalScore: sc.mentalScore || '', attitudeScore: sc.attitudeScore || '', recoveryScore: sc.recoveryScore || '',
+    totalScore: total || '', averageScore: avg, lastWeekScore: isNaN(lastWeek) ? '' : lastWeek, changeScore: change, riskLevel: risk,
+    bestThingThisWeek: String(data.bestThingThisWeek || '').slice(0, 500),
+    needImproveThisWeek: String(data.needImproveThisWeek || '').slice(0, 500),
+    nextWeekGoal: String(data.nextWeekGoal || '').slice(0, 500),
+    submittedAt: nowIso()
+  };
+  sh.appendRow(WEEKLY_KPI_REPORT_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; }));
+  return { ok: true, report: row };
+}
+
+// LINE 提醒文案（section 十二）
+function kpiReminderText(kind, session, stats) {
+  var name = session.sessionName || '本週 KPI 回報';
+  if (kind === 'student') {
+    return '【' + name + '】本次 KPI 回報已開放。請在截止前完成。這不是考試分數，而是幫助教練了解你這段時間的訓練狀態。';
+  }
+  if (kind === 'pending') {
+    var list = stats && stats.pendingNames && stats.pendingNames.length ? stats.pendingNames.join('、') : '（無）';
+    return '【' + name + '】你尚未完成本次 KPI 回報。請在截止前完成，讓教練可以安排下週訓練重點。\n未完成：' + list;
+  }
+  // coach
+  if (stats) {
+    return '【' + name + '】KPI 完成率：' + stats.doneCount + '/' + stats.total +
+      '。未完成：' + (stats.pendingNames.length ? stats.pendingNames.join('、') : '無') +
+      '。紅燈：' + stats.red + ' 人、黃燈：' + stats.yellow + ' 人、綠燈：' + stats.green + ' 人。';
+  }
+  return '【' + name + '】KPI 回報統計尚未產生。';
+}
+
+function getKpiReminderTexts(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var found = findKpiSession(data.sessionId);
+  if (!found) return { ok: false, error: '找不到此 KPI 回報。' };
+  var session = found.object;
+  var stats = kpiSessionStats(session);
+  var texts = {
+    student: kpiReminderText('student', session, stats),
+    pending: kpiReminderText('pending', session, stats),
+    coach: kpiReminderText('coach', session, stats)
+  };
+  // 若要求直接發送學生版/未完成版到 LINE
+  var pushed = null;
+  if (data.send && texts[data.send]) {
+    try { pushed = pushToLine(texts[data.send]); } catch (e) { pushed = { ok: false, error: String(e) }; }
+  }
+  return { ok: true, texts: texts, pushed: pushed };
 }
 
 function getAllAttendanceReports() {
