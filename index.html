@@ -95,7 +95,7 @@
         <div id="taskContent"></div>
       </div>
 
-      <!-- 每週 KPI 回報（教練手動開啟時才顯示填寫入口） -->
+      <!-- KPI 狀態由 kpi-session.js 控制；不另顯示第二份填寫表單 -->
       <div class="card" id="studentKpiCard" style="display:none;">
         <h3 class="card-title">📈 每週 KPI 回報</h3>
         <div id="studentKpiBody"></div>
@@ -289,7 +289,7 @@
         </fieldset>
 
         <!-- KPI 紀錄（六面向各 5 題，共 30 項，總分 /150） -->
-        <fieldset class="form-section training-only" id="standardKpiSection">
+        <fieldset class="form-section training-only" id="standardKpiSection" style="display:none;">
           <legend>運動科學 KPI 30 項評分 📈</legend>
           <div id="kpiContainer"></div>
         </fieldset>
@@ -579,7 +579,7 @@
       <!-- ========================================================= -->
       <div class="card" id="coachKpiManageCard">
         <h3 class="card-title">📋 KPI 回報管理</h3>
-        <p class="review-label" style="margin-bottom:12px">每日回報每天開放；每週 KPI 由教練在此手動開啟。手動設定優先於系統預設。</p>
+        <p class="review-label" style="margin-bottom:12px">每日基本回報維持開放；30 項 KPI 評分只有教練指定的選手看得到。可對全隊、組別或個別選手開啟。</p>
         <div id="coachKpiManage"><div class="hint-box">讀取中...</div></div>
       </div>
 
@@ -838,12 +838,12 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260622f"></script>
+  <script src="app.js?v=20260622g"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260622a"></script>
-  <!-- KPI 回報手動開啟（教練後台 + 學生端每週 KPI）-->
-  <script src="kpi-session.js?v=20260622d"></script>
+  <!-- KPI 回報手動開啟（教練後台控制學生每日 30 項 KPI）-->
+  <script src="kpi-session.js?v=20260622e"></script>
   <!-- 運動心理小卡（回報完成後抽卡＋集卡）-->
   <script src="psych-cards.js?v=20260622b"></script>
 </body>

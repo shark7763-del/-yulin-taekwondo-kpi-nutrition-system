@@ -453,26 +453,25 @@
     var card = el('studentKpiCard'), body = el('studentKpiBody');
     if (!card || !body) return;
     var r = role();
-    if (!r || (r.role !== 'student' && r.role !== 'coach')) { card.style.display = 'none'; return; }
+    card.style.display = 'none';
+    body.innerHTML = '';
+    if (!r || r.role !== 'student') {
+      if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
+      return;
+    }
     try {
       var res = await api({ action: 'getStudentKpiSession' });
-      if (!res || !res.ok) { card.style.display = 'none'; return; }
+      if (!res || !res.ok) {
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
+        return;
+      }
       var state = res.state;
-      if (state === 'none' || state === 'scheduled' || state === 'closed') {
-        card.style.display = 'none';
-        body.innerHTML = '';
-        return;
+      if (typeof window.setDailyKpiAvailability === 'function') {
+        window.setDailyKpiAvailability(state === 'open', state === 'open' ? res.session : null);
       }
-      if (state === 'done') {
-        card.style.display = '';
-        body.innerHTML = '<div class="hint-box good">' + esc(res.message) + '</div>';
-        return;
-      }
-      if (state === 'open') {
-        card.style.display = '';
-        renderStudentKpiOpen(body, res.session);
-      }
-    } catch (e) { card.style.display = 'none'; }
+    } catch (e) {
+      if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
+    }
   }
 
   function renderStudentKpiOpen(body, session) {

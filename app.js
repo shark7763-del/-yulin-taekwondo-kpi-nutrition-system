@@ -741,6 +741,30 @@ function round2(n) { return Math.round(n * 100) / 100; }
 
 // 目前使用的組別（KPI 依組別決定）
 let currentGroup = '跆拳道對練';
+let dailyKpiOpen = false;
+let dailyKpiSession = null;
+
+function setDailyKpiAvailability(open, session) {
+  dailyKpiOpen = !!open;
+  dailyKpiSession = dailyKpiOpen ? (session || null) : null;
+  updateDailyKpiVisibility();
+}
+
+function updateDailyKpiVisibility() {
+  const section = $id('standardKpiSection');
+  if (!section) return;
+  const role = getRole();
+  const coachPreview = role && role.role === 'coach';
+  const absent = isAbsenceGroup($id('group') ? $id('group').value : '');
+  section.style.display = (!absent && (dailyKpiOpen || coachPreview)) ? '' : 'none';
+}
+
+function isDailyKpiAvailable() {
+  const role = getRole();
+  return !!(dailyKpiOpen || (role && role.role === 'coach'));
+}
+
+window.setDailyKpiAvailability = setDailyKpiAvailability;
 
 // 把選項塞進 select
 function fillSelect(el, options, placeholder) {
@@ -1147,6 +1171,8 @@ function toggleAbsenceReason(group) {
   document.querySelectorAll('.training-only').forEach(el => {
     if (el.id === 'freestyleSection') {
       el.style.display = (!absent && isFreestyle(group)) ? '' : 'none';
+    } else if (el.id === 'standardKpiSection') {
+      el.style.display = (!absent && isDailyKpiAvailable()) ? '' : 'none';
     } else {
       el.style.display = absent ? 'none' : '';
     }
@@ -2370,12 +2396,13 @@ function validateForm() {
 function buildRecord() {
   const groupValue = $id('group').value;
   const absenceMode = isAbsenceGroup(groupValue);
-  const scoreData = absenceMode
+  const kpiEnabled = !absenceMode && isDailyKpiAvailable();
+  const scoreData = !kpiEnabled
     ? { scores: {}, aspectAvg: {}, total: '', average: '', count: 0 }
     : collectScores();
   const { scores, aspectAvg, total, average } = scoreData;
-  const status = absenceMode ? '未出席訓練' : judgeStatus(average);
-  const lowItems = absenceMode ? [] : findLowItems(scores);
+  const status = absenceMode ? '未出席訓練' : (kpiEnabled ? judgeStatus(average) : '已完成回報');
+  const lowItems = kpiEnabled ? findLowItems(scores) : [];
   const lowItemsStr = lowItems.map(l => `${l.item}：${l.score} 分`).join('｜');
 
   const heightCm = $id('heightCm').value;
@@ -2507,6 +2534,8 @@ function buildRecord() {
     ? `會少練到：${rec.absenceMiss || '（未填）'}\n打算怎麼補：${rec.absenceCatchup || '（未填）'}\n自我檢視：${rec.absenceHonesty || '（未填）'}`
     : '';
   rec._isAbsence = absenceMode;
+  rec._kpiEnabled = kpiEnabled;
+  rec._kpiSessionId = kpiEnabled && dailyKpiSession ? dailyKpiSession.sessionId : '';
 
   // 自由品勢額外欄位（其他項目維持空白）
   if (isFreestyle(rec.group)) {
@@ -2625,6 +2654,7 @@ async function doSubmitInner(mode) {
   const payload = Object.assign({}, rec);
   delete payload._lowItemsArr; delete payload._aspectAvg; delete payload._nutrition;
   delete payload._recovery; delete payload._redCats; delete payload._isAbsence;
+  delete payload._kpiEnabled; delete payload._kpiSessionId;
 
   let saved = false;   // 是否真的存進後台（official）／本機（local）
 
@@ -2632,7 +2662,10 @@ async function doSubmitInner(mode) {
     toast('送出中...');
     try {
       const res = await postToWebApp({ action: 'addRecord', payload: payload });
-      if (res && res.ok) { toast('✅ 已送出到 Google Sheet'); clearDraft(); saved = true; }
+      if (res && res.ok) {
+        toast('✅ 已送出到 Google Sheet'); clearDraft(); saved = true;
+        if (window.KpiSession && window.KpiSession.refreshStudent) window.KpiSession.refreshStudent();
+      }
       else toast('⚠️ 送出失敗：' + (res && res.error ? res.error : '未知錯誤'));
     } catch (e) {
       toast('⚠️ 送出失敗，請檢查網路與 Web App 設定');
@@ -2650,7 +2683,8 @@ async function doSubmitInner(mode) {
 
   // 顯示回饋卡（AI 教練回饋卡為主，其餘維持原樣）
   renderCoachFeedbackCard(feedback);
-  renderCompareCard(rec, last, affirm);
+  if (rec._kpiEnabled) renderCompareCard(rec, last, affirm);
+  else { const compare = $id('compareCard'); if (compare) compare.style.display = 'none'; }
   renderNutritionCard(rec);
   renderLineCard(lineTexts);
 
@@ -2681,6 +2715,7 @@ async function doSubmitAbsence(mode, rec) {
   const payload = Object.assign({}, rec);
   delete payload._lowItemsArr; delete payload._aspectAvg; delete payload._nutrition;
   delete payload._recovery; delete payload._redCats; delete payload._isAbsence;
+  delete payload._kpiEnabled; delete payload._kpiSessionId;
 
   let saved = false;
   if (mode === 'official') {
@@ -3196,8 +3231,10 @@ function buildStatusGrid(rec, scenario, recv) {
     return grid;
   }
   grid.push({ label: '狀態', value: rec.status, tone: statusTone(rec.status) });
-  grid.push({ label: '總分', value: scoreMaxText(rec), tone: '' });
-  grid.push({ label: '平均', value: (rec.averageScore || 0) + ' / 5', tone: '' });
+  if (rec.totalScore !== '' && rec.totalScore != null) {
+    grid.push({ label: '總分', value: scoreMaxText(rec), tone: '' });
+    grid.push({ label: '平均', value: rec.averageScore + ' / 5', tone: '' });
+  }
   if (rec._recovery && rec._recovery.score !== '' && rec._recovery.score != null) {
     grid.push({ label: '恢復指數', value: `${rec._recovery.score}/100 ${rec._recovery.state}`, tone: recv.hit ? 'warn' : 'good' });
   }
@@ -3486,6 +3523,7 @@ function setupMotto(name) {
    產生 LINE 四版本文字
    ============================================================ */
 function buildLineTexts(rec, weightNote, affirm) {
+  if (!rec._kpiEnabled) return buildBasicDailyLineTexts(rec, weightNote);
   const lowArr = rec._lowItemsArr || [];
   const lowLines = lowArr.map((l, i) => `${i + 1}. ${l.item}：${l.score} 分`).join('\n');
   const remind = buildRemindText(lowArr.map(l => `${l.item}：${l.score} 分`));
@@ -3620,6 +3658,20 @@ ${n.student}
 ${n.nextGoal}`;
 
   return { student: studentLine, parent: parentLine, coach: coachLine, nutrition: nutritionLine };
+}
+
+function buildBasicDailyLineTexts(rec, weightNote) {
+  const n = rec._nutrition;
+  const student = `🥋 育林國中技擊隊｜每日訓練回報\n\n姓名：${rec.name}\n日期：${dateSlash(rec.date)}\n` +
+    `身體狀況：${rec.bodyStatus || '未填'}\n今日心得：${rec.reflection || '已完成回報'}\n明日目標：${rec.tomorrowGoal || '未填'}\n\n` +
+    `🍱 今日飲食提醒：\n${shortNutrition(n)}\n\n📣 教練的話：${dailyPick(COACH_QUOTES)}`;
+  const parent = `🥋 育林國中技擊隊｜今日訓練回報\n\n${rec.name} 已完成今日訓練與身體狀態回報。` +
+    `${rec.bodyStatus ? '\n身體狀況：' + rec.bodyStatus : ''}${weightNote ? '\n⚖️ ' + weightNote : ''}\n\n${n.parent || ''}`;
+  const coach = `📊 育林國中技擊隊｜每日訓練紀錄\n\n姓名：${rec.name}\n日期：${dateSlash(rec.date)}\n組別：${rec.group}\n` +
+    `身體狀況：${rec.bodyStatus || '未填'}\n今日心得：${rec.reflection || '未填'}\n明日目標：${rec.tomorrowGoal || '未填'}\n\n` +
+    `飲食問題：${n.risks && n.risks.length ? n.risks.join('、') : '無明顯風險'}`;
+  const nutrition = `🍱 育林國中技擊隊｜今日飲食建議\n\n姓名：${rec.name}\n日期：${dateSlash(rec.date)}\n\n${shortNutrition(n)}`;
+  return { student: student, parent: parent, coach: coach, nutrition: nutrition };
 }
 
 function statusWord(status) {
@@ -6140,6 +6192,7 @@ function applyRole() {
   const r = getRole();
   if (!r) { showLoginOverlay(); return; }
   const conf = ROLE_TABS[r.role] || ROLE_TABS.student;
+  if (r.role !== 'coach') setDailyKpiAvailability(false, null);
 
   // 新制選手／家長的姓名欄只保留自己的身分，不把全隊選項留在 DOM。
   if ((r.role === 'student' || r.role === 'parent') && r.name) {
@@ -6202,6 +6255,9 @@ function applyRole() {
   if (r.role === 'coach') {
     loadRosterFromServer().then(() => refreshAccountAdmin());
     refreshCoach();
+  }
+  if (window.KpiSession && window.KpiSession.refresh) {
+    setTimeout(() => window.KpiSession.refresh(), 0);
   }
 }
 

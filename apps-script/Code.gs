@@ -740,15 +740,53 @@ function authAllRecords(data) {
 function addRecordAuthorized(data) {
   var payload = data.payload || {};
   var session = getAuthSession(data);
+  var studentRequest = false;
   if (session && session.role === 'student') {
     payload.name = session.studentName;
     payload.studentId = session.studentId;
+    studentRequest = true;
   } else if (!session || session.role !== 'coach') {
     if (!legacyLoginEnabled() || data.legacyRole !== 'student' || normalizeName(data.legacyName) !== normalizeName(payload.name)) {
       return { ok: false, error: '你沒有權限送出這筆資料。', forbidden: true };
     }
+    studentRequest = true;
   }
-  return addRecord(payload);
+
+  var openKpi = null;
+  var hasKpiScores = payload.totalScore !== '' && payload.totalScore != null && String(payload.rawScoresJson || '') !== '';
+  if (studentRequest && String(payload.group || '').indexOf('未出席') === -1) {
+    var kpiState = getStudentKpiSession(data);
+    if (kpiState && kpiState.ok && kpiState.state === 'open' && hasKpiScores) openKpi = kpiState.session;
+    else stripDailyKpiFields(payload);
+  }
+
+  var saved = addRecord(payload);
+  if (saved.ok && openKpi) {
+    var weeklyData = {
+      authToken: data.authToken, legacyRole: data.legacyRole, legacyName: data.legacyName,
+      sessionId: openKpi.sessionId,
+      scores: {
+        technicalScore: payload.technicalAvg,
+        tacticalScore: payload.tacticalAvg,
+        physicalScore: payload.physicalAvg,
+        mentalScore: payload.focusAvg,
+        attitudeScore: payload.disciplineAvg,
+        recoveryScore: payload.emotionAvg
+      },
+      bestThingThisWeek: payload.reflection,
+      needImproveThisWeek: payload.lowItems,
+      nextWeekGoal: payload.tomorrowGoal
+    };
+    saved.kpi = submitWeeklyKpi(weeklyData);
+  }
+  return saved;
+}
+
+function stripDailyKpiFields(payload) {
+  [
+    'physicalAvg', 'technicalAvg', 'focusAvg', 'disciplineAvg', 'emotionAvg', 'tacticalAvg',
+    'totalScore', 'averageScore', 'lowItems', 'rawScoresJson'
+  ].forEach(function (key) { delete payload[key]; });
 }
 
 function authAttendanceByStudent(data) {
@@ -1185,8 +1223,8 @@ function setCoachPassword(data) {
 /* ============================================================
    Phase 2：KPI 回報手動開啟（kpi_sessions / weekly_kpi_reports）
    ------------------------------------------------------------
-   - 每日回報每天開放（沿用既有 addRecord，不受影響）。
-   - 每週 KPI 由教練後台手動開啟 session，學生端依 session 狀態顯示。
+   - 每日基本回報每天開放，30 項 KPI 由教練手動開啟 session。
+   - 學生端依 session 狀態顯示每日 KPI，送出後同步產生每週 KPI 摘要。
    - 所有教練操作需 coach session；學生送出需 student/parent? → 僅 student。
    ============================================================ */
 
