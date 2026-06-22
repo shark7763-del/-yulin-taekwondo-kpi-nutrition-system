@@ -377,7 +377,10 @@ var TEAM_ID_DEFAULT = 'yulin-taekwondo';
 
 function nowIso() { return new Date().toISOString(); }
 function normalizeName(v) { return String(v || '').trim(); }
-function normalizePhone(v) { return String(v || '').replace(/\D/g, ''); }
+// 電話正規化：去掉非數字，並去掉開頭的 0。
+// （Google Sheet 會把 0936... 當數字存成 936...，吃掉開頭 0；統一去 0 後，
+//   家長輸入有沒有加 0 都能比對成功，新舊資料一致。）
+function normalizePhone(v) { return String(v || '').replace(/\D/g, '').replace(/^0+/, ''); }
 
 function getAuthSalt() {
   var salt = getProp('AUTH_SALT');
