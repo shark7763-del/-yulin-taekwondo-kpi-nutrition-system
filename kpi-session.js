@@ -44,6 +44,8 @@
     { v: 'tonight21', label: '今晚 21:00' }, { v: 'tomorrow21', label: '明天 21:00' },
     { v: 'sunday21', label: '週日 21:00' }, { v: 'custom', label: '自訂時間' }
   ];
+  var coachStudents = [];
+  var selectedStudentIds = {};
 
   function statusBadge(es) {
     var map = {
@@ -83,7 +85,8 @@
         var st = s.stats || {};
         html += '<div class="kpi-session-item" data-id="' + esc(s.sessionId) + '">' +
           '<div class="kpi-session-head"><span class="kpi-session-name">' + esc(s.sessionName) + ' ' + statusBadge(s.effectiveStatus) + '</span>' +
-          '<span class="kpi-session-sub">' + esc(typeLabel(s.sessionType)) + '・' + esc(s.targetGroup || '全隊') + '</span></div>' +
+          '<span class="kpi-session-sub">' + esc(typeLabel(s.sessionType)) + '・' + esc(s.targetGroup || '全隊') +
+          (s.targetStudentIds ? '（' + (st.total || 0) + ' 人）' : '') + '</span></div>' +
           '<div class="kpi-session-meta">開放 ' + fmtTime(s.openAt) + ' → 截止 ' + fmtTime(s.closeAt) + '</div>' +
           '<div class="kpi-session-stat">完成率 <b>' + st.doneCount + '/' + st.total + '（' + st.completionRate + '%）</b>' +
           '　🟢' + (st.green || 0) + ' 🟡' + (st.yellow || 0) + ' 🔴' + (st.red || 0) +
@@ -111,15 +114,38 @@
   function typeLabel(v) { var t = SESSION_TYPES.find(function (x) { return x.v === v; }); return t ? t.label : v; }
   function opBtn(op, label, id) { return '<button type="button" class="btn btn-ghost kpi-op" data-op="' + op + '" data-id="' + esc(id) + '">' + label + '</button>'; }
 
-  function toggleNewForm() {
+  async function toggleNewForm() {
     var f = el('kpiNewForm');
     if (!f) return;
     if (f.style.display !== 'none') { f.style.display = 'none'; return; }
     f.style.display = 'block';
+    f.innerHTML = '<div class="hint-box">讀取選手名單中...</div>';
+    try {
+      var accountRes = await api({ action: 'getAccountAdminData' });
+      if (!accountRes || !accountRes.ok) throw new Error((accountRes && accountRes.error) || '讀取失敗');
+      coachStudents = (accountRes.data.students || []).filter(function (s) {
+        return s.studentId && s.studentName && s.accountStatus !== 'disabled';
+      }).sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
+    } catch (e) {
+      f.innerHTML = '<div class="hint-box warn">無法讀取選手名單，請重新開啟表單。</div>';
+      return;
+    }
+    selectedStudentIds = {};
     f.innerHTML =
       field('回報名稱', '<input id="kpiName" class="text-input" placeholder="例如：第25週 KPI 成長回報" />') +
       field('回報類型', sel('kpiType', SESSION_TYPES.map(function (t) { return { v: t.v, label: t.label }; }))) +
-      field('開放對象', sel('kpiTarget', targetGroups().map(function (g) { return { v: g, label: g }; }))) +
+      field('開放方式', sel('kpiTargetMode', [
+        { v: 'all', label: '全隊' }, { v: 'group', label: '依組別' }, { v: 'students', label: '指定選手' }
+      ])) +
+      '<div id="kpiTargetGroupWrap" style="display:none">' + field('選擇組別', sel('kpiTarget', targetGroups().slice(1).map(function (g) { return { v: g, label: g }; }))) + '</div>' +
+      '<div id="kpiTargetStudentsWrap" class="kpi-target-students" style="display:none">' +
+        '<div class="kpi-target-filters"><input id="kpiStudentSearch" class="text-input" placeholder="搜尋選手姓名" />' +
+        sel('kpiStudentGroupFilter', [{ v: '', label: '全部組別' }].concat(targetGroups().slice(1).map(function (g) { return { v: g, label: g }; }))) + '</div>' +
+        '<div class="kpi-target-actions"><button type="button" class="btn btn-ghost" id="kpiSelectVisible">選取目前名單</button>' +
+        '<button type="button" class="btn btn-ghost" id="kpiClearStudents">清除選取</button></div>' +
+        '<div id="kpiStudentList" class="kpi-student-list"></div>' +
+      '</div>' +
+      '<div id="kpiTargetSummary" class="kpi-target-summary"></div>' +
       field('截止時間', sel('kpiClose', CLOSE_PRESETS.map(function (c) { return { v: c.v, label: c.label }; }))) +
       '<div id="kpiCloseCustomWrap" style="display:none">' + field('自訂截止', '<input id="kpiCloseCustom" class="text-input" type="datetime-local" />') + '</div>' +
       '<div class="kpi-new-toggles">' +
@@ -127,24 +153,98 @@
       '</div>' +
       '<div class="btn-group"><button type="button" id="kpiCreateBtn" class="btn btn-primary">✅ 確認開啟</button>' +
       '<button type="button" id="kpiCancelBtn" class="btn btn-ghost">取消</button></div>';
+    el('kpiTargetMode').addEventListener('change', updateTargetControls);
+    el('kpiTarget').addEventListener('change', updateTargetSummary);
+    el('kpiStudentSearch').addEventListener('input', renderStudentChoices);
+    el('kpiStudentGroupFilter').addEventListener('change', renderStudentChoices);
+    el('kpiSelectVisible').addEventListener('click', function () {
+      filteredCoachStudents().forEach(function (s) { selectedStudentIds[s.studentId] = true; });
+      renderStudentChoices();
+    });
+    el('kpiClearStudents').addEventListener('click', function () { selectedStudentIds = {}; renderStudentChoices(); });
+    el('kpiStudentList').addEventListener('change', function (e) {
+      if (!e.target.classList.contains('kpi-student-choice')) return;
+      if (e.target.checked) selectedStudentIds[e.target.value] = true;
+      else delete selectedStudentIds[e.target.value];
+      updateTargetSummary();
+    });
     el('kpiClose').addEventListener('change', function () {
       el('kpiCloseCustomWrap').style.display = (this.value === 'custom') ? 'block' : 'none';
     });
     el('kpiCreateBtn').addEventListener('click', createSession);
     el('kpiCancelBtn').addEventListener('click', function () { f.style.display = 'none'; });
+    updateTargetControls();
   }
 
   function field(label, inner) { return '<label class="field-label">' + esc(label) + '</label>' + inner; }
   function sel(id, opts) { return '<select id="' + id + '" class="text-input">' + opts.map(function (o) { return '<option value="' + esc(o.v) + '">' + esc(o.label) + '</option>'; }).join('') + '</select>'; }
   function checkbox(id, label, checked) { return '<label class="kpi-check"><input type="checkbox" id="' + id + '"' + (checked ? ' checked' : '') + ' /> ' + esc(label) + '</label>'; }
 
+  function filteredCoachStudents() {
+    var q = String(el('kpiStudentSearch').value || '').trim().toLowerCase();
+    var group = el('kpiStudentGroupFilter').value;
+    return coachStudents.filter(function (s) {
+      var matchesName = !q || String(s.studentName).toLowerCase().indexOf(q) !== -1;
+      var matchesGroup = !group || String(s.group || '').indexOf(group) !== -1;
+      return matchesName && matchesGroup;
+    });
+  }
+
+  function renderStudentChoices() {
+    var list = el('kpiStudentList');
+    if (!list) return;
+    var students = filteredCoachStudents();
+    list.innerHTML = students.length ? students.map(function (s) {
+      return '<label class="kpi-student-option"><input type="checkbox" class="kpi-student-choice" value="' + esc(s.studentId) + '"' +
+        (selectedStudentIds[s.studentId] ? ' checked' : '') + ' /><span><b>' + esc(s.studentName) + '</b>' +
+        (s.group ? '<small>' + esc(s.group) + '</small>' : '') + '</span></label>';
+    }).join('') : '<div class="hint-box">沒有符合條件的選手。</div>';
+    updateTargetSummary();
+  }
+
+  function updateTargetControls() {
+    var mode = el('kpiTargetMode').value;
+    el('kpiTargetGroupWrap').style.display = mode === 'group' ? '' : 'none';
+    el('kpiTargetStudentsWrap').style.display = mode === 'students' ? '' : 'none';
+    var line = el('kpiLine');
+    line.disabled = mode !== 'all';
+    if (line.disabled) line.checked = false;
+    if (mode === 'students') renderStudentChoices();
+    else updateTargetSummary();
+  }
+
+  function updateTargetSummary() {
+    var summary = el('kpiTargetSummary');
+    if (!summary) return;
+    var mode = el('kpiTargetMode').value;
+    var targets = [];
+    if (mode === 'all') targets = coachStudents;
+    else if (mode === 'group') {
+      var group = el('kpiTarget').value;
+      targets = coachStudents.filter(function (s) { return String(s.group || '').indexOf(group) !== -1; });
+    } else {
+      targets = coachStudents.filter(function (s) { return selectedStudentIds[s.studentId]; });
+    }
+    var names = targets.slice(0, 6).map(function (s) { return s.studentName; }).join('、');
+    summary.textContent = '將開放 ' + targets.length + ' 人' + (names ? '：' + names + (targets.length > 6 ? '…' : '') : '') +
+      (mode === 'all' ? '' : '。部分名單不提供全頻道 LINE 通知。');
+  }
+
   async function createSession() {
     var btn = el('kpiCreateBtn'); if (btn) { btn.disabled = true; btn.textContent = '建立中...'; }
+    var targetMode = el('kpiTargetMode').value;
+    var targetStudentIds = targetMode === 'students' ? Object.keys(selectedStudentIds) : [];
+    if (targetMode === 'students' && !targetStudentIds.length) {
+      notify('請至少選擇一位選手');
+      if (btn) { btn.disabled = false; btn.textContent = '✅ 確認開啟'; }
+      return;
+    }
     var payload = {
       action: 'createKpiSession',
       sessionName: el('kpiName').value.trim() || '本週 KPI 成長回報',
       sessionType: el('kpiType').value,
-      targetGroup: el('kpiTarget').value,
+      targetGroup: targetMode === 'all' ? '全隊' : (targetMode === 'group' ? el('kpiTarget').value : '指定選手'),
+      targetStudentIds: targetStudentIds,
       closeAtPreset: el('kpiClose').value,
       closeAtTime: el('kpiCloseCustom') ? el('kpiCloseCustom').value : '',
       includeInWeeklyReport: el('kpiInWeekly').checked,
@@ -358,14 +458,9 @@
       var res = await api({ action: 'getStudentKpiSession' });
       if (!res || !res.ok) { card.style.display = 'none'; return; }
       var state = res.state;
-      if (state === 'none' || state === 'scheduled') {
-        card.style.display = '';
-        body.innerHTML = '<div class="hint-box">' + esc(res.message) + '</div>';
-        return;
-      }
-      if (state === 'closed') {
-        card.style.display = '';
-        body.innerHTML = '<div class="hint-box warn">' + esc(res.message) + '</div>';
+      if (state === 'none' || state === 'scheduled' || state === 'closed') {
+        card.style.display = 'none';
+        body.innerHTML = '';
         return;
       }
       if (state === 'done') {
