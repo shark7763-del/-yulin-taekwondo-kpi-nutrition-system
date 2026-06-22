@@ -450,7 +450,50 @@ function updateObjectRow(sh, headers, rowNum, fields) {
   sh.getRange(rowNum, 1, 1, headers.length).setValues([values]);
 }
 
+// 清理同名重複的選手帳號：每個姓名只保留「最完整」的一筆，其餘刪除。
+// 修正早期匯入或手動停用造成的重複列（例如同一人同時出現 active 與 disabled 兩筆）。
+// 保留優先序：能正常登入(有PIN) > active > pending > locked > disabled；同級留有登入紀錄、建立較早者。
+// 回傳刪除筆數。被刪的通常是從未登入、沒有任何訓練紀錄綁定的空帳號，安全。
+function dedupeStudentAccounts() {
+  var sh = getStudentAccountsSheet();
+  var last = sh.getLastRow();
+  if (last < 3) return 0;  // 少於 2 筆資料不可能重複
+  var values = sh.getRange(2, 1, last - 1, STUDENT_ACCOUNT_HEADERS.length).getValues();
+  var groups = {};
+  for (var i = 0; i < values.length; i++) {
+    var obj = rowToObject(STUDENT_ACCOUNT_HEADERS, values[i]);
+    var key = normalizeName(obj.studentName);
+    if (!key) continue;
+    (groups[key] = groups[key] || []).push({ row: i + 2, obj: obj });
+  }
+  function score(o) {
+    var s = 0;
+    if (o.pinHash && !o.pinResetRequired) s += 1000;  // 已可正常登入
+    if (o.accountStatus === 'active') s += 100;
+    else if (o.accountStatus === 'pending') s += 40;
+    else if (o.accountStatus === 'locked') s += 20;
+    // disabled 不加分
+    if (o.lastLoginAt) s += 10;  // 真的用過
+    return s;
+  }
+  var rowsToDelete = [];
+  Object.keys(groups).forEach(function (key) {
+    var list = groups[key];
+    if (list.length < 2) return;
+    list.sort(function (a, b) {
+      var d = score(b.obj) - score(a.obj);
+      if (d !== 0) return d;
+      return String(a.obj.createdAt || '') < String(b.obj.createdAt || '') ? -1 : 1;  // 同分留較早建立的
+    });
+    for (var j = 1; j < list.length; j++) rowsToDelete.push(list[j].row);  // 保留 list[0]，其餘刪除
+  });
+  rowsToDelete.sort(function (a, b) { return b - a; });  // 由下往上刪，避免列號位移
+  rowsToDelete.forEach(function (r) { sh.deleteRow(r); });
+  return rowsToDelete.length;
+}
+
 function syncStudentAccountsFromRoster() {
+  dedupeStudentAccounts();  // 先清掉同名重複列，再補建缺少的帳號
   var names = getRoster();
   var sh = getStudentAccountsSheet();
   var created = 0;

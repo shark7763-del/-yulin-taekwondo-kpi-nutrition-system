@@ -2047,7 +2047,9 @@ function renderSelfVsCoach(rec) {
 
 /* ---- 六大面向雷達圖（純 SVG 手繪，不需任何圖表庫） ---- */
 // selfAvg / coachAvg 皆為 { physical:.., technical:.., ... }；coachAvg 可省略
-function radarChartSVG(selfAvg, coachAvg) {
+function radarChartSVG(selfAvg, coachAvg, opts) {
+  const selfLabel = (opts && opts.selfLabel) || '自評';
+  const coachLabel = (opts && opts.coachLabel) || '教練評';
   const size = 260, cx = size / 2, cy = size / 2, R = 88, MAX = 5;
   const labels = ['體能', '技術', '專注', '自律', '情緒', '戰術'];
   const keys = ASPECT_ORDER;
@@ -2082,10 +2084,10 @@ function radarChartSVG(selfAvg, coachAvg) {
   // 自評多邊形（金）
   let poly = `<polygon points="${valuePoints(selfAvg)}" fill="rgba(245,197,24,0.25)" stroke="#f5c518" stroke-width="2.5"/>`;
   // 教練多邊形（藍虛線）
-  let legend = `<span class="radar-leg"><i style="background:#f5c518"></i>自評</span>`;
+  let legend = `<span class="radar-leg"><i style="background:#f5c518"></i>${selfLabel}</span>`;
   if (coachAvg) {
     poly += `<polygon points="${valuePoints(coachAvg)}" fill="rgba(46,125,209,0.18)" stroke="#2e7dd1" stroke-width="2.5" stroke-dasharray="5 3"/>`;
-    legend += `<span class="radar-leg"><i style="background:#2e7dd1"></i>教練評</span>`;
+    legend += `<span class="radar-leg"><i style="background:#2e7dd1"></i>${coachLabel}</span>`;
   }
 
   return `<div class="radar-wrap"><svg viewBox="0 0 ${size} ${size}" class="radar">${grid}${axes}${poly}${labelSvg}</svg><div class="radar-legend">${legend}</div></div>`;
@@ -3484,8 +3486,14 @@ async function renderPlayerCard(name) {
     html += `<div class="pc-prog-label" style="margin-top:10px">🏅 你已達最高段位，繼續守住這份堅持！</div>`;
   }
 
-  // 能力養成雷達
-  if (training.length) html += `<h4 class="pc-sec">📊 我的能力養成</h4>` + radarFromRecord(avgRec);
+  // 能力養成雷達（生涯平均 vs 上次單筆 疊圖，一眼看出進退步）
+  if (training.length) {
+    const avgAspect = aspectAvgFromRecord(avgRec);
+    const lastAspect = aspectAvgFromRecord(training[0]);  // training 已依日期由新到舊排序
+    const hasLast = ASPECT_ORDER.some(k => lastAspect[k] > 0);
+    html += `<h4 class="pc-sec">📊 我的能力養成</h4>`
+      + radarChartSVG(avgAspect, hasLast ? lastAspect : null, { selfLabel: '平均', coachLabel: '上次' });
+  }
 
   // 座右銘
   html += `<div id="pcMottoBox"></div>`;
@@ -5242,7 +5250,7 @@ function renderLastReviewInto(rec, box) {
   html += `<div class="aspect-grid" style="margin-top:10px">`;
   presentAspectKeysFromRecord(rec).forEach(k => html += `<div class="aspect-cell">${KPI_ASPECTS[k].label}<br><span class="num">${avg[k]}</span></div>`);
   html += `</div>`;
-  html += radarFromRecord(rec);  // 六大面向雷達圖
+  // 雷達圖移至「選手成長卡」做平均 vs 上次疊圖，此處保留六格數字即可，避免重複
   html += `<div class="review-row"><span class="review-label">體重</span><span class="review-value">${rec.weightKg || '--'} kg</span></div>`;
   html += `<div class="review-row"><span class="review-label">BMI</span><span class="review-value">${rec.bmi || '--'}</span></div>`;
 
