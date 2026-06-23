@@ -3,17 +3,110 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260622f" />
+  <title>YouthFit AI｜青少年 AI 運動共融平台</title>
+  <meta name="description" content="用 AI 幫助每位青少年找到適合自己的運動，建立健康、自律、自信與社交能力。" />
+  <link rel="stylesheet" href="style.css?v=20260623a" />
   <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
 </head>
 <body>
 
   <!-- ===================== 登入／選身分 ===================== -->
   <div id="loginOverlay" class="login-overlay">
+    <div class="yf-landing">
+      <section class="yf-hero" aria-labelledby="yfTitle">
+        <span class="yf-kicker">AI Sports Inclusion Platform</span>
+        <h1 id="yfTitle">YouthFit AI｜青少年 AI 運動共融平台</h1>
+        <p class="yf-lead">用 AI 幫助每位青少年找到適合自己的運動，建立健康、自律、自信與社交能力。</p>
+        <p class="yf-mission">這不是只幫教練管理選手的工具，而是用 AI 降低運動資源落差，讓每位青少年都能獲得基本運動指導、成長追蹤與正向陪伴。</p>
+        <div class="yf-actions">
+          <a class="yf-btn yf-btn-primary" href="#yfMatch">開始 AI 運動媒合</a>
+          <a class="yf-btn yf-btn-ghost" href="#teamproLogin">進入 TeamPro 進階教練版</a>
+        </div>
+        <div class="yf-impact-strip" aria-label="平台希望建立的能力">
+          <span>健康</span><span>自律</span><span>自信</span><span>社交能力</span><span>運動習慣</span><span>身心韌性</span>
+        </div>
+      </section>
+
+      <section class="yf-section" id="yfMatch">
+        <div class="yf-section-head"><span>01</span><div><h2>青少年運動媒合</h2><p>不用先知道自己擅長什麼，從生活條件與期待開始。</p></div></div>
+        <div class="yf-two-col">
+          <form id="yfMatchForm" class="yf-panel">
+            <div class="yf-form-grid">
+              <label>年齡<input id="yfAge" type="number" min="8" max="24" value="15" required /></label>
+              <label>運動經驗<select id="yfExperience"><option>無經驗</option><option selected>初學</option><option>有基礎</option><option>校隊</option></select></label>
+              <label>運動目標<select id="yfGoal"><option>健康</option><option>減壓</option><option>交朋友</option><option>變強</option><option>比賽</option><option>自信</option></select></label>
+              <label>可用場地<select id="yfVenue"><option>家裡</option><option>學校</option><option>公園</option><option>運動中心</option><option>道館</option></select></label>
+              <label>每週可運動時間<select id="yfTime"><option value="60">1 小時內</option><option value="120" selected>2 小時</option><option value="180">3 小時</option><option value="240">4 小時以上</option></select></label>
+              <label>個性選項<select id="yfPersonality"><option>喜歡挑戰</option><option>喜歡團隊</option><option>喜歡節奏</option><option>容易緊張</option><option>需要陪伴</option></select></label>
+            </div>
+            <button class="yf-btn yf-btn-primary yf-submit" type="submit">產生我的 AI 建議</button>
+          </form>
+          <div id="yfMatchResult" class="yf-panel yf-result" aria-live="polite">
+            <div class="yf-placeholder"><b>AI 建議卡片</b><p>完成左側資料，找出適合你的運動起點。</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="yf-section">
+        <div class="yf-section-head"><span>02</span><div><h2>AI 運動教練建議</h2><p>把每日回報轉換成安全、可執行且有陪伴感的提醒。</p></div></div>
+        <div class="yf-panel">
+          <div class="yf-checkin-grid">
+            <label>昨晚睡眠<select id="yfSleep"><option value="8">8 小時以上</option><option value="7" selected>約 7 小時</option><option value="6">約 6 小時</option><option value="5">少於 6 小時</option></select></label>
+            <label>疼痛程度<select id="yfPain"><option value="0">沒有疼痛</option><option value="3" selected>輕微 1-3</option><option value="6">明顯 4-6</option><option value="8">偏高 7-10</option></select></label>
+            <label>今天心情<select id="yfMood"><option value="5">很好</option><option value="4" selected>還不錯</option><option value="3">普通</option><option value="2">有點低落</option><option value="1">很低落</option></select></label>
+            <label>今日飲水<select id="yfWater"><option value="good">充足</option><option value="fair" selected>普通</option><option value="low">不足</option></select></label>
+            <label>近期運動量<select id="yfActivity"><option value="up">穩定增加</option><option value="same" selected>維持平常</option><option value="down">明顯下降</option></select></label>
+            <label>心理壓力<select id="yfStress"><option value="1">低</option><option value="3" selected>普通</option><option value="5">偏高</option></select></label>
+          </div>
+          <button id="yfCoachBtn" class="yf-btn yf-btn-secondary" type="button">更新今日 AI 建議</button>
+          <div id="yfCoachAdvice" class="yf-advice-grid" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="yf-section">
+        <div class="yf-section-head"><span>03</span><div><h2>AI 動作分析展示</h2><p>用手機影片看見動作細節，降低專業指導的門檻。</p></div></div>
+        <div class="yf-two-col">
+          <div class="yf-panel">
+            <label class="yf-upload">上傳練習影片<input id="yfVideo" type="file" accept="video/*" /><span id="yfFileName">選擇手機中的影片</span></label>
+            <label class="yf-block-label">檢測項目<select id="yfMotion"><option>爆發力檢測</option><option>單腳平衡穩定檢測</option></select></label>
+            <button id="yfAnalyzeBtn" class="yf-btn yf-btn-primary yf-submit" type="button">開始 Demo 分析</button>
+            <p class="yf-demo-note">Demo 版：未來可串接 MediaPipe / Pose Estimation / AI 動作辨識模型。</p>
+          </div>
+          <div id="yfMotionResult" class="yf-panel yf-result" aria-live="polite"><div class="yf-placeholder"><b>等待影片分析</b><p>Demo 不會上傳或儲存你的影片。</p></div></div>
+        </div>
+      </section>
+
+      <section class="yf-section">
+        <div class="yf-section-head"><span>04</span><div><h2>AI 成長追蹤</h2><p>由 TeamPro 的 KPI、營養與訓練紀錄轉化成看得懂的成長指標。</p></div></div>
+        <div id="yfGrowthGrid" class="yf-metric-grid"></div>
+        <p class="yf-data-note">展示資料將由既有 KPI 回報、每日身體狀態、睡眠、飲水、心理回報與出席紀錄計算。</p>
+      </section>
+
+      <section class="yf-section">
+        <div class="yf-section-head"><span>05</span><div><h2>AI 風險預警</h2><p>紅黃綠燈只用於提早關心，不作為醫療診斷。</p></div></div>
+        <div id="yfRiskList" class="yf-risk-list" aria-live="polite"></div>
+      </section>
+
+      <section class="yf-section yf-good-section">
+        <div class="yf-section-head"><span>06</span><div><h2>為什麼符合行善台北？</h2></div></div>
+        <p>本平台運用 AI 幫助青少年找到適合自己的運動，補足教練資源不足、運動習慣不佳與心理壓力增加等問題。透過 AI 運動教練、動作分析、訓練建議、成長追蹤與風險預警，讓弱勢、偏鄉或缺乏資源的學生，也能獲得基本運動陪伴與成長支持。</p>
+        <div class="yf-good-grid"><div><b>降低門檻</b><span>手機就能開始</span></div><div><b>補足資源</b><span>基本指導不中斷</span></div><div><b>及早關心</b><span>讓需要支持的人被看見</span></div></div>
+      </section>
+
+      <section class="yf-section yf-pitch">
+        <div class="yf-section-head"><span>07</span><div><h2>Pitch Summary</h2></div></div>
+        <div class="yf-pitch-grid">
+          <article><small>Problem</small><h3>運動入口與陪伴不足</h3><p>青少年缺乏適合自己的運動入口、教練陪伴與成長追蹤，弱勢與偏鄉學生資源更不足。</p></article>
+          <article><small>Solution</small><h3>一站式 AI 運動支持</h3><p>YouthFit AI 用 AI 運動媒合、AI 教練、動作分析、成長追蹤與風險預警，協助青少年建立健康、自律、自信與社交能力。</p></article>
+          <article><small>Impact</small><h3>每一份進步都被看見</h3><p>降低運動資源不平等，讓每位青少年都能透過 AI 開始運動、持續運動、被看見進步。</p></article>
+        </div>
+      </section>
+
+      <section id="teamproLogin" class="yf-login-section">
+        <p class="yf-eyebrow">TeamPro / KPI DATA FOUNDATION</p>
     <div class="login-card">
-      <h1 class="login-title">🥋 育林國中技擊隊</h1>
-      <p class="login-sub">跆拳道 ・ 武術 ｜ 選手 KPI＋身體狀態＋AI 飲食建議系統</p>
+      <h2 class="login-title">育林 TeamPro 進階教練版</h2>
+      <p class="login-sub">原有 KPI、營養、訓練紀錄與角色後台完整保留</p>
 
       <div id="loginStep1">
         <p class="login-hint">請選擇你的身分</p>
@@ -32,14 +125,17 @@
       <div id="loginStep2" style="display:none;"></div>
       <p class="login-privacy-note">本系統依角色顯示不同資料。選手只能查看自己的資料，家長只能查看自己孩子的摘要，教練後台保留完整資料供訓練管理與風險追蹤使用。每日回報每天開放，KPI 回報由教練依訓練週期或比賽狀況手動開啟。</p>
     </div>
+      </section>
+      <footer class="yf-footer">YouthFit AI｜讓每位青少年都有開始運動的機會</footer>
+    </div>
   </div>
 
   <!-- ===================== 頁首 ===================== -->
   <header class="app-header">
     <button type="button" id="btnSwitchRole" class="btn-switch-role" style="display:none;">🔄 切換身分</button>
     <div class="header-inner">
-      <h1 class="app-title">🥋 育林國中技擊隊</h1>
-      <h2 class="app-subtitle">跆拳道 ・ 武術 ｜ 選手 KPI＋身體狀態＋AI 飲食建議系統</h2>
+      <h1 class="app-title">YouthFit AI｜TeamPro 進階教練版</h1>
+      <h2 class="app-subtitle">育林國中技擊隊｜KPI・營養・訓練紀錄資料基礎</h2>
       <p class="app-slogan">昨天發現問題，今天帶著目標訓練，明天看見進步。</p>
       <p id="roleBadge" class="role-badge" style="display:none;"></p>
     </div>
@@ -375,6 +471,16 @@
             <button type="button" id="cfbShareLine" class="btn btn-line-share">💬 分享到 LINE</button>
           </div>
         </div>
+      </div>
+
+      <!-- 送出後：TeamPro AI Goal Coach（一週目標） -->
+      <div class="card goal-coach-card" id="goalCoachCard" style="display:none;">
+        <div class="goal-coach-head">
+          <h3 class="card-title" style="margin-bottom:0;border:none;padding-left:0;">🎯 TeamPro AI Goal Coach</h3>
+          <span class="goal-coach-badge">成長教練模式</span>
+        </div>
+        <p class="goal-coach-intro">這不是評分，而是把自評、教練觀察、KPI 趨勢、出席與恢復資料轉成一個本週可完成的目標。</p>
+        <div id="goalCoachBody" class="goal-coach-body"></div>
       </div>
 
       <!-- 送出後：今日 vs 上次 -->
@@ -838,7 +944,8 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260622g"></script>
+  <script src="app.js?v=20260623a"></script>
+  <script src="youthfit.js?v=20260623a"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260622a"></script>

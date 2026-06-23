@@ -133,6 +133,7 @@ var HEADERS = [
   'bedTime', 'wakeTime',          // 就寢時間、起床時間（sleepHours 由兩者推算）
   'painScore', 'painLevel',       // 受傷部位疼痛指數 0–10、對應分級文字
   'urineStatus'                   // 尿液顏色監控（脫水快篩）
+  ,'goalCoachText', 'goalCoachJson' // TeamPro AI Goal Coach（一週目標），加在最後以相容既有資料
   ,'studentId'                    // 新制帳號識別；加在最後以相容既有資料
 ];
 

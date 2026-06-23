@@ -537,7 +537,7 @@ const COACH_QUOTES = [
   '真正的對手，是想放棄的自己。',
   '態度決定高度，細節決定成敗。',
   '把每一天，都練成自己的底氣。',
-  '你可以輸給對手，但不能輸給懶惰。',
+  '你可以遇到狀態起伏，但不能放掉下一次修正。',
   '冠軍不是喊出來的，是一天一天做出來的。',
   '每一次跌倒，都是重新站穩的機會。',
   '沒有白走的路，只有還沒發光的努力。',
@@ -2636,9 +2636,12 @@ async function doSubmitInner(mode) {
 
   // AI 教練回饋（選手／家長／教練三版本）
   const feedback = buildCoachFeedback(rec, last, history, affirm);
+  const goalCoach = buildGoalCoach(rec, history);
   rec.feedbackStudentText = formatFeedbackText(feedback, 'student');
   rec.feedbackParentText = formatFeedbackText(feedback, 'parent');
   rec.feedbackCoachText = formatFeedbackText(feedback, 'coach');
+  rec.goalCoachText = formatGoalCoachText(goalCoach);
+  rec.goalCoachJson = JSON.stringify(goalCoach);
 
   // 體重變化提醒
   let weightNote = '';
@@ -2685,6 +2688,7 @@ async function doSubmitInner(mode) {
 
   // 顯示回饋卡（AI 教練回饋卡為主，其餘維持原樣）
   renderCoachFeedbackCard(feedback);
+  renderGoalCoachCard(goalCoach);
   if (rec._kpiEnabled) renderCompareCard(rec, last, affirm);
   else { const compare = $id('compareCard'); if (compare) compare.style.display = 'none'; }
   renderNutritionCard(rec);
@@ -2705,9 +2709,12 @@ async function doSubmitInner(mode) {
 async function doSubmitAbsence(mode, rec) {
   const lineTexts = buildAbsenceLineTexts(rec);
   const feedback = buildCoachFeedback(rec, null, [], null);
+  const goalCoach = buildGoalCoach(rec, []);
   rec.feedbackStudentText = formatFeedbackText(feedback, 'student');
   rec.feedbackParentText = formatFeedbackText(feedback, 'parent');
   rec.feedbackCoachText = formatFeedbackText(feedback, 'coach');
+  rec.goalCoachText = formatGoalCoachText(goalCoach);
+  rec.goalCoachJson = JSON.stringify(goalCoach);
   lastStudentLineText = lineTexts.student;
   rec.studentLineText = lineTexts.student;
   rec.parentLineText = lineTexts.parent;
@@ -2740,6 +2747,7 @@ async function doSubmitAbsence(mode, rec) {
   }
 
   renderCoachFeedbackCard(feedback);
+  renderGoalCoachCard(goalCoach);
   renderAbsenceReportCard(rec);
   $id('nutritionCard').style.display = 'none';
   renderLineCard(lineTexts);
@@ -3366,6 +3374,218 @@ function selectFbVersion(version) {
 function fbBlock(title, icon, text, tone) {
   return `<div class="cfb-block cfb-${tone}"><div class="cfb-block-title">${icon} 【${escapeHtml(title)}】</div>` +
     `<div class="cfb-block-text">${escapeHtml(text).replace(/\n/g, '<br>')}</div></div>`;
+}
+
+/* ============================================================
+   TeamPro AI Goal Coach（一週目標成長教練）
+   ------------------------------------------------------------
+   不是評分器；用選手自評、教練觀察、KPI 趨勢、出席、睡眠、飲食、
+   飲水、尿液、疼痛、傷勢、心理與 7/30 天變化，產生 1 個可執行目標。
+   ============================================================ */
+const GOAL_COACH_QUOTES = [
+  '專注當下每一次修正。',
+  '今天的累積，會成為明天的實力。',
+  '穩定比爆發更重要。',
+  '每一次練習，都在縮短與目標的距離。',
+  '把今天該做的事做好。'
+];
+
+function numOrNull(v) {
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
+
+function avgNums(vals) {
+  const nums = vals.map(numOrNull).filter(v => v !== null);
+  return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+}
+
+function recordDateMs(rec) {
+  const d = normDate(rec && rec.date);
+  const t = d ? new Date(d + 'T00:00:00').getTime() : 0;
+  return isNaN(t) ? 0 : t;
+}
+
+function recordsWithinDays(records, days) {
+  const now = new Date(todayStr() + 'T00:00:00').getTime();
+  const start = now - (days - 1) * 86400000;
+  return (records || []).filter(r => {
+    const t = recordDateMs(r);
+    return t >= start && t <= now;
+  });
+}
+
+function attendanceRate(records, days) {
+  const scoped = recordsWithinDays(records, days);
+  if (!scoped.length) return null;
+  const present = scoped.filter(r => !isAbsenceRecord(r)).length;
+  return present / scoped.length;
+}
+
+function kpiAvg(records) {
+  return avgNums((records || []).filter(r => !isAbsenceRecord(r)).map(r => r.averageScore));
+}
+
+function reportCount(records, days) {
+  const dates = {};
+  recordsWithinDays(records, days).forEach(r => { dates[normDate(r.date)] = true; });
+  return Object.keys(dates).length;
+}
+
+function coachAvgForGoal(rec, history) {
+  const candidates = [rec].concat(history || []);
+  for (const r of candidates) {
+    const n = numOrNull(r && r.coachAverageScore);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+function selfCoachGap(rec, history) {
+  const self = numOrNull(rec && rec.averageScore);
+  const coach = coachAvgForGoal(rec, history);
+  if (self === null || coach === null) return null;
+  return round1(self - coach);
+}
+
+function trendLabel(cur, prev) {
+  if (cur === null || prev === null) return '資料累積中';
+  const diff = cur - prev;
+  if (diff >= 0.25) return '逐步上升';
+  if (diff <= -0.25) return '需要調整';
+  return '大致穩定';
+}
+
+function hydrationConcern(rec) {
+  const water = String(rec.waterIntake || '');
+  const urine = String(rec.urineStatus || '');
+  return water === '少於 500ml' || water === '500-1000ml' ||
+    urine.indexOf('深') !== -1 || urine.indexOf('琥珀') !== -1;
+}
+
+function nutritionConcern(rec) {
+  const risks = String(rec.nutritionRisks || '');
+  return risks && risks !== '無明顯風險' && risks !== '無';
+}
+
+function buildGoalCoach(rec, history) {
+  const hist = dedupeLatestByDate([rec].concat(history || []));
+  const h7 = recordsWithinDays(hist, 7);
+  const h30 = recordsWithinDays(hist, 30);
+  const prev7 = h30.filter(r => recordDateMs(r) < (new Date(todayStr() + 'T00:00:00').getTime() - 6 * 86400000));
+
+  const curKpi = numOrNull(rec.averageScore);
+  const avg7 = kpiAvg(h7);
+  const avg30 = kpiAvg(h30);
+  const avgPrev = kpiAvg(prev7);
+  const att7 = attendanceRate(hist, 7);
+  const att30 = attendanceRate(hist, 30);
+  const reports7 = reportCount(hist, 7);
+  const reports30 = reportCount(hist, 30);
+  const coachAvg = coachAvgForGoal(rec, history);
+  const gap = selfCoachGap(rec, history);
+  const pain = numOrNull(rec.painScore);
+  const sleep = numOrNull(rec.sleepHours);
+  const mood = numOrNull(rec.moodIndex);
+  const recv = recoveryConcern(rec);
+  const drinkRisk = hydrationConcern(rec);
+  const foodRisk = nutritionConcern(rec);
+  const injured = detectScenario(rec) === 'injury' || (pain !== null && pain >= 6);
+  const trend7 = trendLabel(avg7, avgPrev);
+  const trend30 = trendLabel(avg30, null);
+
+  let mode = 'middle';
+  if (injured || recv.hit || (pain !== null && pain >= 6)) mode = 'injury';
+  else if ((curKpi !== null && curKpi >= 4) && (att7 === null || att7 >= .85) && (coachAvg === null || coachAvg >= 4)) mode = 'high';
+  else if ((curKpi !== null && curKpi < 3) || (att7 !== null && att7 < .6) || (reports30 >= 8 && reports7 <= 1)) mode = 'low';
+
+  let status = '持續累積';
+  if (mode === 'high') status = '穩定成長';
+  if (mode === 'low') status = '需要調整';
+  if (mode === 'injury') status = '優先關注';
+
+  const notes = [];
+  if (mode === 'high') {
+    notes.push('整體狀態維持良好，基礎能力已具備競爭力。');
+    notes.push('接下來可把重點放在動作細節、節奏控制與穩定度提升。');
+  } else if (mode === 'middle') {
+    notes.push('近期訓練投入度正在累積，節奏大致穩定。');
+    notes.push('若本週多完成一次自主訓練，進步幅度會更明顯。');
+  } else if (mode === 'low') {
+    notes.push('最近訓練參與或回報節奏較不穩定。');
+    notes.push('先不用追求完美，本週把最小可完成目標做好即可。');
+  } else {
+    notes.push('近期身體恢復狀況需要優先照顧。');
+    notes.push('建議先降低訓練量，避開不舒服部位，讓恢復品質穩定下來。');
+  }
+  if (gap !== null && Math.abs(gap) > 2) notes.push('近期自我感受與實際觀察存在一些差異，可透過影片回看校正觀察角度。');
+  if (sleep !== null && sleep < 7) notes.push('睡眠略少，恢復品質可再補強。');
+  if (mood !== null && mood <= 2) notes.push('心理狀態需要多一點陪伴與關心。');
+  const observation = notes.join('').slice(0, 100);
+
+  let weeklyGoal = '本週自主訓練 2 次，每次至少 20 分鐘。';
+  if (mode === 'injury') weeklyGoal = '本週完成 4 次自主伸展或恢復訓練，每次 10 分鐘。';
+  else if (sleep !== null && sleep < 7) weeklyGoal = '本週睡眠平均達 7 小時以上。';
+  else if (drinkRisk) weeklyGoal = '本週訓練日飲水達 2000ml 以上。';
+  else if (foodRisk) weeklyGoal = '本週 5 天三餐各加入 1 份蛋白質。';
+  else if (mode === 'high') weeklyGoal = '本週完成 3 次動作影片回看，每次修正 1 個細節。';
+  else if (mode === 'low') weeklyGoal = '本週完成 3 次訓練回報，先把節奏找回來。';
+
+  let reminder = '持續追蹤睡眠、疼痛與訓練品質。';
+  if (mode === 'high') reminder = '維持節奏，細節修正即可。';
+  else if (mode === 'low') reminder = '目標拆小，先讓完成感回來。';
+  else if (mode === 'injury') reminder = '先保護身體，必要時降載。';
+  else if (Math.abs(gap || 0) > 2) reminder = '可用影片回看協助校正觀察。';
+
+  return {
+    status,
+    observation,
+    weeklyGoal,
+    reminder: reminder.slice(0, 50),
+    quote: GOAL_COACH_QUOTES[Math.floor(Math.random() * GOAL_COACH_QUOTES.length)],
+    meta: {
+      mode,
+      avg7: avg7 === null ? '' : round1(avg7),
+      avg30: avg30 === null ? '' : round1(avg30),
+      trend7,
+      trend30,
+      attendance7: att7 === null ? '' : Math.round(att7 * 100),
+      attendance30: att30 === null ? '' : Math.round(att30 * 100),
+      reports7,
+      reports30,
+      selfCoachGap: gap === null ? '' : gap
+    }
+  };
+}
+
+function formatGoalCoachText(goalCoach) {
+  return `成長狀態：\n${goalCoach.status}\n\n` +
+    `本週觀察：\n${goalCoach.observation}\n\n` +
+    `本週目標：\n${goalCoach.weeklyGoal}\n\n` +
+    `教練提醒：\n${goalCoach.reminder}\n\n` +
+    `激勵語：\n${goalCoach.quote}`;
+}
+
+function renderGoalCoachCard(goalCoach) {
+  const card = $id('goalCoachCard');
+  const body = $id('goalCoachBody');
+  if (!card || !body || !goalCoach) return;
+  const m = goalCoach.meta || {};
+  body.innerHTML =
+    `<div class="goal-coach-grid">
+      <div class="goal-coach-item"><span>成長狀態</span><b>${escapeHtml(goalCoach.status)}</b></div>
+      <div class="goal-coach-item wide"><span>本週觀察</span><p>${escapeHtml(goalCoach.observation)}</p></div>
+      <div class="goal-coach-item goal"><span>本週目標</span><b>${escapeHtml(goalCoach.weeklyGoal)}</b></div>
+      <div class="goal-coach-item"><span>教練提醒</span><p>${escapeHtml(goalCoach.reminder)}</p></div>
+      <div class="goal-coach-item"><span>激勵語</span><p>${escapeHtml(goalCoach.quote)}</p></div>
+    </div>
+    <div class="goal-coach-meta">
+      <span>7天KPI：${escapeHtml(String(m.avg7 || '累積中'))}</span>
+      <span>30天KPI：${escapeHtml(String(m.avg30 || '累積中'))}</span>
+      <span>7天出席：${escapeHtml(m.attendance7 === '' ? '累積中' : m.attendance7 + '%')}</span>
+      <span>回報：${escapeHtml(String(m.reports7 || 0))}/7 天</span>
+    </div>`;
+  card.style.display = 'block';
 }
 
 /* ============================================================
@@ -6636,7 +6856,7 @@ function clearForm() {
   document.querySelectorAll('.kpi-slider').forEach(s => { s.value = 3; });
   document.querySelectorAll('.kpi-slider').forEach(s => s.dispatchEvent(new Event('input')));
   // 隱藏回饋卡
-  ['coachFeedbackCard', 'compareCard', 'nutritionCard', 'lineCard'].forEach(id => { const el = $id(id); if (el) el.style.display = 'none'; });
+  ['coachFeedbackCard', 'goalCoachCard', 'compareCard', 'nutritionCard', 'lineCard'].forEach(id => { const el = $id(id); if (el) el.style.display = 'none'; });
   clearDraft();
   toast('已清空表單');
 }
