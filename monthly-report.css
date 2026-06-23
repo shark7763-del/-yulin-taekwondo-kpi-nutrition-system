@@ -248,3 +248,35 @@
 .jr-report .mr-page-foot { position: static; left: auto; right: auto; margin-top: 14px; }
 .jr-report .mr-page > .mr-two-col { flex: 1 0 auto; }
 .jr-report .mr-page > .jr-chart { flex: 0 0 auto; }
+
+/* ============================================================
+   PDF 匯出專用容器（離螢幕、固定 A4 桌機版）
+   ------------------------------------------------------------
+   下載 PDF 時把報表掛進這個容器再擷取，不抓畫面上的手機版節點。
+   以 !important 強制桌機 A4 版面，覆寫 @media(max-width:820px) 的縮放，
+   不受手機 viewport 影響 → 手機下載也不跑版、比例正確、卡片不被裁切。
+   固定定位移到畫面外，使用者完全看不到、也不影響原本 RWD 畫面。
+   ============================================================ */
+.pdf-export-root {
+  position: fixed; left: -10000px; top: 0; z-index: -1;
+  width: 210mm; background: #ffffff;
+}
+.pdf-export-root .mr-page {
+  width: 210mm !important; min-height: 297mm !important;
+  padding: 16mm 14mm 14mm !important; margin: 0 !important;
+  box-shadow: none !important; background: #ffffff !important;
+}
+.pdf-export-root .mr-grid-4 { grid-template-columns: repeat(4, 1fr) !important; }
+.pdf-export-root .mr-grid-3 { grid-template-columns: repeat(3, 1fr) !important; }
+.pdf-export-root .mr-two-col,
+.pdf-export-root .mr-tree-grid,
+.pdf-export-root .mr-sign { grid-template-columns: 1fr 1fr !important; }
+/* 卡片不被切成兩半 */
+.pdf-export-root .mr-panel,
+.pdf-export-root .mr-stat,
+.pdf-export-root .mr-tree,
+.pdf-export-root .mr-sign,
+.pdf-export-root .mr-two-col,
+.pdf-export-root .jr-chart {
+  break-inside: avoid; page-break-inside: avoid;
+}

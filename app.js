@@ -6597,49 +6597,53 @@ function safeOneShotScale(pageCount) {
   return 0.7;
 }
 
-/* 逐頁產生 PDF：每個 .mr-page 各自 render 成獨立小 canvas，再貼進 jsPDF。
-   避免「整份報表一次畫成一張超大 canvas」超過瀏覽器 canvas 上限而全白
-   （多頁日誌最常見的空白主因）。成功回 true，無法執行（缺元件/無分頁）回 false。 */
-async function renderReportPdfByPage(node, fileBase) {
+/* 把報表 HTML 掛到「離螢幕、固定 210mm 的 .pdf-export-root 容器」再逐頁輸出 PDF。
+   重點：不抓畫面上（手機版）的節點 —— 改用獨立固定寬度容器，並以 .pdf-export-root
+   的 !important 規則強制桌機 A4 版面，完全不受手機 viewport / 響應式斷點影響，
+   所以手機 Chrome 下載也不會跑版、比例正確。逐頁擷取避免超大 canvas 在手機上全白。
+   成功回 true，缺元件回 false。 */
+async function renderReportPdfByPage(reportHtml, fileBase) {
   const h2c = window.html2canvas;
   const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (typeof h2c !== 'function' || typeof jsPDFCtor !== 'function') return false;
-  const pages = Array.from(node.querySelectorAll('.mr-page'));
-  if (!pages.length) return false;
-  const pdf = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-  const pw = pdf.internal.pageSize.getWidth();
-  const ph = pdf.internal.pageSize.getHeight();
-  for (let i = 0; i < pages.length; i++) {
-    // windowWidth 需 > 820（響應式斷點），否則擷取時觸發手機版 min-height:auto，
-    // 每頁縮成內容高度貼在 A4 上半部、下半留白（看起來像多空白頁）。
-    const canvas = await h2c(pages[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 960 });
-    const img = canvas.toDataURL('image/jpeg', 0.95);
-    // 保持比例置中，內容高於 A4 才縮到剛好一頁，絕不溢出造成多餘空白頁
-    let imgW = pw, imgH = pw * canvas.height / canvas.width;
-    if (imgH > ph) { imgH = ph; imgW = ph * canvas.width / canvas.height; }
-    const x = (pw - imgW) / 2;
-    if (i > 0) pdf.addPage();
-    pdf.addImage(img, 'JPEG', x, 0, imgW, imgH);
+
+  const host = document.createElement('div');
+  host.className = 'pdf-export-root';
+  host.innerHTML = reportHtml;
+  document.body.appendChild(host);
+  try {
+    const pages = Array.from(host.querySelectorAll('.mr-page'));
+    if (!pages.length) return false;
+    const pdf = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+    for (let i = 0; i < pages.length; i++) {
+      const canvas = await h2c(pages[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1024 });
+      const img = canvas.toDataURL('image/jpeg', 0.95);
+      // 保持比例置中，內容高於 A4 才縮到剛好一頁，絕不溢出造成多餘空白頁
+      let imgW = pw, imgH = pw * canvas.height / canvas.width;
+      if (imgH > ph) { imgH = ph; imgW = ph * canvas.width / canvas.height; }
+      if (i > 0) pdf.addPage();
+      pdf.addImage(img, 'JPEG', (pw - imgW) / 2, 0, imgW, imgH);
+    }
+    pdf.save(fileBase + '.pdf');
+    return true;
+  } finally {
+    document.body.removeChild(host);
   }
-  pdf.save(fileBase + '.pdf');
-  return true;
 }
 
 async function downloadPersonalJournalPdf() {
-  if (!_currentJournalReport) { toast('請先產生日誌預覽'); return; }
-  const preview = $id('journalPreview');
-  const node = preview ? (preview.querySelector('.mr-report') || preview) : null;
-  if (!node) { toast('找不到日誌內容'); return; }
-  if (typeof window.html2pdf === 'undefined') {
-    toast('PDF 元件載入中，請改用「列印 / 存 PDF」');
-    return;
-  }
+  if (!_currentJournalReport || !_currentJournalReport.html) { toast('請先產生日誌預覽'); return; }
   toast('產生 PDF 中，請稍候...');
   try {
-    // 先試逐頁渲染（多頁不會空白）；不支援時回退原本整份渲染
-    const done = await renderReportPdfByPage(node, _currentJournalReport.fileBase);
+    // 從離螢幕固定寬度容器輸出，不抓手機畫面（避免跑版/裁切/比例錯誤）
+    const done = await renderReportPdfByPage(_currentJournalReport.html, _currentJournalReport.fileBase);
     if (!done) {
-      const pageCount = node.querySelectorAll('.mr-page').length;
+      if (typeof window.html2pdf === 'undefined') { toast('PDF 元件載入中，請改用「列印 / 存 PDF」'); return; }
+      // 後備：整份渲染（依頁數壓低 scale）
+      const node = $id('journalPreview') && $id('journalPreview').querySelector('.mr-report');
+      const pageCount = node ? node.querySelectorAll('.mr-page').length : 1;
       await window.html2pdf().set(journalPdfOptions(_currentJournalReport.fileBase, safeOneShotScale(pageCount))).from(node).save();
     }
     toast('✅ PDF 已下載');
@@ -6660,7 +6664,7 @@ function printPersonalJournal() {
   win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8" />
     <title>${journalSafePart(_currentJournalReport.fileBase)}</title>
     <link rel="stylesheet" href="style.css?v=20260624a" />
-    <link rel="stylesheet" href="monthly-report.css?v=20260624c" />
+    <link rel="stylesheet" href="monthly-report.css?v=20260624d" />
     <style>body{margin:0;background:#fff;} .mr-report{box-shadow:none;} .mr-page{margin:0 auto 0;} </style>
   </head><body class="mr-print-window">${node.outerHTML}
   <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
