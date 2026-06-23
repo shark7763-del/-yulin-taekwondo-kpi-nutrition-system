@@ -997,8 +997,11 @@ function updatePainReadout() {
   const ro = $id('painReadout'); if (ro) ro.className = 'pain-readout ' + g.cls;
   const care = $id('painCare');
   if (care) {
-    if (n >= 7) { care.style.display = ''; care.className = 'pain-care bad'; care.textContent = '⚠️ 疼痛偏高，請務必告知教練，今天先不要勉強做專項訓練，必要時請就醫檢查。'; }
-    else if (n >= 4) { care.style.display = ''; care.className = 'pain-care warn'; care.textContent = '💛 中度疼痛，建議降低該部位訓練強度，並讓教練知道狀況。'; }
+    // 教練管理提醒（非醫療診斷）：依疼痛分級給訓練處理方向
+    if (n >= 10) { care.style.display = ''; care.className = 'pain-care bad'; care.textContent = '🛑 立即停止訓練，馬上告知教練與家長，必要時就醫檢查，先不要再活動該部位。'; }
+    else if (n >= 7) { care.style.display = ''; care.className = 'pain-care bad'; care.textContent = '⚠️ 停止專項訓練，改做恢復與觀察，務必告知教練；若持續或加劇，請通知家長並評估就醫。'; }
+    else if (n >= 4) { care.style.display = ''; care.className = 'pain-care warn'; care.textContent = '💛 降低訓練強度，避免高衝擊、爆發與對抗動作，並讓教練知道狀況。'; }
+    else if (n >= 1) { care.style.display = ''; care.className = 'pain-care'; care.textContent = '🟢 可正常訓練，記得確實熱身、收操，並留意該部位是否變化。'; }
     else { care.style.display = 'none'; care.textContent = ''; }
   }
 }
@@ -2484,6 +2487,15 @@ function escapeHtml(s) {
    ============================================================ */
 
 // 表單驗證
+// 若欄位在收合的 <details> 內，先展開再聚焦，避免使用者看不到被提示的欄位
+function focusField(id) {
+  const el = $id(id);
+  if (!el) return;
+  let p = el.parentElement;
+  while (p) { if (p.tagName === 'DETAILS') p.open = true; p = p.parentElement; }
+  el.focus();
+}
+
 function validateForm() {
   const group = $id('group').value;
   if (isAbsenceGroup(group)) {
@@ -2492,7 +2504,7 @@ function validateForm() {
     ];
     for (const [id, label] of required) {
       const v = $id(id).value;
-      if (!v || !String(v).trim()) { toast(`請填寫：${label}`); $id(id).focus(); return false; }
+      if (!v || !String(v).trim()) { toast(`請填寫：${label}`); focusField(id); return false; }
     }
     return true;
   }
@@ -4690,6 +4702,7 @@ async function refreshCoach() {
   todays.forEach(r => applyReadiness(r, all.filter(x => String(x.name) === String(r.name))));
   if (statusFilter !== 'all') todays = todays.filter(r => r.status === statusFilter);
 
+  renderCoachWarRoom(todays, all);
   renderCoachReadinessOverview(todays, all);
   renderCoachQuickScores(todays, coachScores);
   renderOverview(todays);
@@ -7185,6 +7198,11 @@ function applyRole() {
   document.querySelectorAll('.tab-btn').forEach(b => {
     b.style.display = conf.allowed.indexOf(b.dataset.tab) !== -1 ? '' : 'none';
   });
+  // 通用設定：家長後台模組關閉時，隱藏家長分頁
+  if (!getBrand().modParent) {
+    const pb = document.querySelector('.tab-btn[data-tab="parent"]');
+    if (pb) pb.style.display = 'none';
+  }
   switchTab(conf.default);
 
   // 身分標籤與切換鈕
@@ -7239,6 +7257,9 @@ function applyRole() {
   if (window.KpiSession && window.KpiSession.refresh) {
     setTimeout(() => window.KpiSession.refresh(), 0);
   }
+
+  // 今日我該做什麼（選手／家長導引卡）
+  renderTodayGuide();
 }
 
 function setSelectOnlyName(id, name) {
@@ -7392,6 +7413,241 @@ async function generatePendingActivationCodes() {
     button.disabled = false;
     button.textContent = '批次產生待啟用碼';
   }
+}
+
+/* ============================================================
+   15.9 今日我該做什麼（依角色導引）
+   ============================================================ */
+function guideItem(icon, text, targetId) {
+  return `<li class="tg-item"${targetId ? ` data-goto="${targetId}"` : ''}>` +
+    `<span class="tg-ic">${icon}</span><span class="tg-txt">${text}</span>` +
+    `${targetId ? '<span class="tg-arrow">›</span>' : ''}</li>`;
+}
+function renderTodayGuide() {
+  const r = getRole();
+  if (!r) return;
+  if (r.role === 'student') {
+    const card = $id('studentTodayGuide'), list = $id('studentTodayGuideList');
+    if (!card || !list) return;
+    const kpiOpen = (typeof isDailyKpiAvailable === 'function') && isDailyKpiAvailable();
+    list.innerHTML = [
+      guideItem('📝', '<b>今天有訓練</b>：填下方「每日基本回報」', 'studentForm'),
+      guideItem('🤔', '<b>今天沒出席</b>：把「組別」選未出席，誠實填未出席反思', 'studentForm'),
+      kpiOpen
+        ? guideItem('📈', '<b>教練已開啟本週 KPI</b>：記得完成 30 項 KPI 回報', 'studentKpiCard')
+        : guideItem('📈', '本週 KPI 尚未開啟，先把每日回報填好就好', ''),
+      guideItem('🧑‍🏫', '送出後往下看「AI 教練回饋卡」的鼓勵與明日任務', 'coachFeedbackCard')
+    ].join('');
+    card.style.display = '';
+  } else if (r.role === 'parent') {
+    const card = $id('parentTodayGuide'), list = $id('parentTodayGuideList');
+    if (!card || !list) return;
+    list.innerHTML = [
+      guideItem('🗓️', '看看孩子最近 7 天的訓練狀態', 'parentSevenDays'),
+      guideItem('📊', '確認孩子本週出席情況', 'parentWeekStats'),
+      guideItem('🔁', '是否有需要在家協助的補訓任務', 'parentMakeupTasks'),
+      guideItem('📣', '閱讀教練今天給家長的提醒', 'parentCoachNotes')
+    ].join('');
+    card.style.display = '';
+  }
+}
+function setupTodayGuideNav() {
+  document.addEventListener('click', e => {
+    const it = e.target.closest('.tg-item[data-goto]');
+    if (!it) return;
+    const t = $id(it.dataset.goto);
+    if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+/* ============================================================
+   15.91 今日戰情室（教練後台頂部：可點擊展開名單）
+   ============================================================ */
+/* 身體狀態燈號（依需求規格的明確判斷邏輯：疼痛 / RPE / 睡眠 / 尿液 / 心情）
+   與 KPI 表現燈號（judgeStatus）不同，這裡看的是「今天身體適不適合練」。
+   history：同一人新→舊排序的紀錄，用來判斷「連續兩次」紅燈條件。 */
+function specBodyLight(rec, history) {
+  if (!rec) return { key: 'green', label: '🟢 綠燈' };
+  const body = String(rec.bodyStatus || '');
+  const sleep = String(rec.sleepQuality || '');
+  const rpe = nval(rec.rpe);
+  const pain = nval(rec.painScore);
+  const urine = String(rec.urineStatus || '');
+  const mood = nval(rec.moodIndex);
+  // 連續兩次（含今天）：取最近兩筆判斷
+  const recent2 = dedupeLatestByDate(history || []).slice(0, 2);
+  const streak2 = matcher => recent2.length >= 2 && recent2.every(matcher);
+
+  // 紅燈
+  if ((pain !== null && pain >= 7) ||
+      (rpe !== null && rpe >= 9) ||
+      urine === '琥珀色' ||
+      streak2(r => String(r.sleepQuality || '') === '差') ||
+      streak2(r => { const m = nval(r.moodIndex); return m !== null && m <= 2; }) ||
+      streak2(r => { const x = nval(r.rpe); return x !== null && x >= 8; }) ||
+      streak2(r => { const p = nval(r.painScore); return p !== null && p >= 4; })) {
+    return { key: 'red', label: '🔴 紅燈' };
+  }
+  // 黃燈
+  if (body === '疲勞' || body === '不舒服' || body === '受傷中' ||
+      sleep === '差' ||
+      (rpe !== null && rpe >= 7) ||
+      (pain !== null && pain >= 4) ||
+      urine === '深黃' ||
+      (mood !== null && mood <= 2)) {
+    return { key: 'yellow', label: '🟡 黃燈' };
+  }
+  return { key: 'green', label: '🟢 綠燈' };
+}
+
+let _warRoomLists = {};
+function renderCoachWarRoom(todays, all) {
+  const grid = $id('coachWarRoomGrid');
+  if (!grid) return;
+  const roster = getPlayers();
+  const nameOf = r => String(r.name || '').trim();
+  const reportedNames = Array.from(new Set((todays || []).map(nameOf).filter(Boolean)));
+  const missingNames = roster.filter(n => reportedNames.indexOf(n) === -1);
+  const rate = roster.length ? Math.round(reportedNames.length / roster.length * 100) : 0;
+  // 身體狀態燈號：依規格規則計算（連續兩次需要個人歷史）
+  const histOf = name => (all || []).filter(x => String(x.name || '').trim() === name);
+  (todays || []).forEach(r => { r._bodyLight = specBodyLight(r, histOf(nameOf(r))).key; });
+  const byLight = key => (todays || []).filter(r => r._bodyLight === key);
+  const painList = (todays || []).filter(r => (nval(r.painScore) || 0) >= 4);
+  const rpeList = (todays || []).filter(r => (nval(r.rpe) || 0) >= 8);
+  const sleepList = (todays || []).filter(r => r.sleepQuality === '差');
+  const moodList = (todays || []).filter(r => { const m = nval(r.moodIndex); return m !== null && m <= 2; });
+  const notifyList = (todays || []).filter(r =>
+    r._bodyLight === 'red' ||
+    (nval(r.painScore) || 0) >= 7 ||
+    /受傷風險|需要關心|脫水風險/.test(String(r.aiTags || '')));
+
+  const cards = [
+    { key: 'rate', label: '今日填寫率', num: rate + '%', tone: rate >= 80 ? 'good' : 'warn', names: reportedNames, sub: `${reportedNames.length}/${roster.length} 人` },
+    { key: 'missing', label: '未回報', num: missingNames.length, tone: missingNames.length ? 'warn' : 'good', names: missingNames },
+    { key: 'green', label: '🟢 綠燈', num: byLight('green').length, tone: 'good', names: byLight('green').map(nameOf) },
+    { key: 'yellow', label: '🟡 黃燈', num: byLight('yellow').length, tone: 'warn', names: byLight('yellow').map(nameOf) },
+    { key: 'red', label: '🔴 紅燈', num: byLight('red').length, tone: byLight('red').length ? 'danger' : 'good', names: byLight('red').map(nameOf) },
+    { key: 'pain', label: '疼痛 4 分以上', num: painList.length, tone: painList.length ? 'danger' : 'good', names: painList.map(r => `${nameOf(r)}（${nval(r.painScore)} 分）`) },
+    { key: 'rpe', label: 'RPE 8 以上', num: rpeList.length, tone: rpeList.length ? 'warn' : 'good', names: rpeList.map(r => `${nameOf(r)}（RPE ${nval(r.rpe)}）`) },
+    { key: 'sleep', label: '睡眠差', num: sleepList.length, tone: sleepList.length ? 'warn' : 'good', names: sleepList.map(nameOf) },
+    { key: 'mood', label: '心情低落', num: moodList.length, tone: moodList.length ? 'warn' : 'good', names: moodList.map(nameOf) },
+    { key: 'notify', label: '需家長通知', num: notifyList.length, tone: notifyList.length ? 'danger' : 'good', names: notifyList.map(nameOf) }
+  ];
+  _warRoomLists = {};
+  cards.forEach(c => { _warRoomLists[c.key] = { label: c.label, names: c.names }; });
+
+  grid.innerHTML = cards.map(c =>
+    `<button type="button" class="warroom-cell ${c.tone}" data-wr="${c.key}">` +
+    `<span class="wr-num">${c.num}</span>` +
+    `<span class="wr-label">${c.label}</span>` +
+    `${c.sub ? `<span class="wr-sub">${c.sub}</span>` : ''}</button>`
+  ).join('');
+
+  const listBox = $id('coachWarRoomList');
+  if (listBox) { listBox.style.display = 'none'; listBox.innerHTML = ''; }
+
+  if (!grid.dataset.bound) {
+    grid.dataset.bound = '1';
+    grid.addEventListener('click', e => {
+      const btn = e.target.closest('.warroom-cell');
+      if (!btn) return;
+      const data = _warRoomLists[btn.dataset.wr];
+      if (!data) return;
+      grid.querySelectorAll('.warroom-cell').forEach(b => b.classList.toggle('active', b === btn));
+      const lb = $id('coachWarRoomList');
+      if (!lb) return;
+      lb.style.display = '';
+      lb.innerHTML = `<h4 class="wr-list-title">${data.label}（${data.names.length}）</h4>` +
+        (data.names.length
+          ? `<div class="wr-names">${data.names.map(n => `<span class="wr-name">${escapeHtml(n)}</span>`).join('')}</div>`
+          : '<p class="review-label">目前沒有名單 ✅</p>');
+    });
+  }
+}
+
+/* ============================================================
+   15.92 隊伍 / 運動項目通用設定（商業化：一校一套可改品牌與模組）
+   ============================================================ */
+const BRAND_KEY = 'yulin_brand';
+const BRAND_DEFAULT = {
+  teamName: '育林國中技擊隊',
+  orgName: '育林國中',
+  sports: '跆拳道・武術',
+  groups: '',
+  kpiDomains: '',
+  modFreestyle: true, modNutrition: true, modPrecomp: true, modParent: true
+};
+function getBrand() {
+  try { return Object.assign({}, BRAND_DEFAULT, JSON.parse(localStorage.getItem(BRAND_KEY)) || {}); }
+  catch (e) { return Object.assign({}, BRAND_DEFAULT); }
+}
+function saveBrand(b) { localStorage.setItem(BRAND_KEY, JSON.stringify(b)); }
+function brandModHidden(id, on) {
+  const el = $id(id);
+  if (el) el.classList.toggle('brand-hidden', !on);
+}
+function applyBrand() {
+  const b = getBrand();
+  const subtitle = `${b.sports} ｜ TeamPro AI 訓練準備度系統`;
+  document.querySelectorAll('.app-title').forEach(el => { el.textContent = '🥋 ' + b.teamName; });
+  document.querySelectorAll('.app-subtitle').forEach(el => { el.textContent = subtitle; });
+  const lt = document.querySelector('.login-title'); if (lt) lt.textContent = '🥋 ' + b.teamName;
+  const ls = document.querySelector('.login-sub'); if (ls) ls.textContent = subtitle;
+  try { document.title = b.teamName + '｜TeamPro AI 訓練準備度系統'; } catch (e) { /* */ }
+  // 模組開關（關閉時隱藏對應區塊；不動到必填欄位邏輯）
+  brandModHidden('freestyleSection', b.modFreestyle);
+  brandModHidden('nutritionCard', b.modNutrition);
+  brandModHidden('coachNutritionCard', b.modNutrition);
+  brandModHidden('preCompCard', b.modPrecomp);
+}
+function renderBrandSettings() {
+  const b = getBrand();
+  const set = (id, v) => { const el = $id(id); if (el) el.value = v; };
+  const chk = (id, v) => { const el = $id(id); if (el) el.checked = !!v; };
+  set('brandTeamName', b.teamName);
+  set('brandOrgName', b.orgName);
+  set('brandSports', b.sports);
+  set('brandGroups', b.groups);
+  set('brandKpiDomains', b.kpiDomains);
+  chk('brandModFreestyle', b.modFreestyle);
+  chk('brandModNutrition', b.modNutrition);
+  chk('brandModPrecomp', b.modPrecomp);
+  chk('brandModParent', b.modParent);
+}
+function setupBrandHandlers() {
+  const saveBtn = $id('btnSaveBrand');
+  if (saveBtn) saveBtn.addEventListener('click', () => {
+    const val = id => { const el = $id(id); return el ? String(el.value || '').trim() : ''; };
+    const on = id => { const el = $id(id); return el ? el.checked : true; };
+    const b = {
+      teamName: val('brandTeamName') || BRAND_DEFAULT.teamName,
+      orgName: val('brandOrgName'),
+      sports: val('brandSports') || BRAND_DEFAULT.sports,
+      groups: val('brandGroups'),
+      kpiDomains: val('brandKpiDomains'),
+      modFreestyle: on('brandModFreestyle'),
+      modNutrition: on('brandModNutrition'),
+      modPrecomp: on('brandModPrecomp'),
+      modParent: on('brandModParent')
+    };
+    saveBrand(b);
+    applyBrand();
+    const st = $id('brandStatus');
+    if (st) { st.textContent = '✅ 已儲存並套用通用設定'; st.className = 'conn-status ok'; }
+    toast('✅ 通用設定已儲存');
+    const r = getRole(); if (r) applyRole();
+  });
+  const resetBtn = $id('btnResetBrand');
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    localStorage.removeItem(BRAND_KEY);
+    renderBrandSettings();
+    applyBrand();
+    const st = $id('brandStatus');
+    if (st) { st.textContent = '↩️ 已還原為預設值'; st.className = 'conn-status info'; }
+    toast('已還原預設');
+    const r = getRole(); if (r) applyRole();
+  });
 }
 
 /* ============================================================
@@ -7565,6 +7821,14 @@ function init() {
     // 角色套用後再還原草稿（選手姓名鎖定才正確）；有還原才提示
     if (restoreDraft()) toast('📝 已還原上次未送出的草稿');
   });
+
+  // 隊伍／運動項目通用設定（品牌與模組）
+  applyBrand();
+  renderBrandSettings();
+  setupBrandHandlers();
+
+  // 今日我該做什麼：導引卡點擊捲動
+  setupTodayGuideNav();
 
   // 本週之星（學生填寫頁上方）
   renderWeeklyStars();

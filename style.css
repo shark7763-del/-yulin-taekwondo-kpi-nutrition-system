@@ -1070,3 +1070,61 @@ textarea.text-input { resize: vertical; }
 .kpi-wr-pending { font-size: 0.88rem; color: var(--text-soft); background: #0f141c; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
 .kpi-wr-foot { margin-top: 14px; font-size: 0.74rem; color: var(--text-soft); text-align: center; border-top: 1px solid var(--border); padding-top: 8px; }
 @media (max-width: 640px) { .kpi-wr-aspects { grid-template-columns: repeat(3, 1fr); } .kpi-wr-cards { grid-template-columns: repeat(2, 1fr); } }
+
+/* ===================== 今日我該做什麼（角色導引卡）===================== */
+.today-guide-card {
+  background: linear-gradient(135deg, rgba(46, 125, 209, 0.12), rgba(245, 197, 24, 0.10));
+  border: 1px solid rgba(46, 125, 209, 0.40);
+}
+.today-guide-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.tg-item {
+  display: flex; align-items: center; gap: 10px;
+  background: #0f141c; border: 1px solid var(--border); border-radius: 10px;
+  padding: 11px 12px; margin-bottom: 8px; font-size: 0.92rem; line-height: 1.5;
+}
+.tg-item[data-goto] { cursor: pointer; transition: border-color .15s, background .15s; }
+.tg-item[data-goto]:hover, .tg-item[data-goto]:active { border-color: var(--blue); background: rgba(46, 125, 209, 0.14); }
+.tg-item .tg-ic { font-size: 1.25rem; flex: 0 0 auto; }
+.tg-item .tg-txt { flex: 1 1 auto; color: var(--text-main); }
+.tg-item .tg-txt b { color: var(--gold); }
+.tg-item .tg-arrow { flex: 0 0 auto; color: var(--blue); font-size: 1.3rem; font-weight: 800; }
+
+/* ===================== 進階回報收合 <details> ===================== */
+.adv-fold { border: 1px dashed var(--border); border-radius: 10px; padding: 0 12px; margin: 8px 0 14px; background: rgba(15, 20, 28, 0.5); }
+.adv-fold > summary {
+  cursor: pointer; list-style: none; padding: 11px 2px; font-weight: 700;
+  color: var(--gold); font-size: 0.92rem; user-select: none;
+}
+.adv-fold > summary::-webkit-details-marker { display: none; }
+.adv-fold > summary::before { content: '▸ '; color: var(--blue); font-weight: 800; }
+.adv-fold[open] > summary::before { content: '▾ '; }
+.adv-fold[open] { padding-bottom: 12px; }
+fieldset.adv-fold { border: 1px dashed var(--border); }
+
+/* ===================== 今日戰情室（教練後台）===================== */
+.warroom-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.warroom-cell {
+  background: #0f141c; border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 10px; text-align: center; cursor: pointer; color: var(--text-main);
+  transition: transform .12s, border-color .15s, box-shadow .15s;
+}
+.warroom-cell:hover { transform: translateY(-2px); border-color: var(--blue); }
+.warroom-cell.active { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(245, 197, 24, 0.35) inset; }
+.warroom-cell .wr-num { display: block; font-size: 1.6rem; font-weight: 900; color: var(--gold); line-height: 1.1; }
+.warroom-cell .wr-label { display: block; font-size: 0.82rem; color: var(--text-soft); margin-top: 4px; }
+.warroom-cell .wr-sub { display: block; font-size: 0.72rem; color: var(--text-soft); margin-top: 2px; }
+.warroom-cell.good .wr-num { color: var(--green); }
+.warroom-cell.warn .wr-num { color: var(--yellow); }
+.warroom-cell.danger .wr-num { color: #ff7b7b; }
+.warroom-cell.danger { border-color: rgba(226, 59, 59, 0.5); }
+.warroom-list { margin-top: 14px; background: #0f141c; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.wr-list-title { color: var(--gold); margin-bottom: 8px; font-size: 0.95rem; }
+.wr-names { display: flex; flex-wrap: wrap; gap: 8px; }
+.wr-name { background: var(--bg-card-2); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font-size: 0.85rem; }
+@media (min-width: 640px) { .warroom-grid { grid-template-columns: repeat(5, 1fr); } }
+
+/* ===================== 通用設定：模組開關 / 隱藏 ===================== */
+.brand-toggles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 12px 0; }
+.brand-toggles .toggle-row { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+.brand-hidden { display: none !important; }
+@media (max-width: 480px) { .brand-toggles { grid-template-columns: 1fr; } }

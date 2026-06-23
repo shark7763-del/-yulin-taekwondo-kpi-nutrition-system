@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜TeamPro AI 訓練準備度系統</title>
-  <link rel="stylesheet" href="style.css?v=20260623e" />
+  <link rel="stylesheet" href="style.css?v=20260624a" />
   <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
 </head>
 <body>
@@ -62,6 +62,12 @@
     <!-- 分頁一：學生填寫                                          -->
     <!-- ========================================================= -->
     <section class="tab-panel active" id="tab-student">
+
+      <!-- 今日我該做什麼（依角色、依今日狀態動態產生） -->
+      <div class="card today-guide-card" id="studentTodayGuide" style="display:none;">
+        <h3 class="card-title">🧭 今日我該做什麼</h3>
+        <ul class="today-guide-list" id="studentTodayGuideList"></ul>
+      </div>
 
       <!-- 每日教練語錄 -->
       <div class="card quote-card" id="dailyQuoteCard">
@@ -242,21 +248,25 @@
 
           <p class="meal-tags-hint">填「便當／營養午餐」也沒關係，下面點一下吃到的類別就好 👇</p>
 
-          <label class="field-label">今日早餐 <span class="req">*</span></label>
-          <input type="text" id="breakfast" class="text-input" placeholder="例如：蛋餅、豆漿（或直接寫便當）" />
-          <div class="meal-tags quick-chips" id="tagsBreakfast" data-meal="breakfast"></div>
+          <details class="adv-fold" id="mealsFold">
+            <summary>🍱 三餐細項（影響 AI 飲食建議，點開填寫）</summary>
 
-          <label class="field-label">今日午餐 <span class="req">*</span></label>
-          <input type="text" id="lunch" class="text-input" placeholder="例如：雞腿便當、營養午餐" />
-          <div class="meal-tags quick-chips" id="tagsLunch" data-meal="lunch"></div>
+            <label class="field-label">今日早餐 <span class="req">*</span></label>
+            <input type="text" id="breakfast" class="text-input" placeholder="例如：蛋餅、豆漿（或直接寫便當）" />
+            <div class="meal-tags quick-chips" id="tagsBreakfast" data-meal="breakfast"></div>
 
-          <label class="field-label">今日晚餐 <span class="req">*</span></label>
-          <input type="text" id="dinner" class="text-input" placeholder="例如：魚、飯、花椰菜（或直接寫便當）" />
-          <div class="meal-tags quick-chips" id="tagsDinner" data-meal="dinner"></div>
+            <label class="field-label">今日午餐 <span class="req">*</span></label>
+            <input type="text" id="lunch" class="text-input" placeholder="例如：雞腿便當、營養午餐" />
+            <div class="meal-tags quick-chips" id="tagsLunch" data-meal="lunch"></div>
 
-          <label class="field-label">今日點心／飲料</label>
-          <input type="text" id="snacksDrinks" class="text-input" placeholder="例如：奶茶、餅乾" />
-          <div class="meal-tags quick-chips" id="tagsSnacksDrinks" data-meal="snacksDrinks"></div>
+            <label class="field-label">今日晚餐 <span class="req">*</span></label>
+            <input type="text" id="dinner" class="text-input" placeholder="例如：魚、飯、花椰菜（或直接寫便當）" />
+            <div class="meal-tags quick-chips" id="tagsDinner" data-meal="dinner"></div>
+
+            <label class="field-label">今日點心／飲料</label>
+            <input type="text" id="snacksDrinks" class="text-input" placeholder="例如：奶茶、餅乾" />
+            <div class="meal-tags quick-chips" id="tagsSnacksDrinks" data-meal="snacksDrinks"></div>
+          </details>
 
           <label class="field-label">今日水量 <span class="req">*</span></label>
           <select id="waterIntake" class="text-input"></select>
@@ -308,6 +318,11 @@
 
           <label class="field-label">明日目標 <span class="req">*</span></label>
           <textarea id="tomorrowGoal" class="text-input" rows="2" placeholder="明天我要做到..."></textarea>
+        </fieldset>
+
+        <!-- 進階回報（可不填，預設收合）：感謝與鼓勵隊友 -->
+        <details class="form-section adv-fold training-only" id="encourageFold">
+          <summary>💛 想鼓勵與感謝（可不填，點開填寫）</summary>
 
           <label class="field-label">今天我想感謝的人事物 🙏</label>
           <div id="gratitudeQuick" class="quick-chips"></div>
@@ -319,7 +334,7 @@
           <label class="field-label">鼓勵的內容</label>
           <div id="encourageQuick" class="quick-chips"></div>
           <textarea id="encouragementToTeammate" class="text-input" rows="2" placeholder="想對這位隊友說的話...（可點上方按鈕快速帶入）"></textarea>
-        </fieldset>
+        </details>
 
         <!-- 送出按鈕 -->
         <div class="btn-group">
@@ -525,6 +540,12 @@
         <p id="parentDashboardIntro" class="review-label">家長端只顯示自己孩子的出席、訓練狀態、補訓任務與教練公開提醒。</p>
       </div>
 
+      <!-- 今日我該做什麼（家長版導引） -->
+      <div class="card today-guide-card" id="parentTodayGuide">
+        <h3 class="card-title">🧭 今天可以關心孩子什麼</h3>
+        <ul class="today-guide-list" id="parentTodayGuideList"></ul>
+      </div>
+
       <div class="card">
         <h3 class="card-title">📅 今日訓練狀態</h3>
         <div id="parentTodayStatus"></div>
@@ -593,6 +614,13 @@
           <div><b>2. 快速簡評</b><span>每位選手點 4 個分數，30 秒內完成。</span></div>
           <div><b>3. 看分組</b><span>依準備度安排強化、穩定、調整、保護、關懷組。</span></div>
         </div>
+      </div>
+
+      <div class="card" id="coachWarRoomCard">
+        <h3 class="card-title">🎯 今日戰情室</h3>
+        <p class="review-label" style="margin-bottom:10px">一眼掌握今日全隊狀態，點任一張卡片可展開名單。</p>
+        <div id="coachWarRoomGrid" class="warroom-grid"></div>
+        <div id="coachWarRoomList" class="warroom-list" style="display:none;"></div>
       </div>
 
       <div class="card" id="coachReadinessCard">
@@ -743,14 +771,14 @@
       </div>
 
       <!-- 飲食管理 -->
-      <div class="card">
+      <div class="card" id="coachNutritionCard">
         <h3 class="card-title">🍱 飲食管理</h3>
         <div id="coachNutrition"></div>
       </div>
 
 
       <!-- 賽前狀態分析 -->
-      <div class="card">
+      <div class="card" id="preCompCard">
         <h3 class="card-title">🥇 賽前狀態分析</h3>
         <label class="field-label">選擇選手</label>
         <select id="preCompName" class="text-input"></select>
@@ -779,6 +807,39 @@
     <!-- 分頁四：系統設定                                          -->
     <!-- ========================================================= -->
     <section class="tab-panel" id="tab-settings">
+
+      <div class="card">
+        <h3 class="card-title">🏷️ 隊伍 / 運動項目通用設定</h3>
+        <p class="review-label" style="margin-bottom:10px">這套系統可從跆拳道／武術擴充到其他亞奧運、全中運項目。改這裡會更新頁面標題與顯示用語，並可關閉用不到的模組（純前端設定，存在本機）。</p>
+
+        <label class="field-label">隊伍名稱</label>
+        <input type="text" id="brandTeamName" class="text-input" placeholder="例如：育林國中技擊隊" />
+
+        <label class="field-label">學校／道館名稱</label>
+        <input type="text" id="brandOrgName" class="text-input" placeholder="例如：育林國中" />
+
+        <label class="field-label">運動項目（可多項，逗號分隔）</label>
+        <input type="text" id="brandSports" class="text-input" placeholder="例如：跆拳道、武術" />
+
+        <label class="field-label">組別名稱（逗號分隔，供填寫表單下拉用）</label>
+        <input type="text" id="brandGroups" class="text-input" placeholder="例如：對打組、品勢組、武術組" />
+
+        <label class="field-label">KPI 六大面向名稱（逗號分隔，可留空用預設）</label>
+        <input type="text" id="brandKpiDomains" class="text-input" placeholder="技術, 戰術, 體能, 心理, 態度, 生理" />
+
+        <div class="brand-toggles">
+          <label class="toggle-row"><input type="checkbox" id="brandModFreestyle" checked /> 開啟自由品勢模組</label>
+          <label class="toggle-row"><input type="checkbox" id="brandModNutrition" checked /> 開啟飲食模組</label>
+          <label class="toggle-row"><input type="checkbox" id="brandModPrecomp" checked /> 開啟賽前分析</label>
+          <label class="toggle-row"><input type="checkbox" id="brandModParent" checked /> 開啟家長後台</label>
+        </div>
+
+        <div class="btn-group">
+          <button type="button" id="btnSaveBrand" class="btn btn-primary">💾 儲存通用設定</button>
+          <button type="button" id="btnResetBrand" class="btn btn-ghost">↩️ 還原預設</button>
+        </div>
+        <div id="brandStatus" class="conn-status"></div>
+      </div>
 
       <div class="card">
         <h3 class="card-title">⚙️ Google Sheet 設定</h3>
@@ -897,7 +958,7 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260623g"></script>
+  <script src="app.js?v=20260624a"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260623c"></script>
