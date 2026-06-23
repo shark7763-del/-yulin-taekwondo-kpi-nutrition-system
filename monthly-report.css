@@ -225,3 +225,17 @@
   .mr-page-foot { position: fixed; }
 }
 @page { size: A4 portrait; margin: 0; }
+
+/* ---- 個人日誌：本期趨勢總覽圖 ---- */
+.jr-chart {
+  background: #fff; border: 1px solid var(--mr-line); border-radius: 10px;
+  padding: 10px 12px 6px; margin-bottom: 12px;
+}
+.jr-chart-h { font-size: 0.98rem; font-weight: 800; color: var(--mr-blue); }
+.jr-chart-h small { font-weight: 600; color: #8893a3; font-size: 0.74rem; }
+.jr-chart-legend { margin: 4px 0 2px; }
+.jr-chart-key { display: inline-block; margin-right: 14px; font-size: 0.76rem; color: #56627a; }
+.jr-chart-key i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+.jr-chart svg { display: block; }
+.jr-trend-sum { margin-top: 4px; }
+.jr-trend-sum .jr-longtext { font-size: 0.86rem; color: var(--mr-ink); line-height: 1.9; }

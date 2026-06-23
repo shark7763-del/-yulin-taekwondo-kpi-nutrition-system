@@ -6150,6 +6150,99 @@ function journalText(v, fallback) {
   return text ? escapeHtml(text).replace(/\n/g, '<br>') : (fallback || '—');
 }
 
+/* 日誌趨勢圖：純 SVG（屬性內聯，html2canvas 友善，不會空白）。
+   series：[{ name, color, vals:[數值|null] }]；vals 與 xLabels 對齊。 */
+function jrShortDate(d) {
+  const s = normDate(d);
+  const m = s.slice(5, 7).replace(/^0/, ''), day = s.slice(8, 10).replace(/^0/, '');
+  return (m && day) ? `${m}/${day}` : '';
+}
+function jrTrendChart(title, subtitle, series, yMin, yMax, xLabels) {
+  const W = 700, H = 200, PL = 36, PR = 12, PT = 14, PB = 28;
+  const innerW = W - PL - PR, innerH = H - PT - PB;
+  const n = series[0] ? series[0].vals.length : 0;
+  const span = (yMax - yMin) || 1;
+  const xAt = i => PL + (n <= 1 ? innerW / 2 : innerW * i / (n - 1));
+  const yAt = v => PT + innerH * (1 - (v - yMin) / span);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">`;
+  [yMin, (yMin + yMax) / 2, yMax].forEach(v => {
+    const y = yAt(v).toFixed(1);
+    svg += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="#e1e7f0" stroke-width="1"/>`;
+    svg += `<text x="${PL - 6}" y="${(parseFloat(y) + 3).toFixed(1)}" font-size="10" fill="#8893a3" text-anchor="end">${Math.round(v * 10) / 10}</text>`;
+  });
+  series.forEach(s => {
+    let d = '', pen = false;
+    s.vals.forEach((v, i) => {
+      if (v == null || isNaN(v)) { pen = false; return; }
+      d += (pen ? 'L' : 'M') + xAt(i).toFixed(1) + ' ' + yAt(v).toFixed(1) + ' ';
+      pen = true;
+    });
+    if (d) svg += `<path d="${d.trim()}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (n <= 24) s.vals.forEach((v, i) => { if (v != null && !isNaN(v)) svg += `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="2.6" fill="${s.color}"/>`; });
+  });
+  const idxs = Array.from(new Set(n <= 1 ? [0] : [0, Math.floor((n - 1) / 2), n - 1]));
+  idxs.forEach(i => {
+    svg += `<text x="${xAt(i).toFixed(1)}" y="${H - 9}" font-size="10" fill="#8893a3" text-anchor="middle">${escapeHtml(xLabels[i] || '')}</text>`;
+  });
+  svg += `</svg>`;
+  const legend = series.map(s => `<span class="jr-chart-key"><i style="background:${s.color}"></i>${escapeHtml(s.name)}</span>`).join('');
+  return `<div class="jr-chart"><div class="jr-chart-h">${escapeHtml(title)}${subtitle ? ` <small>${escapeHtml(subtitle)}</small>` : ''}</div><div class="jr-chart-legend">${legend}</div>${svg}</div>`;
+}
+// 本期趨勢總覽頁（封面後一頁）；資料 < 2 筆時回空字串（不插頁）
+function jrBuildTrendPage(name, ordered, fileNo, rangeLabel) {
+  if (!ordered || ordered.length < 2) return '';
+  const num = v => { const x = parseFloat(v); return isNaN(x) ? null : x; };
+  const xLabels = ordered.map(r => jrShortDate(r.date));
+  const readiness = ordered.map(r => num(r.finalReadinessScore));
+  const rpe = ordered.map(r => num(r.rpe));
+  const pain = ordered.map(r => num(r.painScore));
+  const weight = ordered.map(r => num(r.weightKg));
+  const target = ordered.map(r => num(r.targetWeightKg));
+  const has = arr => arr.filter(v => v != null).length >= 2;
+
+  let charts = '';
+  if (has(readiness)) {
+    charts += jrTrendChart('訓練準備度走勢', '0–100，越高代表今天越適合高品質訓練', [{ name: '準備度', color: '#2e6da4', vals: readiness }], 0, 100, xLabels);
+  }
+  if (has(rpe) || has(pain)) {
+    const s = [];
+    if (has(rpe)) s.push({ name: 'RPE 主觀強度', color: '#d97316', vals: rpe });
+    if (has(pain)) s.push({ name: '疼痛分數', color: '#c0392b', vals: pain });
+    charts += jrTrendChart('疲勞與疼痛走勢', '0–10，持續偏高代表需要降量或關心', s, 0, 10, xLabels);
+  }
+  if (has(weight)) {
+    const all = weight.concat(target).filter(v => v != null);
+    let lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+    if (lo === hi) { lo -= 1; hi += 1; } else { const pad = (hi - lo) * 0.15 || 1; lo -= pad; hi += pad; }
+    const s = [{ name: '今日體重', color: '#1f9d55', vals: weight }];
+    if (has(target)) s.push({ name: '目標體重', color: '#8893a3', vals: target });
+    charts += jrTrendChart('體重 vs 目標走勢', 'kg，控重選手追蹤用', s, Math.floor(lo), Math.ceil(hi), xLabels);
+  }
+  if (!charts) return '';
+
+  // 文字摘要
+  const firstR = readiness.filter(v => v != null)[0];
+  const lastR = readiness.filter(v => v != null).slice(-1)[0];
+  const rpeVals = rpe.filter(v => v != null);
+  const painVals = pain.filter(v => v != null);
+  const bits = [`本期訓練紀錄 ${ordered.length} 天`];
+  if (firstR != null && lastR != null) {
+    const d = Math.round(lastR - firstR);
+    const dir = d >= 5 ? `↑ 進步 ${d} 分` : d <= -5 ? `↓ 下滑 ${Math.abs(d)} 分` : '→ 大致持平';
+    bits.push(`準備度 ${Math.round(firstR)} → ${Math.round(lastR)}（${dir}）`);
+  }
+  if (rpeVals.length) bits.push(`RPE 平均 ${round1(rpeVals.reduce((a, b) => a + b, 0) / rpeVals.length)}`);
+  if (painVals.length) bits.push(`疼痛最高 ${Math.max.apply(null, painVals)} 分`);
+
+  let html = `<section class="mr-page">`;
+  html += `<div class="mr-page-head"><div class="mr-page-title">本期趨勢總覽</div><div class="mr-page-meta">${escapeHtml(name)}｜${escapeHtml(rangeLabel)}</div></div>`;
+  html += charts;
+  html += `<div class="mr-panel blue jr-trend-sum"><div class="mr-panel-h">趨勢摘要</div><div class="jr-longtext">${bits.map(escapeHtml).join('　|　')}</div></div>`;
+  html += `<div class="mr-page-foot">本期趨勢總覽｜${escapeHtml(fileNo)}</div>`;
+  html += `</section>`;
+  return html;
+}
+
 function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
   const ordered = dedupeLatestByDate(recs || []).slice().reverse(); // 舊→新
   const total = ordered.length;
@@ -6220,6 +6313,9 @@ function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
   html += `<div class="mr-privacy">日誌內容依訓練日期彙整，預設以最新資料為準。若同一天有多筆紀錄，會保留最新一筆。</div>`;
   html += `<div class="mr-page-foot">育林國中技擊隊個人訓練日誌｜${escapeHtml(fileNo)}</div>`;
   html += `</section>`;
+
+  // 封面後插入：本期趨勢總覽頁（準備度 / RPE+疼痛 / 體重）
+  html += jrBuildTrendPage(name, ordered, fileNo, rangeLabel);
 
   ordered.forEach((rec, idx) => {
     const prev = idx > 0 ? ordered[idx - 1] : null;
@@ -6536,8 +6632,8 @@ function printPersonalJournal() {
   win.document.open();
   win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8" />
     <title>${journalSafePart(_currentJournalReport.fileBase)}</title>
-    <link rel="stylesheet" href="style.css?v=20260623e" />
-    <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
+    <link rel="stylesheet" href="style.css?v=20260624a" />
+    <link rel="stylesheet" href="monthly-report.css?v=20260624a" />
     <style>body{margin:0;background:#fff;} .mr-report{box-shadow:none;} .mr-page{margin:0 auto 0;} </style>
   </head><body class="mr-print-window">${node.outerHTML}
   <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
