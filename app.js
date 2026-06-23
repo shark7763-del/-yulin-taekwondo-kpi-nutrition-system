@@ -4573,19 +4573,30 @@ function renderCoachQuickScores(todays, coachScores) {
     const r = byName[name] || {};
     const s = Object.assign({}, scoreMap[name] || {}, r);
     const readiness = r.name ? buildReadinessAnalysis(s, []) : null;
-    return `<div class="coach-score-card" data-name="${escapeHtml(name)}">
+    const scored = !!(s.coachAttitudeScore && s.coachTechniqueScore && s.coachExecutionScore && s.coachRiskScore);
+    return `<div class="coach-score-card collapsed${scored ? ' is-scored' : ''}" data-name="${escapeHtml(name)}">
       <div class="coach-score-head">
-        <div><b>${escapeHtml(name)}</b><span>${r.name ? `${readiness.finalReadinessScore}｜${readiness.statusLight}` : '今日尚未回報，可先建立教練簡評'}</span></div>
+        <div class="coach-score-head-main"><b>${escapeHtml(name)}${scored ? ' <span class="coach-score-done">✓ 已評</span>' : ''}</b><span>${r.name ? `${readiness.finalReadinessScore}｜${readiness.statusLight}` : '今日尚未回報，可先建立教練簡評'}</span></div>
+        <span class="coach-score-caret" aria-hidden="true">▾</span>
+      </div>
+      <div class="coach-score-body">
+        <label>訓練態度 ${coachScoreButtons('coachAttitudeScore', s.coachAttitudeScore)}</label>
+        <label>技術表現 ${coachScoreButtons('coachTechniqueScore', s.coachTechniqueScore)}</label>
+        <label>執行力 ${coachScoreButtons('coachExecutionScore', s.coachExecutionScore)}</label>
+        <label>風險判斷 ${coachScoreButtons('coachRiskScore', s.coachRiskScore)}</label>
+        <textarea class="text-input coach-public-note" rows="2" placeholder="教練公開提醒，可給家長看">${escapeHtml(s.coachPublicNote || '')}</textarea>
+        <textarea class="text-input coach-private-note" rows="2" placeholder="教練私密備註，只給教練後台看">${escapeHtml(s.coachPrivateNote || '')}</textarea>
         <button type="button" class="btn btn-primary btn-save-coach-score">儲存簡評</button>
       </div>
-      <label>訓練態度 ${coachScoreButtons('coachAttitudeScore', s.coachAttitudeScore)}</label>
-      <label>技術表現 ${coachScoreButtons('coachTechniqueScore', s.coachTechniqueScore)}</label>
-      <label>執行力 ${coachScoreButtons('coachExecutionScore', s.coachExecutionScore)}</label>
-      <label>風險判斷 ${coachScoreButtons('coachRiskScore', s.coachRiskScore)}</label>
-      <textarea class="text-input coach-public-note" rows="2" placeholder="教練公開提醒，可給家長看">${escapeHtml(s.coachPublicNote || '')}</textarea>
-      <textarea class="text-input coach-private-note" rows="2" placeholder="教練私密備註，只給教練後台看">${escapeHtml(s.coachPrivateNote || '')}</textarea>
     </div>`;
   }).join('');
+  // 點卡片標題收合／展開（點「儲存簡評」按鈕不觸發）
+  box.querySelectorAll('.coach-score-head').forEach(head => {
+    head.addEventListener('click', e => {
+      if (e.target.closest('.btn-save-coach-score')) return;
+      head.closest('.coach-score-card').classList.toggle('collapsed');
+    });
+  });
   box.querySelectorAll('.coach-score-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const row = btn.closest('.coach-score-row');

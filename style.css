@@ -410,9 +410,18 @@ textarea.text-input { resize: vertical; }
 .readiness-person b { color: var(--text-main); }
 .readiness-person span { color: var(--gold); font-weight: 800; font-size: .86rem; }
 .coach-score-card { margin-top: 12px; }
-.coach-score-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 12px; }
+.coach-score-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 12px; cursor: pointer; user-select: none; }
+.coach-score-head-main { flex: 1 1 auto; min-width: 0; }
 .coach-score-head b, .coach-score-head span { display: block; }
 .coach-score-head span { color: var(--text-soft); font-size: .85rem; margin-top: 2px; }
+.coach-score-done { display: inline !important; color: var(--green); font-size: .74rem; font-weight: 800; margin-left: 6px; }
+.coach-score-caret { flex: 0 0 auto; color: var(--text-soft); font-size: .95rem; transition: transform .2s; }
+.coach-score-card.collapsed { margin-top: 8px; }
+.coach-score-card.collapsed .coach-score-head { margin-bottom: 0; }
+.coach-score-card.collapsed .coach-score-caret { transform: rotate(-90deg); }
+.coach-score-card.collapsed .coach-score-body { display: none; }
+.coach-score-card.is-scored { border-color: rgba(46,204,113,.45); }
+.btn-save-coach-score { width: 100%; margin-top: 12px; }
 .coach-score-card label { display: block; margin: 10px 0; color: var(--text-main); font-weight: 800; }
 .coach-score-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 6px; }
 .coach-score-btn {
@@ -608,7 +617,7 @@ textarea.text-input { resize: vertical; }
   .account-admin-toolbar > * { flex: 1 1 100%; }
   .account-actions { min-width: 190px; }
   .coach-guide-grid, .readiness-groups { grid-template-columns: 1fr; }
-  .coach-score-head { align-items: stretch; flex-direction: column; }
+  .coach-score-head { flex-direction: row; align-items: center; }
   .coach-score-row { grid-template-columns: repeat(5, minmax(48px, 1fr)); }
   .coach-score-btn { min-height: 64px; padding: 5px 2px; }
   .coach-score-btn small { font-size: .56rem; }
