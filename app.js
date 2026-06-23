@@ -5917,6 +5917,8 @@ async function loadProfile() {
   const recs = dedupeLatestByDate(history || []); // 新→舊
   renderProfile(name, recs);
   if (card) card.style.display = 'block';
+  const journalCard = $id('journalQueryCard');
+  if (journalCard) setTimeout(() => journalCard.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
 }
 
 function renderProfile(name, recs) {
