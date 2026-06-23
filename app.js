@@ -2263,7 +2263,7 @@ function scorePercent(r) {
   const avg = parseFloat(r.averageScore);
   if (!isNaN(avg) && avg > 0) return round1(Math.min(100, avg * 20));
   const t = parseFloat(r.totalScore);
-  if (isNaN(t) || t <= 0) return 0;
+  if (isNaN(t) || t <= 0) return null; // 沒填 KPI 的當天回 null（趨勢圖會跳過，不畫成 0）
   const base = t > 50 ? 150 : 50; // >50 一定是新版 /150；否則視為舊版 /50
   return round1(Math.min(100, (t / base) * 100));
 }
@@ -2320,25 +2320,36 @@ function renderTrendSection(box, records, days, opts) {
   const aiBox = box.querySelector('.trend-ai-box');
 
   function draw() {
+    box.querySelectorAll('.trend-btn').forEach(b => b.classList.toggle('active', b.dataset.key === cur.key));
+    box.querySelectorAll('.trend-range-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.range, 10) === range));
+
     const recs = allRecs.slice(0, range).reverse(); // 取目前範圍，改為舊→新
-    const valOf = r => cur.derive ? cur.derive(r) : (parseFloat(r[cur.key]) || 0);
-    const vals = recs.map(valOf);
+    const valOf = r => {
+      if (cur.derive) return cur.derive(r);
+      const v = parseFloat(r[cur.key]);
+      return isNaN(v) ? null : v;
+    };
+    // 沒填該指標的當天（值為 null）直接跳過，不畫成 0 造成假性暴跌
+    const pts = recs.map(r => ({ r, v: valOf(r) })).filter(p => p.v !== null && p.v !== undefined);
+    if (pts.length < 2) {
+      chartBox.innerHTML = '<div class="hint-box">這個指標目前有效資料不足 2 天，無法畫出趨勢。</div>';
+      summaryBox.innerHTML = '';
+      return;
+    }
+    const vals = pts.map(p => p.v);
     let min = cur.min, max = cur.max;
     if (min === null || max === null) { // 體重：動態範圍
       const mx = Math.max.apply(null, vals), mn = Math.min.apply(null, vals);
       min = Math.floor(mn - 1); max = Math.ceil(mx + 1);
       if (max - min < 2) max = min + 2;
     }
-    const series = recs.map(r => ({ label: dateSlash(r.date).slice(5), value: valOf(r) }));
+    const series = pts.map(p => ({ label: dateSlash(p.r.date).slice(5), value: p.v }));
     chartBox.innerHTML = trendChartSVG(series, { min, max });
 
     const first = vals[0], last = vals[vals.length - 1];
     const diff = round1(last - first);
     const dir = diff > 0 ? `📈 上升 ${diff}` : (diff < 0 ? `📉 下降 ${Math.abs(diff)}` : '➡️ 持平');
-    summaryBox.innerHTML = `<b>${cur.label}</b>：${recs.length} 天從 <b>${round1(first)}</b> → <b>${round1(last)}</b>　<span class="${diff >= 0 ? 'up' : 'down'}">${dir}</span>`;
-
-    box.querySelectorAll('.trend-btn').forEach(b => b.classList.toggle('active', b.dataset.key === cur.key));
-    box.querySelectorAll('.trend-range-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.range, 10) === range));
+    summaryBox.innerHTML = `<b>${cur.label}</b>：${pts.length} 天從 <b>${round1(first)}</b> → <b>${round1(last)}</b>　<span class="${diff >= 0 ? 'up' : 'down'}">${dir}</span>`;
   }
 
   box.querySelectorAll('.trend-btn').forEach(b => b.addEventListener('click', () => {
@@ -2367,8 +2378,16 @@ function renderTrendSection(box, records, days, opts) {
    ============================================================ */
 function analyzeTrendSeries(recs, cur, metrics) {
   if (!recs || recs.length < 2) return `<div class="hint-box">至少要 2 天紀錄才能分析起伏。</div>`;
-  const valOf = (m, r) => m.derive ? m.derive(r) : (parseFloat(r[m.key]) || 0);
-  const pts = recs.map(r => ({ d: dateSlash(r.date).slice(5), v: round1(valOf(cur, r)) }));
+  const valOf = (m, r) => {
+    if (m.derive) return m.derive(r);
+    const v = parseFloat(r[m.key]);
+    return isNaN(v) ? null : v;
+  };
+  // 沒填該指標的當天排除，避免被當 0 分誤判成暴跌
+  const pts = recs.map(r => ({ d: dateSlash(r.date).slice(5), v: valOf(cur, r) }))
+    .filter(p => p.v !== null && p.v !== undefined)
+    .map(p => ({ d: p.d, v: round1(p.v) }));
+  if (pts.length < 2) return `<div class="hint-box">這個指標目前有效資料不足 2 天，無法分析起伏。</div>`;
   const vals = pts.map(p => p.v);
   const n = vals.length;
   const first = vals[0], last = vals[n - 1];
@@ -2413,7 +2432,7 @@ function analyzeTrendSeries(recs, cur, metrics) {
   const ups = [], downs = [];
   aspectKeys.forEach(k => {
     const m = metrics.find(x => x.key === k); if (!m) return;
-    const a = parseFloat(recs[0][k]), b = parseFloat(recs[n - 1][k]);
+    const a = parseFloat(recs[0][k]), b = parseFloat(recs[recs.length - 1][k]);
     if (isNaN(a) || isNaN(b)) return;
     const d = round1(b - a);
     if (d >= 0.3) ups.push(`${m.label} +${d}`);
