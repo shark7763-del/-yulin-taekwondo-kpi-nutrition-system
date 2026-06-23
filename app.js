@@ -6427,21 +6427,34 @@ async function loadPersonalJournalBatch() {
   const fromMonth = $id('journalMonthFrom').value.trim();
   const toMonth = $id('journalMonthTo').value.trim();
   if (fromMonth && toMonth && fromMonth > toMonth) { toast('開始月份不能晚於結束月份'); return; }
+  const btn = $id('btnLoadJournalBatch');
+  if (btn) { btn.dataset.txt = btn.dataset.txt || btn.textContent; btn.disabled = true; btn.textContent = '讀取中...'; }
   toast('讀取全隊個人訓練日誌中...');
-  const roster = getPlayers();
-  const grouped = {};
-  for (const name of roster) {
-    const rows = await fetchRecentRecords(name, 9999);
-    const filtered = (rows || []).filter(r => journalInRange(r.date, fromMonth, toMonth));
-    if (filtered.length) grouped[name] = dedupeLatestByDate(filtered || []);
+  try {
+    // 一次撈全部紀錄再本機分組，避免每位選手各打一次後端造成卡住
+    const all = await fetchAllRecords();
+    const grouped = {};
+    (all || []).forEach(r => {
+      const nm = String(r && r.name || '').trim();
+      if (!nm || !journalInRange(r.date, fromMonth, toMonth)) return;
+      (grouped[nm] = grouped[nm] || []).push(r);
+    });
+    const roster = getPlayers();
+    const names = roster.filter(n => grouped[n] && grouped[n].length);
+    Object.keys(grouped).forEach(n => { if (names.indexOf(n) === -1) names.push(n); });
+    if (!names.length) { clearPersonalJournalPreview(true); toast('這個區間沒有可匯出的全隊資料'); return; }
+    names.forEach(n => { grouped[n] = dedupeLatestByDate(grouped[n]); });
+    _currentJournalReport = buildBatchJournalReport(names, grouped, fromMonth, toMonth);
+    const fileNoEl = $id('journalFileNo');
+    if (fileNoEl) fileNoEl.value = _currentJournalReport.fileNo || journalFileNo('batch', fromMonth, toMonth);
+    renderPersonalJournalPreview(_currentJournalReport);
+    toast(`✅ 全隊批次日誌已產生（${names.length} 人）`);
+  } catch (e) {
+    console.error(e);
+    toast('全隊批次匯出失敗，請重試或縮小月份範圍');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.txt || '🗂️ 全隊批次匯出'; }
   }
-  const names = Object.keys(grouped);
-  if (!names.length) { clearPersonalJournalPreview(true); toast('這個區間沒有可匯出的全隊資料'); return; }
-  _currentJournalReport = buildBatchJournalReport(names, grouped, fromMonth, toMonth);
-  const fileNoEl = $id('journalFileNo');
-  if (fileNoEl) fileNoEl.value = _currentJournalReport.fileNo || journalFileNo('batch', fromMonth, toMonth);
-  renderPersonalJournalPreview(_currentJournalReport);
-  toast('✅ 全隊批次日誌已產生');
 }
 
 function journalPdfOptions(fileBase, scale) {
@@ -6478,8 +6491,12 @@ async function renderReportPdfByPage(node, fileBase) {
   for (let i = 0; i < pages.length; i++) {
     const canvas = await h2c(pages[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 794 });
     const img = canvas.toDataURL('image/jpeg', 0.95);
+    // 保持比例置中，內容高於 A4 才縮到剛好一頁，絕不溢出造成多餘空白頁
+    let imgW = pw, imgH = pw * canvas.height / canvas.width;
+    if (imgH > ph) { imgH = ph; imgW = ph * canvas.width / canvas.height; }
+    const x = (pw - imgW) / 2;
     if (i > 0) pdf.addPage();
-    pdf.addImage(img, 'JPEG', 0, 0, pw, ph);
+    pdf.addImage(img, 'JPEG', x, 0, imgW, imgH);
   }
   pdf.save(fileBase + '.pdf');
   return true;
