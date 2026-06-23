@@ -82,8 +82,6 @@
 | nutritionLineText | 純飲食建議 LINE 文字 |
 | rawScoresJson | 全部細項分數（JSON，供重新計算最低項） |
 | rawNutritionJson | 飲食分析原始結果（JSON） |
-| goalCoachText | TeamPro AI Goal Coach 五段式文字：成長狀態、本週觀察、本週目標、教練提醒、激勵語 |
-| goalCoachJson | TeamPro AI Goal Coach 結構化結果與 7/30 天趨勢摘要（JSON） |
 | recordId | 每筆唯一 ID（供教練複評、選手回應定位更新） |
 | coachPhysicalAvg ~ coachTacticalAvg | 教練複評：六大面向分數 |
 | coachTotalScore / coachAverageScore / coachStatus | 教練複評：總分／平均／燈號 |

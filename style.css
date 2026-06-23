@@ -368,41 +368,6 @@ textarea.text-input { resize: vertical; }
 }
 .cfb-quote-by { display: block; margin-top: 6px; font-size: 0.8rem; color: var(--text-soft); font-weight: 600; }
 
-/* ===================== TeamPro AI Goal Coach ===================== */
-.goal-coach-card {
-  border: 1px solid var(--blue);
-  box-shadow: 0 8px 26px rgba(46, 125, 209, 0.16), var(--shadow);
-}
-.goal-coach-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.goal-coach-badge {
-  font-size: 0.82rem; font-weight: 800; padding: 4px 12px; border-radius: 20px;
-  border: 1px solid var(--blue); color: #7db8ec; background: rgba(46,125,209,0.14);
-}
-.goal-coach-intro { color: var(--text-soft); font-size: 0.9rem; margin: 8px 0 12px; }
-.goal-coach-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.goal-coach-item {
-  background: #0f141c; border: 1px solid var(--border); border-radius: 12px;
-  padding: 12px 14px; min-width: 0;
-}
-.goal-coach-item.wide, .goal-coach-item.goal { grid-column: 1 / -1; }
-.goal-coach-item.goal { border-color: var(--gold); background: rgba(245,197,24,0.08); }
-.goal-coach-item span {
-  display: block; color: var(--text-soft); font-size: 0.82rem; font-weight: 700; margin-bottom: 5px;
-}
-.goal-coach-item b { color: var(--gold); font-size: 1rem; line-height: 1.55; }
-.goal-coach-item p { color: var(--text-main); line-height: 1.7; margin: 0; }
-.goal-coach-meta {
-  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;
-  color: var(--text-soft); font-size: 0.82rem;
-}
-.goal-coach-meta span {
-  background: rgba(255,255,255,0.04); border: 1px solid var(--border);
-  border-radius: 999px; padding: 5px 9px;
-}
-@media (max-width: 560px) {
-  .goal-coach-grid { grid-template-columns: 1fr; }
-}
-
 /* ===================== 選手成長卡 ===================== */
 .player-card { border: 1px solid var(--blue); box-shadow: 0 8px 26px rgba(46, 125, 209, 0.16), var(--shadow); }
 .pc-hero { display: flex; align-items: center; gap: 12px; }
@@ -540,8 +505,8 @@ textarea.text-input { resize: vertical; }
 .login-overlay {
   position: fixed; inset: 0; z-index: 1000;
   background: linear-gradient(160deg, #0b0e13 0%, #141b28 60%, #1e2740 100%);
-  display: block; overflow-y: auto; overflow-x: hidden;
-  padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
 }
 .login-overlay.hidden { display: none; }
 .login-card {
@@ -588,114 +553,6 @@ textarea.text-input { resize: vertical; }
   #accountAdminCard table { min-width: 760px; }
   .account-admin-toolbar > * { flex: 1 1 100%; }
   .account-actions { min-width: 190px; }
-}
-
-/* ===================== YouthFit AI 公開提案展示頁 ===================== */
-.yf-landing {
-  --yf-cyan: #42e8d1;
-  --yf-blue: #56a8ff;
-  width: 100%; color: #f3f7fb;
-  background:
-    radial-gradient(circle at 8% 2%, rgba(66,232,209,.15), transparent 28rem),
-    radial-gradient(circle at 92% 18%, rgba(86,168,255,.12), transparent 30rem),
-    #0b1018;
-}
-.yf-hero, .yf-section, .yf-login-section, .yf-footer { width: min(1120px, calc(100% - 40px)); margin-inline: auto; }
-.yf-hero { min-height: 92vh; display: flex; flex-direction: column; justify-content: center; padding: 84px 0 54px; }
-.yf-kicker, .yf-eyebrow { color: var(--yf-cyan); font-size: .78rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
-.yf-hero h1 { max-width: 920px; margin: 16px 0; font-size: clamp(2.2rem, 6vw, 5.2rem); line-height: 1.08; letter-spacing: -.04em; }
-.yf-lead { max-width: 820px; font-size: clamp(1.1rem, 2.3vw, 1.55rem); color: #cbd6e4; }
-.yf-mission { max-width: 860px; margin-top: 22px; padding-left: 18px; border-left: 3px solid var(--yf-cyan); color: #9dabbc; font-size: 1rem; }
-.yf-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
-.yf-btn { display: inline-flex; justify-content: center; align-items: center; min-height: 48px; padding: 12px 20px; border: 1px solid transparent; border-radius: 10px; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; transition: transform .2s, border-color .2s, background .2s; }
-.yf-btn:hover { transform: translateY(-2px); }
-.yf-btn-primary { background: var(--yf-cyan); color: #071310; }
-.yf-btn-secondary { background: var(--yf-blue); color: #07101b; }
-.yf-btn-ghost { border-color: #344254; background: rgba(255,255,255,.03); color: #e8eef6; }
-.yf-impact-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; margin-top: 56px; overflow: hidden; border: 1px solid #263343; border-radius: 12px; background: #263343; }
-.yf-impact-strip span { padding: 15px 8px; background: #111925; color: #b9c5d3; text-align: center; font-size: .88rem; font-weight: 700; }
-.yf-section { padding: 76px 0; border-top: 1px solid #1d2a39; scroll-margin-top: 20px; }
-.yf-section-head { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 28px; }
-.yf-section-head > span { display: grid; place-items: center; flex: 0 0 42px; height: 42px; border: 1px solid rgba(66,232,209,.45); border-radius: 50%; color: var(--yf-cyan); font-size: .78rem; font-weight: 900; }
-.yf-section-head h2 { font-size: clamp(1.6rem, 3vw, 2.4rem); line-height: 1.15; }
-.yf-section-head p { margin-top: 7px; color: #8f9dad; }
-.yf-two-col { display: grid; grid-template-columns: 1.1fr .9fr; gap: 18px; align-items: stretch; }
-.yf-panel { padding: 24px; border: 1px solid #273546; border-radius: 16px; background: linear-gradient(145deg, rgba(24,34,48,.95), rgba(15,23,34,.95)); box-shadow: 0 18px 45px rgba(0,0,0,.18); }
-.yf-form-grid, .yf-checkin-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.yf-panel label { display: flex; flex-direction: column; gap: 7px; color: #aebaca; font-size: .84rem; font-weight: 700; }
-.yf-panel input, .yf-panel select { width: 100%; min-width: 0; padding: 12px; border: 1px solid #344356; border-radius: 9px; background: #0b121c; color: #f2f6fb; font: inherit; }
-.yf-panel input:focus, .yf-panel select:focus { outline: 2px solid rgba(66,232,209,.28); border-color: var(--yf-cyan); }
-.yf-submit { width: 100%; margin-top: 20px; }
-.yf-result { min-height: 100%; }
-.yf-placeholder { height: 100%; min-height: 180px; display: grid; place-content: center; gap: 5px; color: #758497; text-align: center; }
-.yf-placeholder b { color: #c6d0dd; font-size: 1.1rem; }
-.yf-result h3 { color: var(--yf-cyan); font-size: 1.35rem; }
-.yf-result-list { display: grid; gap: 12px; margin-top: 16px; }
-.yf-result-list div { padding: 12px 14px; border-left: 2px solid var(--yf-blue); background: rgba(86,168,255,.06); border-radius: 0 8px 8px 0; }
-.yf-result-list small { display: block; color: #7f8fa2; font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
-.yf-result-list p { margin-top: 3px; color: #dae2ec; }
-.yf-checkin-grid { grid-template-columns: repeat(3, 1fr); margin-bottom: 20px; }
-.yf-advice-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
-.yf-advice-card { padding: 15px; border: 1px solid #2b394a; border-radius: 11px; background: #101925; }
-.yf-advice-card b { display: block; color: var(--yf-blue); font-size: .83rem; margin-bottom: 5px; }
-.yf-advice-card p { color: #c5d0dc; font-size: .9rem; }
-.yf-upload { min-height: 130px; justify-content: center; align-items: center; padding: 18px; border: 1px dashed #486079; border-radius: 12px; background: rgba(86,168,255,.04); text-align: center; cursor: pointer; }
-.yf-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.yf-upload span { color: var(--yf-blue); }
-.yf-block-label { margin-top: 16px; }
-.yf-demo-note, .yf-data-note { margin-top: 14px; color: #7f8fa2; font-size: .78rem; }
-.yf-motion-scores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
-.yf-motion-scores div { padding: 13px 8px; border: 1px solid #2a3a4d; border-radius: 10px; text-align: center; }
-.yf-motion-scores b { display: block; color: var(--yf-cyan); font-size: 1.35rem; }
-.yf-motion-scores small { color: #8998aa; }
-.yf-metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.yf-metric { position: relative; overflow: hidden; min-height: 145px; padding: 18px; border: 1px solid #293749; border-radius: 14px; background: #111a26; }
-.yf-metric::after { content: ''; position: absolute; left: 0; bottom: 0; width: var(--score); height: 4px; background: var(--metric-color, var(--yf-cyan)); }
-.yf-metric span { color: #94a2b4; font-size: .82rem; }
-.yf-metric strong { display: block; margin: 12px 0 2px; color: var(--metric-color, var(--yf-cyan)); font-size: 2rem; line-height: 1; }
-.yf-metric small { color: #738296; }
-.yf-risk-list { display: grid; gap: 10px; }
-.yf-risk { display: grid; grid-template-columns: 16px 150px 1fr; gap: 14px; align-items: center; padding: 14px 16px; border: 1px solid #293749; border-radius: 11px; background: #111a26; }
-.yf-risk-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--risk-color); box-shadow: 0 0 15px var(--risk-color); }
-.yf-risk b { font-size: .9rem; }
-.yf-risk p { color: #9eacbc; font-size: .87rem; }
-.yf-good-section { padding-inline: 30px; border: 1px solid rgba(66,232,209,.25); border-radius: 20px; background: linear-gradient(130deg, rgba(66,232,209,.08), rgba(86,168,255,.04)); }
-.yf-good-section > p { max-width: 900px; color: #c3cedb; font-size: 1.05rem; }
-.yf-good-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
-.yf-good-grid div { padding: 16px; border-top: 2px solid var(--yf-cyan); background: rgba(7,16,24,.55); }
-.yf-good-grid b, .yf-good-grid span { display: block; }
-.yf-good-grid span { margin-top: 3px; color: #8796a9; font-size: .84rem; }
-.yf-pitch-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.yf-pitch article { padding: 23px; border: 1px solid #2b394b; border-radius: 14px; background: #111a26; }
-.yf-pitch small { color: var(--yf-cyan); font-weight: 900; letter-spacing: .1em; }
-.yf-pitch h3 { margin: 9px 0; font-size: 1.15rem; }
-.yf-pitch p { color: #94a3b5; font-size: .9rem; }
-.yf-login-section { display: flex; flex-direction: column; align-items: center; padding: 82px 0; border-top: 1px solid #1d2a39; scroll-margin-top: 20px; }
-.yf-login-section .login-card { margin-top: 12px; }
-.yf-footer { padding: 30px 0 48px; color: #667589; text-align: center; font-size: .84rem; }
-
-@media (max-width: 760px) {
-  .yf-hero, .yf-section, .yf-login-section, .yf-footer { width: min(100% - 28px, 1120px); }
-  .yf-hero { min-height: auto; padding-top: 64px; }
-  .yf-impact-strip { grid-template-columns: repeat(3, 1fr); }
-  .yf-two-col, .yf-pitch-grid { grid-template-columns: 1fr; }
-  .yf-checkin-grid { grid-template-columns: repeat(2, 1fr); }
-  .yf-advice-grid, .yf-good-grid { grid-template-columns: 1fr; }
-  .yf-metric-grid { grid-template-columns: repeat(2, 1fr); }
-  .yf-good-section { width: calc(100% - 28px); padding: 48px 18px; }
-  .yf-risk { grid-template-columns: 16px 1fr; gap: 8px 12px; }
-  .yf-risk p { grid-column: 2; }
-}
-@media (max-width: 430px) {
-  .yf-hero h1 { font-size: 2.15rem; }
-  .yf-section { padding: 54px 0; }
-  .yf-form-grid, .yf-checkin-grid { grid-template-columns: 1fr; }
-  .yf-panel { padding: 18px; }
-  .yf-actions .yf-btn { width: 100%; }
-  .yf-motion-scores { grid-template-columns: 1fr; }
-  .yf-metric { min-height: 125px; padding: 14px; }
-  .yf-metric strong { font-size: 1.6rem; }
-  .login-card { padding: 24px 16px; }
 }
 .login-back { background: transparent; border: 1px solid var(--border); color: var(--text-soft); border-radius: 12px; padding: 14px; flex: 1; cursor: pointer; font-weight: 700; }
 
