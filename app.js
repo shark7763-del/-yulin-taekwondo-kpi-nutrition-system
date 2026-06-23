@@ -6610,7 +6610,9 @@ async function renderReportPdfByPage(node, fileBase) {
   const pw = pdf.internal.pageSize.getWidth();
   const ph = pdf.internal.pageSize.getHeight();
   for (let i = 0; i < pages.length; i++) {
-    const canvas = await h2c(pages[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 794 });
+    // windowWidth 需 > 820（響應式斷點），否則擷取時觸發手機版 min-height:auto，
+    // 每頁縮成內容高度貼在 A4 上半部、下半留白（看起來像多空白頁）。
+    const canvas = await h2c(pages[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 960 });
     const img = canvas.toDataURL('image/jpeg', 0.95);
     // 保持比例置中，內容高於 A4 才縮到剛好一頁，絕不溢出造成多餘空白頁
     let imgW = pw, imgH = pw * canvas.height / canvas.width;
@@ -6658,7 +6660,7 @@ function printPersonalJournal() {
   win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8" />
     <title>${journalSafePart(_currentJournalReport.fileBase)}</title>
     <link rel="stylesheet" href="style.css?v=20260624a" />
-    <link rel="stylesheet" href="monthly-report.css?v=20260624b" />
+    <link rel="stylesheet" href="monthly-report.css?v=20260624c" />
     <style>body{margin:0;background:#fff;} .mr-report{box-shadow:none;} .mr-page{margin:0 auto 0;} </style>
   </head><body class="mr-print-window">${node.outerHTML}
   <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>

@@ -241,3 +241,10 @@
 .jr-trend-sum .jr-longtext { font-size: 0.86rem; color: var(--mr-ink); line-height: 1.9; }
 .jr-sub-charts { margin-top: 8px; }
 .jr-sub-charts .jr-chart { margin-bottom: 0; }
+
+/* ---- 個人日誌：每頁內容垂直撐滿 A4，消除下半頁大片留白（看起來像多一頁空白）。
+   僅作用於 .jr-report，不影響長官月報；窄螢幕(min-height:auto)時自然不撐高。 ---- */
+.jr-report .mr-page { display: flex; flex-direction: column; }
+.jr-report .mr-page-foot { position: static; left: auto; right: auto; margin-top: 14px; }
+.jr-report .mr-page > .mr-two-col { flex: 1 0 auto; }
+.jr-report .mr-page > .jr-chart { flex: 0 0 auto; }
