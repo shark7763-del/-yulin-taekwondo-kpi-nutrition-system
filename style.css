@@ -159,6 +159,28 @@ textarea.text-input { resize: vertical; }
   border: 3px solid #0e1116;
   cursor: pointer;
 }
+/* 未評分：把手轉灰、整條色帶淡化，提示「還沒拉過」 */
+.kpi-slider.is-untouched { background: #2b3340; }
+.kpi-slider.is-untouched::-webkit-slider-thumb { background: #6b7686; }
+.kpi-slider.is-untouched::-moz-range-thumb { background: #6b7686; }
+
+/* 分數文字依等級上色；未評分顯示灰提示 */
+.kpi-item-score.kpi-untouched { color: var(--text-soft); font-weight: 600; }
+.kpi-item-score.lv-red { color: var(--red); }
+.kpi-item-score.lv-yellow { color: var(--yellow); }
+.kpi-item-score.lv-green { color: var(--green); }
+
+/* 行為錨點：拖到幾分就只顯示那一句，放大、加粗、依等級上色 */
+.kpi-anchor {
+  margin-top: 6px; font-size: 0.92rem; font-weight: 700; line-height: 1.35;
+}
+.kpi-anchor.lv-red { color: var(--red); }
+.kpi-anchor.lv-yellow { color: var(--yellow); }
+.kpi-anchor.lv-green { color: var(--green); }
+.kpi-anchor-hint { color: var(--text-soft); font-weight: 500; font-size: 0.82rem; }
+
+/* 面向徽章未評分顯示「—」時維持中性灰 */
+.kpi-section-avg.lv-none { background: rgba(255,255,255,0.06); color: var(--text-soft); }
 
 /* ---- KPI 六大面向分區 ---- */
 .kpi-overall-head {

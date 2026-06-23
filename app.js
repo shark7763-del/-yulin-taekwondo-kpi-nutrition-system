@@ -122,6 +122,51 @@ function moodText(v) { const m = moodMeta(v); return m ? `${m.emoji} ${m.label}`
 const SCORE_LABELS = { 1: '很差', 2: '偏弱', 3: '普通', 4: '良好', 5: '非常好' };
 
 /*
+   每個 KPI 細項的「行為錨點」：1~5 分各一句具體描述，讓選手看得懂今天該打幾分，
+   打破「沒把握就一律給 3 分」的中間化傾向。陣列 index 0→1分 … 4→5分。
+   描述以「今天這堂訓練的狀態」為視角，3 分=有缺口的真實中間、非缺省值。
+   key 必須與 KPI_ASPECTS 各面向 items 的名稱完全一致。
+*/
+const KPI_ANCHORS = {
+  // 技術
+  '動作準確度': ['常打偏，角度位置都跑掉', '打得到但常偏一兩成', '大致打中，偶爾偏掉', '多數命中正確點位', '幾乎每下都在準心'],
+  '動作穩定度': ['重心晃、收腿軟，常踉蹌', '勉強站住但晃動明顯', '大致穩，動作偶爾走樣', '收發腳穩、很少晃', '全程不晃，落地像釘住'],
+  '速度與反應': ['慢半拍，反應已太遲', '跟得上但偏慢，常被搶先', '速度普通，不快不慢', '出手俐落，能即時反應', '又快又脆，對方一動我就到'],
+  '力量傳遞': ['只有手腳動，軟綿綿', '有用到腰胯但不連貫', '普通，打得出但不夠透', '蹬地轉胯到位，打靶清脆', '全身串成一股力，又透又響'],
+  '技術完成度': ['做一半就斷，沒收尾', '勉強做完但漏一堆細節', '做得完，完成度普通', '起手到收尾完整', '一氣呵成，毫無缺漏'],
+  // 戰術
+  '距離控制': ['完全抓不到，踢空或貼太近', '偶爾抓到，常太遠太近', '大致抓得到，偶爾失準', '多數打在有效距離', '進退距離隨我掌控'],
+  '出手時機': ['老是亂出手，時機全錯', '偶爾抓對，常太早太晚', '時機普通，抓得到一半', '多半抓到對的時機', '破綻一露我就出手'],
+  '攻防轉換': ['攻完愣住，被打也不切防', '轉換慢，卡在攻或守', '能切換但慢一拍', '攻完能順勢防守', '攻守無縫，擋完馬上反打'],
+  '對手判讀': ['完全看不懂，被牽著走', '偶爾猜中，多半被騙', '大致看得出習慣', '讀出多數意圖，少被騙', '對手一動我就知下一步'],
+  '教練戰術執行': ['戰術完全沒做到', '記得一點但場上做不出', '大致照做，執行普通', '多數指令能落實', '怎麼交代我就怎麼打'],
+  // 體能
+  '爆發力': ['蹬不起來，起腿慢又沉', '有力但發不快', '普通，起腿一般', '起腿夠快夠猛，蹬地有彈性', '一蹬就到位，爆發力十足'],
+  '肌力': ['出力就軟，撐不住', '有力但稍重就吃力', '普通，一般動作扛得住', '力量足，踢擊抗衡有底氣', '力量飽滿，壓得住人'],
+  '肌耐力': ['沒幾下就痠到動不了', '撐一陣就明顯沒力', '撐得住，後段會累', '反覆訓練力量不太掉', '整堂都不軟，穩到最後'],
+  '心肺耐力': ['動兩下就喘到要停', '容易喘，恢復也慢', '普通，中段開始喘', '高強度撐得久', '整堂不虛，恢復又快'],
+  '敏捷與協調': ['手腳打結，常絆到', '勉強連得起但卡卡', '普通，複雜動作會亂', '步法靈活，手腳配合順', '又快又順，身體完全聽使喚'],
+  // 心理
+  '專注力': ['教練提醒3次以上才回神', '常恍神，自己很難拉回', '偶爾飄走但能自己抓回', '多數很專心，換項目才短暫分心', '整堂沒分心，叫我做立刻進入'],
+  '壓力穩定': ['一被糾正或落後就慌、想放棄', '容易急躁，要久才冷靜', '會緊張但深呼吸能繼續', '壓力大還能照常做動作', '越有壓力越冷靜'],
+  '自信心': ['很怕做錯，不太敢出手', '多數沒把握，要看別人', '熟的有把握，難的會猶豫', '大部分都敢做、相信自己', '什麼都敢試，相信能完成'],
+  '挫折恢復': ['失誤後卡住，影響整堂', '要好幾分鐘或教練講才振作', '沮喪一下，休息一輪能繼續', '失誤後很快調整', '一失誤馬上歸零，更想做好'],
+  '訓練動機': ['很不想來，只想結束', '提不起勁，做完規定就好', '願意做，但沒想加練', '想練好，願意多做一兩組', '主動加練、想挑戰更難的'],
+  // 生理
+  '睡眠恢復': ['幾乎沒睡好，一直想睡很沒力', '睡不夠或一直醒，起床還累', '普通，夠用但不飽', '睡得不錯，精神算好', '睡得很飽，清醒有電'],
+  '精神恢復': ['完全沒電，腦袋鈍提不起勁', '比較累，要硬撐', '普通，能正常訓練', '精神不錯，頭腦清楚', '精神超好，反應快很想動'],
+  '肌肉舒適度': ['全身痠緊，動起來卡又痛', '好幾處明顯痠，影響動作', '有點痠但熱身後就好', '大致放鬆，只有一點緊', '很鬆很順，完全沒痠痛'],
+  '傷勢安全度': ['有地方明顯痛，某些動作不敢做', '舊傷會痛，要避開某些動作', '有點不舒服，小心做沒問題', '幾乎沒感覺，只留意一下', '完全沒有受傷顧慮'],
+  '整體恢復感': ['還很累，根本沒恢復好', '恢復一半，勉強練很吃力', '恢復得差不多，正常沒問題', '恢復不錯，身體輕快有餘力', '完全恢復滿格，狀態很好'],
+  // 態度
+  '準時與紀律': ['我今天遲到了', '卡點才到，有點趕', '我準時到、換好裝', '我提早到、自己暖身', '我提早到還幫排器材'],
+  '訓練投入': ['我今天一直放空', '教練盯著才動', '該做的我有做完', '我自己加練幾下', '累了我還是頂著做'],
+  '主動修正': ['被講還是老樣子', '教練提醒才改', '講一次我就改', '自己發現錯就調', '改完還教旁邊的人'],
+  '接受指導': ['被教會擺臉色', '嘴上應、沒在聽', '我有聽、有照做', '我會追問怎麼更好', '聽完馬上用出來'],
+  '團隊合作': ['我今天只顧自己', '別人喊我才幫', '該配合我有配合', '我會主動補位', '我帶氣氛、罩學弟']
+};
+
+/*
    KPI 六大面向細項。
    technical（技術狀態）與 tactical（戰術執行力）會依「對練/品勢」分流，
    故各自提供 spar（對練）與 poomsae（品勢）兩組。
@@ -1143,11 +1188,12 @@ function renderKpiSliders(group) {
       item.innerHTML = `
         <div class="kpi-item-row">
           <span class="kpi-item-name">${escapeHtml(itemName)}</span>
-          <span class="kpi-item-score" id="score-${idx}">3 分 · 普通</span>
+          <span class="kpi-item-score kpi-untouched" id="score-${idx}">滑動評分</span>
         </div>
         <input type="range" min="1" max="5" step="1" value="3"
-               class="kpi-slider" id="slider-${idx}"
-               data-aspect="${aspectKey}" data-item="${itemName}" data-idx="${idx}" />
+               class="kpi-slider is-untouched" id="slider-${idx}"
+               data-aspect="${aspectKey}" data-item="${itemName}" data-idx="${idx}" data-touched="0" />
+        <div class="kpi-anchor kpi-anchor-hint" id="anchor-${idx}">← 拉一下，看看每一分代表什麼</div>
       `;
       body.appendChild(item);
       idx++;
@@ -1295,38 +1341,93 @@ async function renderAbsenceImpact() {
   box.innerHTML = html;
 }
 
-function onSliderChange(e) {
-  const slider = e.target;
+// 分數對應顏色等級（1-2 紅、3 黃、4-5 綠）
+function scoreLevelClass(val) {
+  return val >= 4 ? 'lv-green' : val >= 3 ? 'lv-yellow' : 'lv-red';
+}
+
+// 套用某拉桿「已評分」的顯示：分數文字、錨點描述、顏色
+function applySliderDisplay(slider) {
   const val = parseInt(slider.value, 10);
   const idx = slider.dataset.idx;
-  const el = $id(`score-${idx}`);
-  if (el) el.textContent = `${val} 分 · ${SCORE_LABELS[val]}`;
+  const item = slider.dataset.item;
+  const scoreEl = $id(`score-${idx}`);
+  if (scoreEl) {
+    scoreEl.textContent = `${val} 分 · ${SCORE_LABELS[val]}`;
+    scoreEl.classList.remove('kpi-untouched', 'lv-red', 'lv-yellow', 'lv-green');
+    scoreEl.classList.add(scoreLevelClass(val));
+  }
+  const anchorEl = $id(`anchor-${idx}`);
+  const anchors = KPI_ANCHORS[item];
+  if (anchorEl) {
+    anchorEl.classList.remove('kpi-anchor-hint', 'lv-red', 'lv-yellow', 'lv-green');
+    anchorEl.textContent = (anchors && anchors[val - 1]) ? anchors[val - 1] : '';
+    anchorEl.classList.add(scoreLevelClass(val));
+  }
+}
+
+// 把某拉桿重設回「未評分」狀態（不計入分數，必須動過才能送出）
+function resetSliderUntouched(slider) {
+  slider.value = 3;
+  slider.dataset.touched = '0';
+  slider.classList.add('is-untouched');
+  const idx = slider.dataset.idx;
+  const scoreEl = $id(`score-${idx}`);
+  if (scoreEl) {
+    scoreEl.textContent = '滑動評分';
+    scoreEl.classList.remove('lv-red', 'lv-yellow', 'lv-green');
+    scoreEl.classList.add('kpi-untouched');
+  }
+  const anchorEl = $id(`anchor-${idx}`);
+  if (anchorEl) {
+    anchorEl.textContent = '← 拉一下，看看每一分代表什麼';
+    anchorEl.classList.remove('lv-red', 'lv-yellow', 'lv-green');
+    anchorEl.classList.add('kpi-anchor-hint');
+  }
+}
+
+function onSliderChange(e) {
+  const slider = e.target;
+  slider.dataset.touched = '1';
+  slider.classList.remove('is-untouched');
+  applySliderDisplay(slider);
   recalcKpiSummary();
 }
 
-// 即時更新總分/平均/燈號摘要
+// 即時更新總分/平均/燈號摘要（只計入「已評分」的項目，未評分不灌水）
 function recalcKpiSummary() {
   const sliders = document.querySelectorAll('#kpiContainer .kpi-slider');
   if (!sliders.length) return;
-  let sum = 0;
+  const total = sliders.length;
+  let sum = 0, done = 0;
   const aSum = {}, aCnt = {};
   sliders.forEach(s => {
+    if (s.dataset.touched !== '1') return;   // 未評分不計入
     const v = parseInt(s.value, 10);
-    sum += v;
+    sum += v; done++;
     const a = s.dataset.aspect;
     aSum[a] = (aSum[a] || 0) + v; aCnt[a] = (aCnt[a] || 0) + 1;
   });
-  const avg = round2(sum / sliders.length);
   const el = $id('kpiSummary');
-  if (el) el.textContent = `總分 ${sum} / ${sliders.length * 5}・平均 ${avg}・${judgeStatus(avg)}`;
+  if (el) {
+    const remain = total - done;
+    if (done === 0) {
+      el.textContent = `尚未評分・共 ${total} 項`;
+    } else {
+      const avg = round2(sum / done);
+      const base = `已評 ${done}/${total}・平均 ${avg}・${judgeStatus(avg)}`;
+      el.textContent = remain > 0 ? `${base}・還有 ${remain} 項未評分` : `總分 ${sum} / ${total * 5}・平均 ${avg}・${judgeStatus(avg)}`;
+    }
+  }
 
-  // 各面向平均徽章（依分數上色）
-  Object.keys(aSum).forEach(a => {
+  // 各面向平均徽章（只算已評分；該面向全未評顯示「—」）
+  ASPECT_ORDER.forEach(a => {
     const badge = $id(`aspectAvg-${a}`);
     if (!badge) return;
+    badge.classList.remove('lv-red', 'lv-yellow', 'lv-green', 'lv-none');
+    if (!aCnt[a]) { badge.textContent = '—'; badge.classList.add('lv-none'); return; }
     const av = round1(aSum[a] / aCnt[a]);
     badge.textContent = av.toFixed(1);
-    badge.classList.remove('lv-red', 'lv-yellow', 'lv-green');
     badge.classList.add(av >= 4 ? 'lv-green' : av >= 3 ? 'lv-yellow' : 'lv-red');
   });
 }
@@ -2391,6 +2492,21 @@ function validateForm() {
   if (h < 100 || h > 220) { toast('身高似乎不合理，請確認（100–220 cm）'); $id('heightCm').focus(); return false; }
   const w = parseFloat($id('weightKg').value);
   if (w < 25 || w > 150) { toast('體重似乎不合理，請確認（25–150 kg）'); $id('weightKg').focus(); return false; }
+
+  // KPI 必填：每一項都要實際滑過（打破「全留 3 分」），只在每日 KPI 開放時檢查
+  if (isDailyKpiAvailable()) {
+    const untouched = Array.from(document.querySelectorAll('#kpiContainer .kpi-slider'))
+      .filter(s => s.dataset.touched !== '1');
+    if (untouched.length) {
+      const first = untouched[0];
+      const sec = first.closest('.kpi-section');
+      if (sec) sec.classList.remove('collapsed');     // 展開該面向方便評分
+      toast(`還有 ${untouched.length} 項 KPI 沒評分，每一項都拉一下再送出`);
+      first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      first.focus();
+      return false;
+    }
+  }
 
   return true;
 }
@@ -7050,9 +7166,9 @@ function clearForm() {
   // 清空自由品勢額外欄位
   FREESTYLE_EXTRA_IDS.forEach(id => { const el = $id(id); if (el) { if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = ''; } });
   updateBmiDisplay();
-  // 拉桿全部回 3
-  document.querySelectorAll('.kpi-slider').forEach(s => { s.value = 3; });
-  document.querySelectorAll('.kpi-slider').forEach(s => s.dispatchEvent(new Event('input')));
+  // 拉桿全部重設回「未評分」（必須重新逐項評分）
+  document.querySelectorAll('.kpi-slider').forEach(s => resetSliderUntouched(s));
+  recalcKpiSummary();
   // 隱藏回饋卡
   ['coachFeedbackCard', 'compareCard', 'nutritionCard', 'lineCard'].forEach(id => { const el = $id(id); if (el) el.style.display = 'none'; });
   clearDraft();
@@ -7085,7 +7201,7 @@ function saveDraft() {
   const d = { _savedAt: Date.now() };
   DRAFT_FIELDS.forEach(id => { const el = $id(id); if (el) d[id] = el.value; });
   d._kpi = {};
-  document.querySelectorAll('.kpi-slider').forEach(s => { d._kpi[s.id] = s.value; });
+  document.querySelectorAll('.kpi-slider').forEach(s => { if (s.dataset.touched === '1') d._kpi[s.id] = s.value; });
   d._mealTags = getAllMealTags();   // 飲食快速勾選狀態
   d._mood = getMoodIndex();         // 今日心情指數
   d._moodReason = getMoodReason();
