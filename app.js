@@ -637,7 +637,8 @@ const LS_KEYS = {
   localRecords: 'yulin_local_records',
   formDraft: 'yulin_form_draft',
   parents: 'yulin_parents',
-  attendanceReports: 'yulin_attendance_reports'
+  attendanceReports: 'yulin_attendance_reports',
+  coachScores: 'yulin_coach_scores'
 };
 
 function getPlayers() {
@@ -2635,6 +2636,7 @@ async function doSubmitInner(mode) {
   const affirm = buildAffirmations(rec, last, history);
 
   // AI 教練回饋（選手／家長／教練三版本）
+  const readiness = applyReadiness(rec, history);
   const feedback = buildCoachFeedback(rec, last, history, affirm);
   rec.feedbackStudentText = formatFeedbackText(feedback, 'student');
   rec.feedbackParentText = formatFeedbackText(feedback, 'parent');
@@ -2704,6 +2706,7 @@ async function doSubmitInner(mode) {
 
 async function doSubmitAbsence(mode, rec) {
   const lineTexts = buildAbsenceLineTexts(rec);
+  applyReadiness(rec, []);
   const feedback = buildCoachFeedback(rec, null, [], null);
   rec.feedbackStudentText = formatFeedbackText(feedback, 'student');
   rec.feedbackParentText = formatFeedbackText(feedback, 'parent');
@@ -3258,6 +3261,9 @@ function buildStatusGrid(rec, scenario, recv) {
 function buildCoachFeedback(rec, last, history, affirm) {
   const scenario = detectScenario(rec);
   const quote = voiceQuote(scenario);
+  const readiness = rec.finalReadinessScore !== undefined && rec.finalReadinessScore !== ''
+    ? buildReadinessAnalysis(rec, history || [])
+    : applyReadiness(rec, history || []);
 
   let scores = {};
   try { scores = JSON.parse(rec.rawScoresJson || '{}'); } catch (e) { /* */ }
@@ -3277,15 +3283,24 @@ function buildCoachFeedback(rec, last, history, affirm) {
   if (scenario === 'absence') {
     versions = { student: absenceStudentFB(rec, quote), parent: absenceParentFB(rec, quote), coach: absenceCoachFB(rec, quote) };
   } else {
-    versions = { student: trainingStudentFB(rec, scenario, c), parent: trainingParentFB(rec, scenario, c), coach: trainingCoachFB(rec, scenario, c) };
+    versions = {
+      student: readinessStudentVersion(rec, readiness),
+      parent: readinessParentVersion(rec, readiness),
+      coach: readinessCoachVersion(rec, readiness)
+    };
   }
 
   return {
     scenario: scenario,
-    scenarioLabel: SCENARIO_LABEL[scenario],
-    header: { name: rec.name || '選手', date: dateSlash(rec.date), scenarioLabel: SCENARIO_LABEL[scenario] },
-    statusGrid: buildStatusGrid(rec, scenario, c.recv),
+    scenarioLabel: scenario === 'absence' ? SCENARIO_LABEL[scenario] : readiness.statusLight,
+    header: { name: rec.name || '選手', date: dateSlash(rec.date), scenarioLabel: scenario === 'absence' ? SCENARIO_LABEL[scenario] : readiness.statusLight },
+    statusGrid: buildStatusGrid(rec, scenario, c.recv).concat(scenario === 'absence' ? [] : [
+      { label: '訓練準備度', value: readiness.finalReadinessScore + ' / 100', tone: readinessToneCls(readiness.statusLight) },
+      { label: '訓練方向', value: readiness.statusLight, tone: readinessToneCls(readiness.statusLight) },
+      { label: 'AI 標籤', value: readiness.aiTags.join('、') || '穩定', tone: readiness.aiTags.length ? 'warn' : 'good' }
+    ]),
     moodLow: !isNaN(parseFloat(rec.moodIndex)) && parseFloat(rec.moodIndex) <= 2,
+    readiness: readiness,
     versions: versions
   };
 }
@@ -3300,10 +3315,10 @@ function formatFeedbackText(fb, version) {
   const v = fb.versions[version];
   const h = fb.header;
   let out = `${FB_VERSION_HEAD[version]}\n育林國中技擊隊\n${h.name}｜${h.date}｜${h.scenarioLabel}\n\n`;
-  out += `【今天值得肯定】\n${v.affirm}\n\n`;
-  out += `【今天要注意】\n${v.watch}\n\n`;
-  out += `【明日一件事】\n${v.oneThing}\n\n`;
-  out += `【教練一句話】\n${v.quote}`;
+  out += `【今日狀態】\n${v.affirm}\n\n`;
+  out += `【為什麼是這個狀態】\n${v.watch}\n\n`;
+  out += `【明日一個具體任務】\n${v.oneThing}\n\n`;
+  out += `【正向提醒】\n${v.quote}`;
   return out;
 }
 
@@ -3353,12 +3368,12 @@ function selectFbVersion(version) {
   document.querySelectorAll('#coachFeedbackCard .cfb-share-btn').forEach(t => t.classList.toggle('active', t.dataset.fb === version));
 
   $id('cfbBody').innerHTML =
-    fbBlock('今天值得肯定', '✅', v.affirm, 'good') +
-    fbBlock('今天要注意', '⚠️', v.watch, 'warn');
+    fbBlock('今日狀態', '🧭', v.affirm, 'good') +
+    fbBlock('為什麼是這個狀態', '🔎', v.watch, 'warn');
 
   $id('cfbTomorrow').innerHTML =
-    fbBlock('明日一件事', '🎯', v.oneThing, 'good') +
-    `<div class="cfb-quote">「${escapeHtml(v.quote)}」<span class="cfb-quote-by">— 教練的話</span></div>`;
+    fbBlock('明日一個具體任務', '🎯', v.oneThing, 'good') +
+    `<div class="cfb-quote">「${escapeHtml(v.quote)}」<span class="cfb-quote-by">— TeamPro AI</span></div>`;
 
   $id('cfbShareText').textContent = formatFeedbackText(fb, version);
 }
@@ -3366,6 +3381,202 @@ function selectFbVersion(version) {
 function fbBlock(title, icon, text, tone) {
   return `<div class="cfb-block cfb-${tone}"><div class="cfb-block-title">${icon} 【${escapeHtml(title)}】</div>` +
     `<div class="cfb-block-text">${escapeHtml(text).replace(/\n/g, '<br>')}</div></div>`;
+}
+
+/* ============================================================
+   TeamPro AI 訓練準備度
+   公式：selfScore*0.30 + coachScore*0.35 + recoveryScore*0.25
+       + attendanceScore*0.10 - riskPenalty
+   ============================================================ */
+const READINESS_LIGHTS = [
+  { min: 85, key: 'boost', label: '綠燈強化日', cls: 'green', group: '強化組', direction: '可以安排高品質技術、速度、對打、模擬賽、爆發力訓練。' },
+  { min: 70, key: 'stable', label: '綠燈穩定日', cls: 'green', group: '穩定組', direction: '正常訓練，補一個明確弱點，維持品質。' },
+  { min: 55, key: 'adjust', label: '黃燈調整日', cls: 'yellow', group: '調整組', direction: '降低總量，重點放技術修正、節奏、基本功、動作品質。' },
+  { min: 40, key: 'protect', label: '橘燈保護日', cls: 'orange', group: '保護組', direction: '避免高強度，做恢復、伸展、低強度技術、心理調整。' },
+  { min: 0, key: 'care', label: '紅燈關懷日', cls: 'red', group: '關懷組', direction: '不追分數，優先處理睡眠、疼痛、情緒、請假原因或生活壓力。' }
+];
+const COACH_SCORE_HELP = {
+  coachAttitudeScore: ['明顯消極', '需要提醒', '正常完成', '主動投入', '高度專注且能帶動他人'],
+  coachTechniqueScore: ['動作品質明顯不穩', '多次失誤', '基本穩定', '有明顯進步', '達到比賽品質'],
+  coachExecutionScore: ['無法完成教練要求', '需多次提醒', '能完成基本要求', '能主動修正', '能理解並立即轉化成表現'],
+  coachRiskScore: ['高風險，建議停止或大幅調整', '有明顯疲勞、疼痛或情緒風險', '普通，可正常觀察', '狀態穩定', '恢復良好，可承受較高品質訓練']
+};
+function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+function nval(v) { const n = parseFloat(v); return isNaN(n) ? null : n; }
+function pct5(v) { const n = nval(v); return n === null ? null : clamp(n, 1, 5) * 20; }
+function avgPresent(vals, fallback) {
+  const xs = vals.filter(v => v !== null && !isNaN(v));
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : fallback;
+}
+function hasUsefulText(v, minLen) { return String(v || '').trim().length >= (minLen || 8); }
+function readinessLight(score) { return READINESS_LIGHTS.find(x => score >= x.min) || READINESS_LIGHTS[READINESS_LIGHTS.length - 1]; }
+function readinessToneCls(label) {
+  if (String(label).indexOf('紅') !== -1) return 'danger';
+  if (String(label).indexOf('橘') !== -1) return 'warn';
+  if (String(label).indexOf('黃') !== -1) return 'warn';
+  return 'good';
+}
+function computeSelfReadinessScore(rec) {
+  if (rec._isAbsence || isAbsenceRecord(rec)) return hasUsefulText(rec.absenceReflection || rec.absenceReason, 12) ? 70 : 45;
+  let score = 78;
+  const body = String(rec.bodyStatus || '');
+  if (body === '很好') score += 8;
+  else if (body === '疲勞') score -= 10;
+  else if (body === '不舒服') score -= 15;
+  else if (body === '受傷中') score -= 25;
+  const mood = nval(rec.moodIndex);
+  if (mood !== null) score += (mood - 3) * 5;
+  const sore = nval(rec.soreness);
+  if (sore !== null) score -= Math.max(0, sore - 2) * 5;
+  const rpe = nval(rec.rpe);
+  if (rpe !== null) score -= rpe >= 9 ? 12 : rpe >= 8 ? 7 : 0;
+  const pain = nval(rec.painScore);
+  if (pain !== null) score -= pain >= 7 ? 25 : pain >= 4 ? 12 : pain >= 1 ? 3 : 0;
+  if (hasUsefulText(rec.reflection, 12)) score += 5;
+  if (hasUsefulText(rec.tomorrowGoal, 8)) score += 5;
+  if (/疲|痛|緊|怕|累|不穩|失誤|壓力|睡/.test(String(rec.reflection || '') + String(rec.moodReason || ''))) score += 4;
+  return Math.round(clamp(score, 0, 100));
+}
+function computeCoachReadinessScore(rec) {
+  const vals = ['coachAttitudeScore', 'coachTechniqueScore', 'coachExecutionScore', 'coachRiskScore'].map(k => pct5(rec[k]));
+  return Math.round(avgPresent(vals, 75));
+}
+function mealLooksComplete(rec) {
+  const text = [rec.breakfast, rec.lunch, rec.dinner].join(' ');
+  return /蛋|肉|魚|雞|牛|豬|豆|奶|飯|麵|菜|便當|營養午餐/.test(text);
+}
+function computeRecoveryReadinessScore(rec) {
+  let score = nval(rec.recoveryScore);
+  score = score === null || score === '' ? 78 : score;
+  const sleep = nval(rec.sleepHours);
+  if (sleep !== null) score += sleep >= 8 ? 8 : sleep < 6 ? -16 : sleep < 7 ? -8 : 0;
+  if (rec.sleepQuality === '好') score += 5;
+  if (rec.sleepQuality === '差') score -= 10;
+  if (rec.waterIntake === '少於 500ml') score -= 16;
+  else if (rec.waterIntake === '500-1000ml') score -= 10;
+  else if (rec.waterIntake === '2000ml 以上') score += 5;
+  if (rec.urineStatus === '深黃') score -= 8;
+  if (rec.urineStatus === '琥珀色') score -= 16;
+  if (!mealLooksComplete(rec)) score -= 8;
+  if (String(rec.lateNightSnack || '').indexOf('偏多') !== -1) score -= 6;
+  const gap = Math.abs(nval(rec.weightGap) || 0);
+  if (gap >= 3) score -= 6;
+  if (String(rec.recoveryState || '').indexOf('降低') !== -1 || String(rec.recoveryState || '').indexOf('關懷') !== -1) score -= 8;
+  return Math.round(clamp(score, 0, 100));
+}
+function taskCompletionScore(rec) {
+  const c = String(rec.taskCompletion || rec.makeupStatus || '');
+  if (c.indexOf('完成') !== -1) return 100;
+  if (c.indexOf('進行') !== -1) return 75;
+  return null;
+}
+function computeAttendanceReadinessScore(rec) {
+  if (rec._isAbsence || isAbsenceRecord(rec)) return hasUsefulText(rec.absenceReflection || rec.absenceCatchup, 10) ? 65 : 35;
+  const taskScore = taskCompletionScore(rec);
+  return Math.round(avgPresent([100, hasUsefulText(rec.reflection, 8) ? 100 : 70, taskScore], 90));
+}
+function recentBadStreak(history, matcher) {
+  const recs = dedupeLatestByDate(history || []).slice(0, 2);
+  return recs.length >= 2 && recs.every(matcher);
+}
+function computeRiskPenalty(rec, recoveryScore, history) {
+  const risks = [];
+  let p = 0;
+  const pain = nval(rec.painScore) || 0;
+  const sleep = nval(rec.sleepHours);
+  const rpe = nval(rec.rpe) || 0;
+  const coachRisk = nval(rec.coachRiskScore);
+  if (pain >= 4 && pain <= 6) { p += 8; risks.push('疼痛中度'); }
+  if (pain >= 7) { p += 20; risks.push('受傷風險'); }
+  if (sleep !== null && sleep < 6) { p += 8; risks.push('睡眠不足'); }
+  if (rec.sleepQuality === '差') { p += 5; risks.push('睡眠品質差'); }
+  if (rec.urineStatus === '深黃') { p += 5; risks.push('恢復不足'); }
+  if (rec.urineStatus === '琥珀色') { p += 12; risks.push('脫水風險'); }
+  if (rpe >= 8 && recoveryScore < 60) { p += 8; risks.push('高風險硬撐'); }
+  if (coachRisk === 1) { p += 20; risks.push('教練高風險'); }
+  if (coachRisk === 2) { p += 10; risks.push('教練提醒風險'); }
+  if (pain >= 7 && (rec.trainingIntensity === '高' || rec.trainingIntensity === '比賽日')) { p += 10; risks.push('疼痛高仍高強度'); }
+  if (recentBadStreak(history, r => String(r.status || '').indexOf('黃') !== -1)) risks.push('連續黃燈注意');
+  if (recentBadStreak(history, r => String(r.status || '').indexOf('紅') !== -1)) risks.push('需要關心');
+  if (recentBadStreak(history, r => nval(r.sleepHours) !== null && nval(r.sleepHours) < 6)) risks.push('連續睡眠不足');
+  return { penalty: Math.min(45, p), risks: risks };
+}
+function buildReadinessTags(rec, selfScore, coachScore, recoveryScore, finalScore, risks, history) {
+  const tags = risks.slice();
+  if (selfScore >= 80 && coachScore < 65) tags.push('自我覺察落差');
+  if (selfScore <= 60 && coachScore >= 80) tags.push('信心不足');
+  if (recoveryScore < 60 && coachScore >= 80) tags.push('高風險硬撐');
+  if ((nval(rec.painScore) || 0) >= 7 && (nval(rec.rpe) || 0) >= 8) tags.push('受傷風險');
+  if (recentBadStreak(history, r => nval(r.finalReadinessScore) !== null && nval(r.finalReadinessScore) < 55)) tags.push('需要關心');
+  return Array.from(new Set(tags));
+}
+function buildReadinessAnalysis(rec, history) {
+  const selfScore = computeSelfReadinessScore(rec);
+  const coachScore = computeCoachReadinessScore(rec);
+  const recoveryScore = computeRecoveryReadinessScore(rec);
+  const attendanceScore = computeAttendanceReadinessScore(rec);
+  const risk = computeRiskPenalty(rec, recoveryScore, history || []);
+  const finalReadinessScore = Math.round(clamp(selfScore * 0.30 + coachScore * 0.35 + recoveryScore * 0.25 + attendanceScore * 0.10 - risk.penalty, 0, 100));
+  const light = readinessLight(finalReadinessScore);
+  const tags = buildReadinessTags(rec, selfScore, coachScore, recoveryScore, finalReadinessScore, risk.risks, history || []);
+  return {
+    selfScore, coachScore, recoveryScore, attendanceScore,
+    riskPenalty: risk.penalty,
+    finalReadinessScore,
+    statusLight: light.label,
+    statusKey: light.key,
+    statusClass: light.cls,
+    trainingGroup: light.group,
+    trainingDirection: light.direction,
+    aiTags: tags,
+    needInterview: tags.indexOf('需要關心') !== -1 || tags.indexOf('受傷風險') !== -1 || (nval(rec.coachRiskScore) || 5) <= 2 || finalReadinessScore < 40
+  };
+}
+function applyReadiness(rec, history) {
+  const r = buildReadinessAnalysis(rec, history || []);
+  Object.assign(rec, {
+    selfScore: r.selfScore,
+    coachScore: r.coachScore,
+    readinessRecoveryScore: r.recoveryScore,
+    attendanceScore: r.attendanceScore,
+    riskPenalty: r.riskPenalty,
+    finalReadinessScore: r.finalReadinessScore,
+    readinessStatusLight: r.statusLight,
+    aiTags: r.aiTags.join('、'),
+    trainingDirection: r.trainingDirection,
+    readinessJson: JSON.stringify(r)
+  });
+  return r;
+}
+function readinessStudentVersion(rec, readiness) {
+  const why = readiness.aiTags.length ? readiness.aiTags.slice(0, 2).join('、') : '整體資料穩定';
+  return {
+    affirm: `今天是${readiness.statusLight}。你願意把狀態記錄下來，這是成熟選手很重要的一步。`,
+    watch: `目前判斷重點是「${why}」。這不是說你不好，而是提醒今天適合用更聰明的方式訓練。`,
+    oneThing: readiness.statusKey === 'boost' ? '明天挑一個技術細節，用影片回看修正 1 次。' :
+      readiness.statusKey === 'care' ? '明天先把睡眠、水分或疼痛狀態回報清楚，訓練不要硬撐。' :
+      readiness.statusKey === 'protect' ? '明天先完成 10 分鐘伸展與低強度基本動作，身體穩了再加量。' :
+      '明天把一個基本動作做穩，先求品質，再求速度。',
+    quote: '今天適合怎麼調整，比今天拿幾分更重要。'
+  };
+}
+function readinessParentVersion(rec, readiness) {
+  const publicNote = rec.coachPublicNote || rec.coachReply || '';
+  return {
+    affirm: `孩子今日訓練狀態為${readiness.statusLight}。`,
+    watch: `主要協助重點：${readiness.statusKey === 'boost' || readiness.statusKey === 'stable' ? '維持規律作息與正常補水。' : '協助早睡、補水，並觀察身體不適是否持續。'}`,
+    oneThing: publicNote || '今晚請協助孩子提早休息，明天訓練會依狀態調整強度。',
+    quote: '家長穩定支持，會讓孩子更願意持續訓練。'
+  };
+}
+function readinessCoachVersion(rec, readiness) {
+  const tags = readiness.aiTags.length ? readiness.aiTags.join('、') : '無明顯特殊標籤';
+  return {
+    affirm: `準備度 ${readiness.finalReadinessScore} 分｜${readiness.statusLight}。`,
+    watch: `self ${readiness.selfScore}、coach ${readiness.coachScore}、recovery ${readiness.recoveryScore}、attendance ${readiness.attendanceScore}、risk -${readiness.riskPenalty}。標籤：${tags}。`,
+    oneThing: `${readiness.trainingDirection}${readiness.needInterview ? ' 建議安排一對一關心，先了解原因再調整訓練量。' : ''}`,
+    quote: '管理重點：用準備度安排訓練，不用分數處罰選手。'
+  };
 }
 
 /* ============================================================
@@ -3559,7 +3770,8 @@ function buildLineTexts(rec, weightNote, affirm) {
 
 姓名：${rec.name}
 日期：${dateSlash(rec.date)}
-今日狀態：${rec.status}
+今日訓練準備度：${rec.finalReadinessScore || '--'} / 100（${rec.readinessStatusLight || rec.status}）
+今日訓練方向：${rec.trainingDirection || '依教練安排調整'}
 今日總分：${scoreMaxText(rec)}
 平均分數：${rec.averageScore} / 5
 ${affirmBlock}
@@ -3590,9 +3802,9 @@ ${encourageTeammateBlock}
   const parentLine =
 `🥋 育林國中技擊隊｜今日訓練回饋
 
-孩子今日訓練狀態${statusWord(rec.status)}${topTwo ? `，主要需要加強「${topTwo}」` : '，整體表現穩定'}。
+孩子今日訓練狀態為「${rec.readinessStatusLight || statusWord(rec.status)}」${topTwo ? `，主要訓練重點會放在「${topTwo}」` : '，整體表現穩定'}。
 
-教練明天會協助孩子針對訓練方向調整，請家長不用擔心。這份紀錄的重點不是看分數高低，而是讓孩子知道自己哪裡可以進步。
+教練明天會依訓練準備度調整內容，請家長不用擔心。這不是排名，也不是處罰分數，而是協助孩子用更適合的方式訓練。
 
 ${n.parent}
 ${weightNote ? '\n⚖️ ' + weightNote + '\n' : ''}
@@ -3619,6 +3831,9 @@ ${weightNote ? '\n⚖️ ' + weightNote + '\n' : ''}
 日期：${dateSlash(rec.date)}
 組別：${rec.group}${fsBlock}
 狀態：${rec.status}
+TeamPro AI 訓練準備度：${rec.finalReadinessScore || '--'} / 100（${rec.readinessStatusLight || '--'}）
+AI 標籤：${rec.aiTags || '無明顯特殊標籤'}
+明日訓練方向：${rec.trainingDirection || '依教練安排調整'}
 總分：${scoreMaxText(rec)}
 平均：${rec.averageScore} / 5
 
@@ -3671,11 +3886,13 @@ ${n.nextGoal}`;
 function buildBasicDailyLineTexts(rec, weightNote) {
   const n = rec._nutrition;
   const student = `🥋 育林國中技擊隊｜每日訓練回報\n\n姓名：${rec.name}\n日期：${dateSlash(rec.date)}\n` +
-    `身體狀況：${rec.bodyStatus || '未填'}\n今日心得：${rec.reflection || '已完成回報'}\n明日目標：${rec.tomorrowGoal || '未填'}\n\n` +
+    `TeamPro AI 訓練準備度：${rec.finalReadinessScore || '--'} / 100（${rec.readinessStatusLight || '資料累積中'}）\n` +
+    `今日訓練方向：${rec.trainingDirection || '依教練安排調整'}\n身體狀況：${rec.bodyStatus || '未填'}\n今日心得：${rec.reflection || '已完成回報'}\n明日目標：${rec.tomorrowGoal || '未填'}\n\n` +
     `🍱 今日飲食提醒：\n${shortNutrition(n)}\n\n📣 教練的話：${dailyPick(COACH_QUOTES)}`;
-  const parent = `🥋 育林國中技擊隊｜今日訓練回報\n\n${rec.name} 已完成今日訓練與身體狀態回報。` +
+  const parent = `🥋 育林國中技擊隊｜今日訓練回報\n\n${rec.name} 已完成今日訓練與身體狀態回報。\n訓練狀態：${rec.readinessStatusLight || '資料累積中'}。` +
     `${rec.bodyStatus ? '\n身體狀況：' + rec.bodyStatus : ''}${weightNote ? '\n⚖️ ' + weightNote : ''}\n\n${n.parent || ''}`;
   const coach = `📊 育林國中技擊隊｜每日訓練紀錄\n\n姓名：${rec.name}\n日期：${dateSlash(rec.date)}\n組別：${rec.group}\n` +
+    `訓練準備度：${rec.finalReadinessScore || '--'} / 100（${rec.readinessStatusLight || '--'}）\nAI 標籤：${rec.aiTags || '無'}\n訓練方向：${rec.trainingDirection || '依教練安排調整'}\n` +
     `身體狀況：${rec.bodyStatus || '未填'}\n今日心得：${rec.reflection || '未填'}\n明日目標：${rec.tomorrowGoal || '未填'}\n\n` +
     `飲食問題：${n.risks && n.risks.length ? n.risks.join('、') : '無明顯風險'}`;
   const nutrition = `🍱 育林國中技擊隊｜今日飲食建議\n\n姓名：${rec.name}\n日期：${dateSlash(rec.date)}\n\n${shortNutrition(n)}`;
@@ -3710,6 +3927,50 @@ async function fetchAllRecords() {
     } catch (e) { /* 落回本機 */ }
   }
   return getLocalRecords();
+}
+
+function getLocalCoachScores() {
+  try { return JSON.parse(localStorage.getItem(LS_KEYS.coachScores)) || []; }
+  catch (e) { return []; }
+}
+function saveLocalCoachScores(arr) { localStorage.setItem(LS_KEYS.coachScores, JSON.stringify(arr || [])); }
+async function fetchCoachScores(date) {
+  if (getWebAppUrl()) {
+    try {
+      const res = await postToWebApp({ action: 'getCoachScores', date: date || todayStr() });
+      if (res && res.ok && Array.isArray(res.data)) return res.data;
+    } catch (e) { toast('⚠️ 教練簡評讀取失敗，暫用本機資料'); }
+  }
+  return getLocalCoachScores().filter(r => normDate(r.date) === normDate(date || todayStr()));
+}
+async function saveCoachScoreRow(row) {
+  const payload = Object.assign({ timestamp: new Date().toISOString() }, row);
+  if (getWebAppUrl()) {
+    const res = await postToWebApp({ action: 'saveCoachScore', payload: payload });
+    if (!res || !res.ok) throw new Error((res && res.error) || '儲存教練簡評失敗');
+  }
+  const arr = getLocalCoachScores();
+  const idx = arr.findIndex(r => normDate(r.date) === normDate(payload.date) && String(r.studentName) === String(payload.studentName));
+  if (idx >= 0) arr[idx] = Object.assign({}, arr[idx], payload);
+  else arr.push(payload);
+  saveLocalCoachScores(arr);
+  return payload;
+}
+function mergeCoachScores(records, scores) {
+  const map = {};
+  (scores || []).forEach(s => { map[normDate(s.date) + '|' + String(s.studentName || '').trim()] = s; });
+  (records || []).forEach(r => {
+    const s = map[normDate(r.date) + '|' + String(r.name || '').trim()];
+    if (s) Object.assign(r, {
+      coachAttitudeScore: s.coachAttitudeScore,
+      coachTechniqueScore: s.coachTechniqueScore,
+      coachExecutionScore: s.coachExecutionScore,
+      coachRiskScore: s.coachRiskScore,
+      coachPublicNote: s.coachPublicNote,
+      coachPrivateNote: s.coachPrivateNote
+    });
+  });
+  return records;
 }
 
 function yesNo(value) {
@@ -3764,7 +4025,10 @@ function normalizeAttendanceReports(rows) {
       makeupStatus: row.makeupStatus || '',
       coachPublicNote: row.coachPublicNote || row.coachReply || '',
       coachPrivateNote: row.coachPrivateNote || row.redLightNote || '',
-      absenceReflection: row.absenceReflection || ''
+      absenceReflection: row.absenceReflection || '',
+      finalReadinessScore: row.finalReadinessScore || '',
+      readinessStatusLight: row.readinessStatusLight || '',
+      trainingDirection: row.trainingDirection || ''
     };
   }).filter(r => r.studentName && r.date).sort((a, b) => a.date < b.date ? 1 : -1);
 }
@@ -3787,7 +4051,10 @@ function attendanceReportFromRecord(rec) {
     makeupStatus: '',
     coachPublicNote: rec.coachReply || '',
     coachPrivateNote: rec.redLightNote || '',
-    absenceReflection: rec.absenceReflection || ''
+    absenceReflection: rec.absenceReflection || '',
+    finalReadinessScore: rec.finalReadinessScore || '',
+    readinessStatusLight: rec.readinessStatusLight || '',
+    trainingDirection: rec.trainingDirection || ''
   };
 }
 
@@ -3804,6 +4071,9 @@ function mergeAttendanceWithKpi(attendanceRows, kpiRows, studentName) {
       map[key].kpiSubmitted = '是';
       if (!map[key].absenceReflection && derived.absenceReflection) map[key].absenceReflection = derived.absenceReflection;
       if (!map[key].absenceReason && derived.absenceReason) map[key].absenceReason = derived.absenceReason;
+      if (!map[key].finalReadinessScore && derived.finalReadinessScore) map[key].finalReadinessScore = derived.finalReadinessScore;
+      if (!map[key].readinessStatusLight && derived.readinessStatusLight) map[key].readinessStatusLight = derived.readinessStatusLight;
+      if (!map[key].trainingDirection && derived.trainingDirection) map[key].trainingDirection = derived.trainingDirection;
     }
   });
   return Object.values(map).sort((a, b) => a.date < b.date ? 1 : -1);
@@ -3869,6 +4139,14 @@ function renderStatsCells(box, cells) {
 function parentNoticeText(studentName, status) {
   return `您好，今日系統尚未收到 ${studentName} 的訓練紀錄。目前狀態為：${status}。若今日請假，請協助確認原因；若已完成訓練，請提醒孩子補填紀錄。謝謝。`;
 }
+function parentReadinessHelp(row) {
+  const light = String(row.readinessStatusLight || '');
+  if (light.indexOf('強化') !== -1 || light.indexOf('穩定') !== -1) return '今天狀態穩定，請協助維持規律飲食、補水與睡眠。';
+  if (light.indexOf('調整') !== -1) return '今天適合調整訓練量，請協助孩子今晚提早休息並補足水分。';
+  if (light.indexOf('保護') !== -1) return '今天以保護身體為主，請留意睡眠、疼痛與疲勞是否持續。';
+  if (light.indexOf('關懷') !== -1) return '今天先不追求強度，請用關心方式了解孩子身體或生活壓力。';
+  return '請協助維持規律作息、補水與正常飲食。';
+}
 
 function coachAttendanceNoticeText(names) {
   return `今日未完成訓練紀錄名單：${names.length ? names.join('、') : '無'}。請確認是否為請假、缺席或尚未填寫。`;
@@ -3895,6 +4173,7 @@ async function renderParentDashboard() {
     <div class="parent-status-card parent-status-${todayColor}">
       <strong>${todayStatus}</strong>
       <div class="review-label">日期：${dateSlash(todayRow.date)}｜KPI：${todayRow.kpiSubmitted || '否'}｜補訓：${todayRow.makeupStatus || '無'}</div>
+      ${todayRow.finalReadinessScore ? `<div class="hint-box good">TeamPro AI 訓練準備度：${escapeHtml(todayRow.finalReadinessScore)}｜${escapeHtml(todayRow.readinessStatusLight || '')}<br>${escapeHtml(parentReadinessHelp(todayRow))}</div>` : ''}
       ${todayRow.absenceReason ? `<div class="review-label">未出席原因：${escapeHtml(todayRow.absenceReason)}</div>` : ''}
       ${todayRow.absenceReflection ? `<div class="reflection-cell">🤔 孩子的反思：<br>${escapeHtml(todayRow.absenceReflection).replace(/\n/g, '<br>')}</div>` : ''}
       ${todayRow.coachPublicNote ? `<div class="hint-box good">教練提醒：${escapeHtml(todayRow.coachPublicNote)}</div>` : ''}
@@ -4122,18 +4401,150 @@ function dedupeLatestByDate(records) {
   return Object.keys(map).sort((a, b) => a < b ? 1 : -1).map(k => map[k]);
 }
 
+function renderCoachReadinessOverview(todays, all) {
+  const box = $id('coachReadinessOverview');
+  const groupsBox = $id('coachReadinessGroups');
+  if (!box || !groupsBox) return;
+  const roster = getPlayers();
+  const reported = todays.length;
+  const missing = Math.max(0, roster.length - reported);
+  const avg = reported ? Math.round(todays.reduce((s, r) => s + (nval(r.finalReadinessScore) || 0), 0) / reported) : 0;
+  const countBy = label => todays.filter(r => String(r.readinessStatusLight || '').indexOf(label) !== -1).length;
+  const highRisk = todays.filter(r => String(r.aiTags || '').match(/受傷風險|高風險|需要關心|脫水風險|睡眠不足/) || (nval(r.finalReadinessScore) || 100) < 55);
+  box.innerHTML = [
+    ['全隊平均準備度', reported ? avg + ' 分' : '--'],
+    ['綠燈人數', countBy('綠燈')],
+    ['黃燈人數', countBy('黃燈')],
+    ['橘燈人數', countBy('橘燈')],
+    ['紅燈人數', countBy('紅燈')],
+    ['今日未回報', missing],
+    ['高風險名單', highRisk.length]
+  ].map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
+
+  const buckets = { '強化組': [], '穩定組': [], '調整組': [], '保護組': [], '關懷組': [] };
+  todays.forEach(r => {
+    const light = readinessLight(nval(r.finalReadinessScore) || 0);
+    buckets[light.group].push(r);
+  });
+  groupsBox.innerHTML = Object.keys(buckets).map(name => {
+    const list = buckets[name];
+    return `<div class="readiness-group"><h4>${name}（${list.length}）</h4>` +
+      (list.length ? list.map(r => `<div class="readiness-person"><b>${escapeHtml(r.name)}</b><span>${escapeHtml(r.finalReadinessScore || '--')}｜${escapeHtml(r.readinessStatusLight || '')}</span><small>${escapeHtml(r.trainingDirection || '')}</small></div>`).join('') : '<p class="review-label">無</p>') +
+      `</div>`;
+  }).join('');
+}
+
+function coachScoreButtons(field, value) {
+  const cur = String(value || '');
+  return `<div class="coach-score-row" data-field="${field}">` +
+    [1, 2, 3, 4, 5].map(n => `<button type="button" class="coach-score-btn ${cur === String(n) ? 'sel' : ''}" data-score="${n}" title="${escapeHtml(COACH_SCORE_HELP[field][n - 1])}">${n}<small>${escapeHtml(COACH_SCORE_HELP[field][n - 1])}</small></button>`).join('') +
+    `</div>`;
+}
+function renderCoachQuickScores(todays, coachScores) {
+  const box = $id('coachQuickScoreList');
+  if (!box) return;
+  const date = $id('coachDate').value || todayStr();
+  const byName = {};
+  todays.forEach(r => { byName[String(r.name || '').trim()] = r; });
+  const scoreMap = {};
+  (coachScores || []).forEach(s => { scoreMap[String(s.studentName || '').trim()] = s; });
+  const names = Array.from(new Set(
+    getPlayers()
+      .concat((todays || []).map(r => r.name).filter(Boolean))
+      .concat((coachScores || []).map(r => r.studentName).filter(Boolean))
+  ));
+  box.innerHTML = names.map(name => {
+    const r = byName[name] || {};
+    const s = Object.assign({}, scoreMap[name] || {}, r);
+    const readiness = r.name ? buildReadinessAnalysis(s, []) : null;
+    return `<div class="coach-score-card" data-name="${escapeHtml(name)}">
+      <div class="coach-score-head">
+        <div><b>${escapeHtml(name)}</b><span>${r.name ? `${readiness.finalReadinessScore}｜${readiness.statusLight}` : '今日尚未回報，可先建立教練簡評'}</span></div>
+        <button type="button" class="btn btn-primary btn-save-coach-score">儲存簡評</button>
+      </div>
+      <label>訓練態度 ${coachScoreButtons('coachAttitudeScore', s.coachAttitudeScore)}</label>
+      <label>技術表現 ${coachScoreButtons('coachTechniqueScore', s.coachTechniqueScore)}</label>
+      <label>執行力 ${coachScoreButtons('coachExecutionScore', s.coachExecutionScore)}</label>
+      <label>風險判斷 ${coachScoreButtons('coachRiskScore', s.coachRiskScore)}</label>
+      <textarea class="text-input coach-public-note" rows="2" placeholder="教練公開提醒，可給家長看">${escapeHtml(s.coachPublicNote || '')}</textarea>
+      <textarea class="text-input coach-private-note" rows="2" placeholder="教練私密備註，只給教練後台看">${escapeHtml(s.coachPrivateNote || '')}</textarea>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('.coach-score-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const row = btn.closest('.coach-score-row');
+      row.querySelectorAll('.coach-score-btn').forEach(b => b.classList.remove('sel'));
+      btn.classList.add('sel');
+    });
+  });
+  box.querySelectorAll('.btn-save-coach-score').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const card = btn.closest('.coach-score-card');
+      const row = { date: date, studentName: card.dataset.name };
+      card.querySelectorAll('.coach-score-row').forEach(r => {
+        const sel = r.querySelector('.coach-score-btn.sel');
+        row[r.dataset.field] = sel ? sel.dataset.score : '';
+      });
+      row.coachPublicNote = card.querySelector('.coach-public-note').value.trim();
+      row.coachPrivateNote = card.querySelector('.coach-private-note').value.trim();
+      if (!row.coachAttitudeScore || !row.coachTechniqueScore || !row.coachExecutionScore || !row.coachRiskScore) {
+        toast('請先完成 4 個教練簡評分數');
+        return;
+      }
+      btn.disabled = true; btn.textContent = '儲存中...';
+      try {
+        await saveCoachScoreRow(row);
+        const existing = byName[row.studentName];
+        if (existing && existing.recordId) {
+          Object.assign(existing, row);
+          const rd = applyReadiness(existing, []);
+          await updateRecordRemote(existing.recordId, {
+            coachAttitudeScore: row.coachAttitudeScore,
+            coachTechniqueScore: row.coachTechniqueScore,
+            coachExecutionScore: row.coachExecutionScore,
+            coachRiskScore: row.coachRiskScore,
+            coachPublicNote: row.coachPublicNote,
+            coachPrivateNote: row.coachPrivateNote,
+            selfScore: existing.selfScore,
+            coachScore: existing.coachScore,
+            readinessRecoveryScore: existing.readinessRecoveryScore,
+            attendanceScore: existing.attendanceScore,
+            riskPenalty: existing.riskPenalty,
+            finalReadinessScore: existing.finalReadinessScore,
+            readinessStatusLight: existing.readinessStatusLight,
+            aiTags: existing.aiTags,
+            trainingDirection: existing.trainingDirection,
+            readinessJson: existing.readinessJson
+          });
+        }
+        toast('✅ 已儲存教練今日簡評');
+        await refreshCoach();
+      } catch (e) {
+        toast('⚠️ ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = '儲存簡評';
+      }
+    });
+  });
+}
+
 async function refreshCoach() {
   toast('讀取資料中...');
   const all = await fetchAllRecords();
   const filterDate = $id('coachDate').value;
   const statusFilter = $id('coachStatusFilter').value;
+  const coachScores = await fetchCoachScores(filterDate);
 
   // 今日（或選定日期）紀錄（日期先正規化，避免 Sheet 把日期轉成 Date 物件導致比對失敗）
   let todays = all.filter(r => normDate(r.date) === filterDate);
   // 同一人同一天只保留最新一筆，避免重複送出灌水（含舊資料已存在的重複）
   todays = dedupeLatestByName(todays);
+  mergeCoachScores(todays, coachScores);
+  todays.forEach(r => applyReadiness(r, all.filter(x => String(x.name) === String(r.name))));
   if (statusFilter !== 'all') todays = todays.filter(r => r.status === statusFilter);
 
+  renderCoachReadinessOverview(todays, all);
+  renderCoachQuickScores(todays, coachScores);
   renderOverview(todays);
   renderTeamMood(todays);
   renderSubmitStatus(todays);
@@ -4577,6 +4988,11 @@ function renderInterviewList(todays, all) {
 
   todays.forEach(r => {
     if (r.status && r.status.indexOf('紅') !== -1) add(r.name, '今日紅燈');
+    if (r.readinessStatusLight && r.readinessStatusLight.indexOf('紅燈') !== -1) add(r.name, '準備度紅燈關懷日');
+    if (r.readinessStatusLight && r.readinessStatusLight.indexOf('橘燈') !== -1) add(r.name, '準備度橘燈保護日');
+    if ((parseFloat(r.painScore) || 0) >= 7) add(r.name, '疼痛 7 分以上');
+    if ((parseFloat(r.coachRiskScore) || 5) <= 2) add(r.name, '教練風險判斷偏高');
+    if (String(r.aiTags || '').indexOf('高風險硬撐') !== -1) add(r.name, '高風險硬撐');
     if (parseFloat(r.emotionAvg) < 3) add(r.name, '情緒控制偏低');
     if (parseFloat(r.disciplineAvg) < 3) add(r.name, '自律態度偏低');
     if ((r.trainingIntensity === '高' || r.trainingIntensity === '比賽日') && r.nutritionRisks && r.nutritionRisks.indexOf('恢復不足') !== -1) add(r.name, '高強度但飲食恢復不足');
@@ -4591,6 +5007,8 @@ function renderInterviewList(todays, all) {
       const a = recs[0], b = recs[1];
       const bad = s => s && (s.indexOf('黃') !== -1 || s.indexOf('紅') !== -1);
       if (bad(a.status) && bad(b.status)) add(name, '連續兩筆黃／紅燈');
+      if (String(a.readinessStatusLight || '').indexOf('紅燈') !== -1 && String(b.readinessStatusLight || '').indexOf('紅燈') !== -1) add(name, '連續兩天紅燈');
+      if ((parseFloat(a.sleepHours) || 99) < 6 && (parseFloat(b.sleepHours) || 99) < 6) add(name, '連續睡眠不足');
       if (a.lateNightSnack === '有，偏多' && b.lateNightSnack === '有，偏多') add(name, '連續兩筆宵夜偏多');
       const lw = s => s === '少於 500ml' || s === '500-1000ml';
       if (lw(a.waterIntake) && lw(b.waterIntake)) add(name, '連續兩筆水量不足');

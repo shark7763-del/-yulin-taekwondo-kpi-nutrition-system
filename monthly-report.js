@@ -152,6 +152,7 @@
     var kpi = calculateKpiSummary(monthKpi);
     var recovery = calculateRecoverySummary(monthKpi);
     var nutrition = calculateNutritionSummary(monthKpi);
+    var readiness = calculateReadinessSummary(monthKpi);
     var trees = calculateAllAthleteGrowthTrees(monthKpi, names);
     var ryg = calculateRedYellowGreenStatus({ names: names, monthKpi: monthKpi, attendance: attendance, recovery: recovery, nutrition: nutrition, trees: trees });
 
@@ -178,6 +179,7 @@
       kpi: kpi,
       recovery: recovery,
       nutrition: nutrition,
+      readiness: readiness,
       trees: trees,
       ryg: ryg,
       weeklyKpiSessions: weeklyKpiSessions
@@ -272,6 +274,26 @@
     var improved = topImprovedAthletes(trained);
 
     return { aspectAvg: aspectAvg, order: order, overallAvg: overall, count: trained.length, topicCats: topicCats, topImproved: improved };
+  }
+
+  function calculateReadinessSummary(records) {
+    var vals = records.map(function (r) { return num(r.finalReadinessScore); }).filter(function (v) { return v !== null; });
+    var avgScore = vals.length ? Math.round(avg(vals)) : null;
+    var counts = { boost: 0, stable: 0, adjust: 0, protect: 0, care: 0 };
+    var highRisk = [];
+    records.forEach(function (r) {
+      var s = num(r.finalReadinessScore);
+      if (s === null) return;
+      if (s >= 85) counts.boost++;
+      else if (s >= 70) counts.stable++;
+      else if (s >= 55) counts.adjust++;
+      else if (s >= 40) counts.protect++;
+      else counts.care++;
+      if (s < 55 || /受傷風險|高風險|需要關心/.test(String(r.aiTags || ''))) {
+        highRisk.push({ name: r.name, score: s, light: r.readinessStatusLight || '', tags: r.aiTags || '' });
+      }
+    });
+    return { avgScore: avgScore, counts: counts, highRisk: highRisk.slice(0, 12) };
   }
 
   var TOPIC_RULES = [
@@ -704,6 +726,7 @@
     h += statCard('未回報（人次）', a.notReportedTotal, '', 'yellow');
     h += statCard('家長確認率', NA(a.parentConfirmRate, '%'));
     h += statCard('補訓完成', a.makeupDone + ' / ' + a.makeupTotal, '');
+    if (data.readiness && data.readiness.avgScore !== null) h += statCard('平均訓練準備度', data.readiness.avgScore + ' 分', '', data.readiness.avgScore >= 70 ? 'green' : data.readiness.avgScore >= 55 ? 'yellow' : 'red');
     h += '</div>';
 
     // 比例條
@@ -728,6 +751,10 @@
     if (a.absenceList.length) {
       h += '<div class="mr-panel red"><div class="mr-panel-h">⚠️ 缺席偏多名單（缺席＋未回報 ≥ 2 次）</div><ul>' +
         a.absenceList.map(function (x) { return '<li>' + esc(x.name) + '：缺席 ' + x.absent + ' 次、未回報 ' + x.notReported + ' 次（出席率 ' + x.attendanceRate + '%）</li>'; }).join('') + '</ul></div>';
+    }
+    if (data.readiness && data.readiness.highRisk && data.readiness.highRisk.length && MR.reportType !== 'parent') {
+      h += '<div class="mr-panel red"><div class="mr-panel-h">🧭 訓練準備度高風險摘要</div><ul>' +
+        data.readiness.highRisk.map(function (x) { return '<li>' + esc(x.name) + '：' + x.score + ' 分｜' + esc(x.light || '') + '｜' + esc(x.tags || '需追蹤') + '</li>'; }).join('') + '</ul></div>';
     }
     h += pageFoot(2) + '</section>';
     return h;

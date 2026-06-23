@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>育林國中技擊隊｜跆拳道・武術｜選手 KPI＋身體狀態＋AI 飲食建議系統</title>
-  <link rel="stylesheet" href="style.css?v=20260622f" />
+  <title>育林國中技擊隊｜TeamPro AI 訓練準備度系統</title>
+  <link rel="stylesheet" href="style.css?v=20260623c" />
   <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
 </head>
 <body>
@@ -13,7 +13,7 @@
   <div id="loginOverlay" class="login-overlay">
     <div class="login-card">
       <h1 class="login-title">🥋 育林國中技擊隊</h1>
-      <p class="login-sub">跆拳道 ・ 武術 ｜ 選手 KPI＋身體狀態＋AI 飲食建議系統</p>
+      <p class="login-sub">跆拳道 ・ 武術 ｜ TeamPro AI 訓練準備度系統</p>
 
       <div id="loginStep1">
         <p class="login-hint">請選擇你的身分</p>
@@ -39,7 +39,7 @@
     <button type="button" id="btnSwitchRole" class="btn-switch-role" style="display:none;">🔄 切換身分</button>
     <div class="header-inner">
       <h1 class="app-title">🥋 育林國中技擊隊</h1>
-      <h2 class="app-subtitle">跆拳道 ・ 武術 ｜ 選手 KPI＋身體狀態＋AI 飲食建議系統</h2>
+      <h2 class="app-subtitle">跆拳道 ・ 武術 ｜ TeamPro AI 訓練準備度系統</h2>
       <p class="app-slogan">昨天發現問題，今天帶著目標訓練，明天看見進步。</p>
       <p id="roleBadge" class="role-badge" style="display:none;"></p>
     </div>
@@ -68,6 +68,11 @@
         <div class="quote-mark">❝</div>
         <p class="quote-text" id="dailyQuoteText"></p>
         <p class="quote-by">— 育林跆拳道隊・教練語錄</p>
+      </div>
+
+      <div class="card readiness-info-card">
+        <h3 class="card-title">🧭 TeamPro AI 訓練準備度</h3>
+        <p>訓練準備度不是排名，也不是處罰分數，而是幫助選手、教練與家長了解今天最適合的訓練方向。分數越低不代表你不好，而是代表身體、心理或作息需要被看見與調整。</p>
       </div>
 
       <!-- 本週之星（努力型、正向、不露分數；教練可在系統設定關閉） -->
@@ -546,6 +551,27 @@
           </select>
           <button type="button" id="btnRefreshCoach" class="btn btn-primary">🔄 重新整理資料</button>
         </div>
+      </div>
+
+      <div class="card coach-guide-card">
+        <h3 class="card-title">🧭 今日該做什麼</h3>
+        <div class="coach-guide-grid">
+          <div><b>1. 重新整理</b><span>先讀取今日回報與出席狀態。</span></div>
+          <div><b>2. 快速簡評</b><span>每位選手點 4 個分數，30 秒內完成。</span></div>
+          <div><b>3. 看分組</b><span>依準備度安排強化、穩定、調整、保護、關懷組。</span></div>
+        </div>
+      </div>
+
+      <div class="card" id="coachReadinessCard">
+        <h3 class="card-title">🧭 今日訓練準備度總覽</h3>
+        <div id="coachReadinessOverview" class="overview-grid"></div>
+        <div id="coachReadinessGroups" class="readiness-groups"></div>
+      </div>
+
+      <div class="card" id="coachQuickScoreCard">
+        <h3 class="card-title">📝 教練今日簡評</h3>
+        <p class="review-label">每位選手只要點 4 個 1–5 分，加上公開提醒與私密備註即可。風險判斷分數越低，系統會優先保護選手。</p>
+        <div id="coachQuickScoreList"></div>
       </div>
 
       <div class="card" id="accountAdminCard">

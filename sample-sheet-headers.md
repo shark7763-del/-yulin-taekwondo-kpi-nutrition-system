@@ -82,6 +82,11 @@
 | nutritionLineText | 純飲食建議 LINE 文字 |
 | rawScoresJson | 全部細項分數（JSON，供重新計算最低項） |
 | rawNutritionJson | 飲食分析原始結果（JSON） |
+| selfScore / coachScore / readinessRecoveryScore / attendanceScore | TeamPro AI 訓練準備度四大來源分數（0–100） |
+| riskPenalty / finalReadinessScore / readinessStatusLight | 風險扣分、最終訓練準備度與燈號 |
+| aiTags / trainingDirection / readinessJson | AI 判斷標籤、明日訓練方向與結構化分析結果 |
+| coachAttitudeScore / coachTechniqueScore / coachExecutionScore / coachRiskScore | 教練今日簡評四項 1–5 分 |
+| coachPublicNote / coachPrivateNote | 教練公開提醒與教練私密備註 |
 | recordId | 每筆唯一 ID（供教練複評、選手回應定位更新） |
 | coachPhysicalAvg ~ coachTacticalAvg | 教練複評：六大面向分數 |
 | coachTotalScore / coachAverageScore / coachStatus | 教練複評：總分／平均／燈號 |
@@ -114,6 +119,10 @@ records 最後另有 `studentId`，供新制帳號授權與既有姓名資料漸
 - `student_accounts`：`studentId`、`studentName`、`teamId`、年級班級、帳號狀態、PIN 雜湊、啟用碼雜湊、錯誤次數、鎖定與登入時間。
 - `parents`：保留舊欄位相容性，並新增 `studentId`、完整手機／後四碼、綁定狀態、同意狀態、錯誤次數、鎖定與登入時間，以及五項家長同意欄位。
 - `coach_settings`：`coachId`、`teamId`、教練密碼雜湊、錯誤次數、鎖定與登入時間。
+- `coach_scores`：`timestamp,date,studentName,coachAttitudeScore,coachTechniqueScore,coachExecutionScore,coachRiskScore,coachPublicNote,coachPrivateNote`
+- `ai_scores`：`timestamp,date,studentName,selfScore,coachScore,recoveryScore,attendanceScore,riskPenalty,finalReadinessScore,statusLight,aiTags,trainingDirection,athleteFeedback,parentFeedback,coachFeedback`
+- `training_tasks`：`timestamp,date,studentName,taskTitle,taskDescription,taskType,taskStatus,assignedBy,completedAt`
+- `risk_flags`：`timestamp,date,studentName,riskType,riskLevel,riskReason,suggestedAction,isResolved,resolvedAt,coachNote`
 
 `setupSheet()` 只補工作表與表頭，不會清除既有 records 資料。選手啟用碼明碼只在教練按下產生時回傳一次，Sheet 僅保存雜湊。
 

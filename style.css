@@ -368,6 +368,38 @@ textarea.text-input { resize: vertical; }
 }
 .cfb-quote-by { display: block; margin-top: 6px; font-size: 0.8rem; color: var(--text-soft); font-weight: 600; }
 
+/* ===================== TeamPro AI 訓練準備度 ===================== */
+.readiness-info-card {
+  border: 1px solid var(--blue);
+  background: linear-gradient(145deg, rgba(46,125,209,.12), rgba(245,197,24,.06)), var(--bg-card);
+}
+.readiness-info-card p { color: var(--text-soft); line-height: 1.8; }
+.coach-guide-grid, .readiness-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.coach-guide-grid div, .readiness-group, .coach-score-card {
+  background: #0f141c; border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+}
+.coach-guide-grid b, .coach-guide-grid span { display: block; }
+.coach-guide-grid b { color: var(--gold); margin-bottom: 4px; }
+.coach-guide-grid span, .readiness-person small { color: var(--text-soft); font-size: .82rem; line-height: 1.5; }
+.readiness-groups { margin-top: 12px; grid-template-columns: repeat(5, 1fr); }
+.readiness-group h4 { color: var(--blue); margin-bottom: 8px; font-size: .9rem; }
+.readiness-person { display: grid; gap: 3px; padding: 8px 0; border-top: 1px dashed var(--border); }
+.readiness-person:first-of-type { border-top: 0; }
+.readiness-person b { color: var(--text-main); }
+.readiness-person span { color: var(--gold); font-weight: 800; font-size: .86rem; }
+.coach-score-card { margin-top: 12px; }
+.coach-score-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 12px; }
+.coach-score-head b, .coach-score-head span { display: block; }
+.coach-score-head span { color: var(--text-soft); font-size: .85rem; margin-top: 2px; }
+.coach-score-card label { display: block; margin: 10px 0; color: var(--text-main); font-weight: 800; }
+.coach-score-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 6px; }
+.coach-score-btn {
+  min-height: 56px; border: 1px solid var(--border); border-radius: 10px;
+  background: #111824; color: var(--text-main); font-weight: 900; cursor: pointer;
+}
+.coach-score-btn small { display: block; margin-top: 3px; color: var(--text-soft); font-size: .62rem; font-weight: 600; line-height: 1.2; }
+.coach-score-btn.sel { border-color: var(--gold); background: rgba(245,197,24,.16); color: var(--gold); }
+
 /* ===================== 選手成長卡 ===================== */
 .player-card { border: 1px solid var(--blue); box-shadow: 0 8px 26px rgba(46, 125, 209, 0.16), var(--shadow); }
 .pc-hero { display: flex; align-items: center; gap: 12px; }
@@ -553,6 +585,11 @@ textarea.text-input { resize: vertical; }
   #accountAdminCard table { min-width: 760px; }
   .account-admin-toolbar > * { flex: 1 1 100%; }
   .account-actions { min-width: 190px; }
+  .coach-guide-grid, .readiness-groups { grid-template-columns: 1fr; }
+  .coach-score-head { align-items: stretch; flex-direction: column; }
+  .coach-score-row { grid-template-columns: repeat(5, minmax(48px, 1fr)); }
+  .coach-score-btn { min-height: 64px; padding: 5px 2px; }
+  .coach-score-btn small { font-size: .56rem; }
 }
 .login-back { background: transparent; border: 1px solid var(--border); color: var(--text-soft); border-radius: 12px; padding: 14px; flex: 1; cursor: pointer; font-weight: 700; }
 

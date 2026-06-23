@@ -35,6 +35,10 @@ var COACH_SETTINGS_SHEET = 'coach_settings';
 // Phase 2：KPI 回報由教練手動開啟（session）＋每週 KPI 報告
 var KPI_SESSIONS_SHEET = 'kpi_sessions';
 var WEEKLY_KPI_REPORTS_SHEET = 'weekly_kpi_reports';
+var COACH_SCORES_SHEET = 'coach_scores';
+var AI_SCORES_SHEET = 'ai_scores';
+var TRAINING_TASKS_SHEET = 'training_tasks';
+var RISK_FLAGS_SHEET = 'risk_flags';
 var KPI_SESSION_HEADERS = [
   'sessionId', 'sessionName', 'sessionType', 'weekId', 'openMode', 'targetGroup',
   'targetStudentIds', 'openAt', 'closeAt', 'status', 'includeInWeeklyReport',
@@ -69,6 +73,23 @@ var ATTENDANCE_REPORT_HEADERS = [
   'timestamp', 'date', 'studentName', 'attendanceStatus', 'checkInTime', 'checkOutTime',
   'absenceReason', 'informedCoach', 'parentConfirmed', 'kpiSubmitted', 'makeupTask',
   'makeupStatus', 'coachPublicNote', 'coachPrivateNote'
+];
+var COACH_SCORE_HEADERS = [
+  'timestamp', 'date', 'studentName', 'coachAttitudeScore', 'coachTechniqueScore',
+  'coachExecutionScore', 'coachRiskScore', 'coachPublicNote', 'coachPrivateNote'
+];
+var AI_SCORE_HEADERS = [
+  'timestamp', 'date', 'studentName', 'selfScore', 'coachScore', 'recoveryScore',
+  'attendanceScore', 'riskPenalty', 'finalReadinessScore', 'statusLight', 'aiTags',
+  'trainingDirection', 'athleteFeedback', 'parentFeedback', 'coachFeedback'
+];
+var TRAINING_TASK_HEADERS = [
+  'timestamp', 'date', 'studentName', 'taskTitle', 'taskDescription', 'taskType',
+  'taskStatus', 'assignedBy', 'completedAt'
+];
+var RISK_FLAG_HEADERS = [
+  'timestamp', 'date', 'studentName', 'riskType', 'riskLevel', 'riskReason',
+  'suggestedAction', 'isResolved', 'resolvedAt', 'coachNote'
 ];
 
 // Sheet 欄位順序（必須與前端 record 物件對應）
@@ -133,6 +154,11 @@ var HEADERS = [
   'bedTime', 'wakeTime',          // 就寢時間、起床時間（sleepHours 由兩者推算）
   'painScore', 'painLevel',       // 受傷部位疼痛指數 0–10、對應分級文字
   'urineStatus'                   // 尿液顏色監控（脫水快篩）
+  ,'selfScore', 'coachScore', 'readinessRecoveryScore', 'attendanceScore',
+  'riskPenalty', 'finalReadinessScore', 'readinessStatusLight', 'aiTags',
+  'trainingDirection', 'readinessJson',
+  'coachAttitudeScore', 'coachTechniqueScore', 'coachExecutionScore', 'coachRiskScore',
+  'coachPublicNote', 'coachPrivateNote'
   ,'studentId'                    // 新制帳號識別；加在最後以相容既有資料
 ];
 
@@ -193,6 +219,10 @@ function handleAction(action, data) {
       return jsonOut(authAttendanceByStudent(data));
     case 'getAllAttendanceReports':
       return jsonOut(authCoachOnly(data, function () { return getAllAttendanceReports(); }));
+    case 'getCoachScores':
+      return jsonOut(authCoachOnly(data, function () { return getCoachScores(data.date); }));
+    case 'saveCoachScore':
+      return jsonOut(saveCoachScore(data));
     case 'updateRecord':
       return jsonOut(updateRecordAuthorized(data));
     // ---- 新制角色驗證與帳號管理 ----
@@ -347,8 +377,12 @@ function setupSheet() {
   getCoachSettingsSheet();
   getKpiSessionsSheet();
   getWeeklyKpiReportsSheet();
+  getCoachScoresSheet();
+  getAiScoresSheet();
+  getTrainingTasksSheet();
+  getRiskFlagsSheet();
   syncStudentAccountsFromRoster();
-  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings、kpi_sessions、weekly_kpi_reports 工作表。';
+  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings、kpi_sessions、weekly_kpi_reports、coach_scores、ai_scores、training_tasks、risk_flags 工作表。';
 }
 
 // 今天日期字串 yyyy-MM-dd
@@ -422,6 +456,10 @@ function getStudentAccountsSheet() {
 function getCoachSettingsSheet() {
   return getSheetWithHeaders(COACH_SETTINGS_SHEET, COACH_SETTING_HEADERS);
 }
+function getCoachScoresSheet() { return getSheetWithHeaders(COACH_SCORES_SHEET, COACH_SCORE_HEADERS); }
+function getAiScoresSheet() { return getSheetWithHeaders(AI_SCORES_SHEET, AI_SCORE_HEADERS); }
+function getTrainingTasksSheet() { return getSheetWithHeaders(TRAINING_TASKS_SHEET, TRAINING_TASK_HEADERS); }
+function getRiskFlagsSheet() { return getSheetWithHeaders(RISK_FLAGS_SHEET, RISK_FLAG_HEADERS); }
 
 function findObjectRow(sh, headers, key, value) {
   var col = headers.indexOf(key);
@@ -763,6 +801,10 @@ function parentRecordSummary(r) {
     group: r.group, trainingTopic: r.trainingTopic, status: r.status,
     absenceReason: r.absenceReason, absenceReflection: r.absenceReflection,
     tomorrowGoal: r.tomorrowGoal,
+    finalReadinessScore: r.finalReadinessScore,
+    readinessStatusLight: r.readinessStatusLight,
+    trainingDirection: r.trainingDirection,
+    coachPublicNote: r.coachPublicNote,
     nutritionAdviceParent: r.nutritionAdviceParent, coachReply: r.coachReply,
     parentNote: r.parentNote, timestamp: r.timestamp
   };
@@ -804,6 +846,10 @@ function addRecordAuthorized(data) {
   }
 
   var saved = addRecord(payload);
+  if (saved.ok) {
+    appendAiScoreFromPayload(payload);
+    appendRiskFlagsFromPayload(payload);
+  }
   if (saved.ok && openKpi) {
     var weeklyData = {
       authToken: data.authToken, legacyRole: data.legacyRole, legacyName: data.legacyName,
@@ -823,6 +869,95 @@ function addRecordAuthorized(data) {
     saved.kpi = submitWeeklyKpi(weeklyData);
   }
   return saved;
+}
+
+function getCoachScores(date) {
+  var rows = readSheetObjects(getCoachScoresSheet(), COACH_SCORE_HEADERS);
+  if (date) rows = rows.filter(function (r) { return formatDateCell(r.date) === formatDateCell(date); });
+  return { ok: true, data: rows };
+}
+function saveCoachScore(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var p = data.payload || {};
+  var date = formatDateCell(p.date || todayStr());
+  var name = normalizeName(p.studentName);
+  if (!name) return { ok: false, error: '缺少 studentName' };
+  var sh = getCoachScoresSheet();
+  var rows = readSheetObjects(sh, COACH_SCORE_HEADERS);
+  var rowNum = -1;
+  for (var i = 0; i < rows.length; i++) {
+    if (formatDateCell(rows[i].date) === date && normalizeName(rows[i].studentName) === name) { rowNum = i + 2; break; }
+  }
+  var fields = {
+    timestamp: nowIso(), date: date, studentName: name,
+    coachAttitudeScore: p.coachAttitudeScore || '',
+    coachTechniqueScore: p.coachTechniqueScore || '',
+    coachExecutionScore: p.coachExecutionScore || '',
+    coachRiskScore: p.coachRiskScore || '',
+    coachPublicNote: String(p.coachPublicNote || '').slice(0, 1000),
+    coachPrivateNote: String(p.coachPrivateNote || '').slice(0, 2000)
+  };
+  if (rowNum > 0) updateObjectRow(sh, COACH_SCORE_HEADERS, rowNum, fields);
+  else sh.appendRow(COACH_SCORE_HEADERS.map(function (h) { return fields[h] == null ? '' : fields[h]; }));
+
+  var rec = getLastRecordByName(name);
+  if (rec && formatDateCell(rec.date) === date && rec.recordId) {
+    updateRecord(rec.recordId, {
+      coachAttitudeScore: fields.coachAttitudeScore,
+      coachTechniqueScore: fields.coachTechniqueScore,
+      coachExecutionScore: fields.coachExecutionScore,
+      coachRiskScore: fields.coachRiskScore,
+      coachPublicNote: fields.coachPublicNote,
+      coachPrivateNote: fields.coachPrivateNote
+    });
+  }
+  return { ok: true, data: fields };
+}
+function appendAiScoreFromPayload(payload) {
+  if (!payload || payload.finalReadinessScore === undefined || payload.finalReadinessScore === '') return;
+  var sh = getAiScoresSheet();
+  var row = {
+    timestamp: nowIso(),
+    date: payload.date || todayStr(),
+    studentName: payload.name || payload.studentName || '',
+    selfScore: payload.selfScore || '',
+    coachScore: payload.coachScore || '',
+    recoveryScore: payload.readinessRecoveryScore || payload.recoveryScore || '',
+    attendanceScore: payload.attendanceScore || '',
+    riskPenalty: payload.riskPenalty || '',
+    finalReadinessScore: payload.finalReadinessScore || '',
+    statusLight: payload.readinessStatusLight || '',
+    aiTags: payload.aiTags || '',
+    trainingDirection: payload.trainingDirection || '',
+    athleteFeedback: payload.feedbackStudentText || '',
+    parentFeedback: payload.feedbackParentText || '',
+    coachFeedback: payload.feedbackCoachText || ''
+  };
+  sh.appendRow(AI_SCORE_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; }));
+}
+function appendRiskFlagsFromPayload(payload) {
+  if (!payload || !payload.aiTags) return;
+  var tags = String(payload.aiTags || '').split('、').filter(Boolean);
+  if (!tags.length) return;
+  var sh = getRiskFlagsSheet();
+  tags.forEach(function (tag) {
+    if (!/風險|不足|關心|硬撐|疼痛|脫水|睡眠|連續/.test(tag)) return;
+    var level = /受傷|高風險|紅燈|脫水/.test(tag) ? 'high' : 'medium';
+    var row = {
+      timestamp: nowIso(),
+      date: payload.date || todayStr(),
+      studentName: payload.name || payload.studentName || '',
+      riskType: tag,
+      riskLevel: level,
+      riskReason: payload.readinessStatusLight || '',
+      suggestedAction: payload.trainingDirection || '請教練依現場狀態調整訓練量。',
+      isResolved: '否',
+      resolvedAt: '',
+      coachNote: ''
+    };
+    sh.appendRow(RISK_FLAG_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; }));
+  });
 }
 
 function stripDailyKpiFields(payload) {
