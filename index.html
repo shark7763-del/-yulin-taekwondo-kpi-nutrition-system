@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>YouthFit AI｜青少年 AI 運動共融平台</title>
   <meta name="description" content="用 AI 幫助每位青少年找到適合自己的運動，建立健康、自律、自信與社交能力。" />
-  <link rel="stylesheet" href="style.css?v=20260623b" />
+  <link rel="stylesheet" href="style.css?v=20260623a" />
   <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
 </head>
 <body>
@@ -14,45 +14,14 @@
   <div id="loginOverlay" class="login-overlay">
     <div class="yf-landing">
       <section class="yf-hero" aria-labelledby="yfTitle">
-        <div class="yf-hero-copy">
-          <span class="yf-kicker">AI Sports Inclusion Platform</span>
-          <h1 id="yfTitle">YouthFit AI｜青少年 AI 運動共融平台</h1>
-          <p class="yf-lead">用 AI 幫助每位青少年找到適合自己的運動，建立健康、自律、自信與社交能力。</p>
-          <p class="yf-mission">這不是只幫教練管理選手的工具，而是用 AI 降低運動資源落差，讓每位青少年都能獲得基本運動指導、成長追蹤與正向陪伴。</p>
-          <div class="yf-actions">
-            <a class="yf-btn yf-btn-primary" href="#yfMatch">開始 AI 運動媒合</a>
-            <a class="yf-btn yf-btn-ghost" href="#teamproLogin">直接登入 TeamPro</a>
-          </div>
+        <span class="yf-kicker">AI Sports Inclusion Platform</span>
+        <h1 id="yfTitle">YouthFit AI｜青少年 AI 運動共融平台</h1>
+        <p class="yf-lead">用 AI 幫助每位青少年找到適合自己的運動，建立健康、自律、自信與社交能力。</p>
+        <p class="yf-mission">這不是只幫教練管理選手的工具，而是用 AI 降低運動資源落差，讓每位青少年都能獲得基本運動指導、成長追蹤與正向陪伴。</p>
+        <div class="yf-actions">
+          <a class="yf-btn yf-btn-primary" href="#yfMatch">開始 AI 運動媒合</a>
+          <a class="yf-btn yf-btn-ghost" href="#teamproLogin">進入 TeamPro 進階教練版</a>
         </div>
-
-        <aside id="teamproLogin" class="yf-hero-login" aria-label="TeamPro 進階教練版登入">
-          <p class="yf-eyebrow">TeamPro / KPI DATA FOUNDATION</p>
-          <div class="login-card">
-            <h2 class="login-title">育林 TeamPro 進階教練版</h2>
-            <p class="login-sub">原有 KPI、營養、訓練紀錄與角色後台完整保留</p>
-
-            <div id="loginStep1">
-              <p class="login-hint">請選擇你的身分</p>
-              <div class="login-roles">
-                <button class="login-role-btn" data-role="student">🥋 我是選手</button>
-                <button class="login-role-btn" data-role="parent">👨‍👩‍👧 我是家長</button>
-                <button class="login-role-btn" data-role="coach">📊 我是教練</button>
-              </div>
-              <div class="login-entry-help">
-                <p><b>選手：</b>姓名＋4位數 PIN</p>
-                <p><b>家長：</b>首次孩子姓名＋完整手機；之後孩子姓名＋手機後四碼</p>
-                <p><b>教練：</b>教練密碼</p>
-              </div>
-            </div>
-
-            <div id="loginStep2" style="display:none;"></div>
-            <details class="login-privacy-note">
-              <summary>角色權限與資料說明</summary>
-              <p>本系統依角色顯示不同資料。選手只能查看自己的資料，家長只能查看自己孩子的摘要，教練後台保留完整資料供訓練管理與風險追蹤使用。每日回報每天開放，KPI 回報由教練依訓練週期或比賽狀況手動開啟。</p>
-            </details>
-          </div>
-        </aside>
-
         <div class="yf-impact-strip" aria-label="平台希望建立的能力">
           <span>健康</span><span>自律</span><span>自信</span><span>社交能力</span><span>運動習慣</span><span>身心韌性</span>
         </div>
@@ -133,11 +102,29 @@
         </div>
       </section>
 
-      <section class="yf-login-section yf-foundation-section">
+      <section id="teamproLogin" class="yf-login-section">
         <p class="yf-eyebrow">TeamPro / KPI DATA FOUNDATION</p>
-        <h2>原有 TeamPro 功能保留為進階資料後台</h2>
-        <p>既有 KPI、營養、訓練紀錄、家長後台與教練後台，會成為 YouthFit AI 的資料基礎，用來支援成長追蹤、風險預警與 Goal Coach 建議。</p>
-        <a class="yf-btn yf-btn-ghost" href="#teamproLogin">回到登入入口</a>
+    <div class="login-card">
+      <h2 class="login-title">育林 TeamPro 進階教練版</h2>
+      <p class="login-sub">原有 KPI、營養、訓練紀錄與角色後台完整保留</p>
+
+      <div id="loginStep1">
+        <p class="login-hint">請選擇你的身分</p>
+        <div class="login-roles">
+          <button class="login-role-btn" data-role="student">🥋 我是選手</button>
+          <button class="login-role-btn" data-role="parent">👨‍👩‍👧 我是家長</button>
+          <button class="login-role-btn" data-role="coach">📊 我是教練</button>
+        </div>
+        <div class="login-entry-help">
+          <p><b>選手：</b>姓名＋4位數 PIN</p>
+          <p><b>家長：</b>首次孩子姓名＋完整手機；之後孩子姓名＋手機後四碼</p>
+          <p><b>教練：</b>教練密碼</p>
+        </div>
+      </div>
+
+      <div id="loginStep2" style="display:none;"></div>
+      <p class="login-privacy-note">本系統依角色顯示不同資料。選手只能查看自己的資料，家長只能查看自己孩子的摘要，教練後台保留完整資料供訓練管理與風險追蹤使用。每日回報每天開放，KPI 回報由教練依訓練週期或比賽狀況手動開啟。</p>
+    </div>
       </section>
       <footer class="yf-footer">YouthFit AI｜讓每位青少年都有開始運動的機會</footer>
     </div>
