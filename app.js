@@ -3706,9 +3706,10 @@ function readinessParentVersion(rec, readiness) {
 }
 function readinessCoachVersion(rec, readiness) {
   const tags = readiness.aiTags.length ? readiness.aiTags.join('、') : '無明顯特殊標籤';
+  const riskText = readiness.riskPenalty ? `風險扣分 ${readiness.riskPenalty} 分` : '無風險扣分';
   return {
     affirm: `準備度 ${readiness.finalReadinessScore} 分｜${readiness.statusLight}。`,
-    watch: `self ${readiness.selfScore}、coach ${readiness.coachScore}、recovery ${readiness.recoveryScore}、attendance ${readiness.attendanceScore}、risk -${readiness.riskPenalty}。標籤：${tags}。`,
+    watch: `自評 ${readiness.selfScore} 分、教練評估 ${readiness.coachScore} 分、恢復 ${readiness.recoveryScore} 分、出席 ${readiness.attendanceScore} 分，${riskText}。判斷標籤：${tags}。`,
     oneThing: `${readiness.trainingDirection}${readiness.needInterview ? ' 建議安排一對一關心，先了解原因再調整訓練量。' : ''}`,
     quote: '管理重點：用準備度安排訓練，不用分數處罰選手。'
   };
@@ -6073,6 +6074,411 @@ ${statusLine}，整體表現${trend}。
 回家可以多給孩子鼓勵，幫忙留意睡眠、三餐與水分，這些都會直接影響訓練恢復。謝謝您的支持，我們一起陪孩子變得更強 💪`;
 }
 
+function monthStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+function journalSafePart(s) {
+  return String(s || '').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim();
+}
+
+function journalInRange(dateStr, fromMonth, toMonth) {
+  const m = normDate(dateStr).slice(0, 7);
+  if (!m) return false;
+  if (fromMonth && m < fromMonth) return false;
+  if (toMonth && m > toMonth) return false;
+  return true;
+}
+
+function journalRangeLabel(fromMonth, toMonth) {
+  if (!fromMonth && !toMonth) return '全部資料';
+  if (fromMonth && toMonth) return `${fromMonth.replace('-', ' 年 ')} 月 ～ ${toMonth.replace('-', ' 年 ')} 月`;
+  if (fromMonth) return `${fromMonth.replace('-', ' 年 ')} 月起`;
+  return `～ ${toMonth.replace('-', ' 年 ')} 月`;
+}
+
+function journalFileNo(scope, fromMonth, toMonth) {
+  const d = new Date();
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+  return `JR-${journalSafePart(scope || 'single')}-${journalSafePart(fromMonth || 'ALL')}-${journalSafePart(toMonth || 'ALL')}-${stamp}`;
+}
+
+function journalCoachLabel() {
+  const el = $id('journalCoachName');
+  const raw = el ? String(el.value || '').trim() : '';
+  return raw || '教練簽核';
+}
+
+function refreshJournalFileNo() {
+  const fileNoEl = $id('journalFileNo');
+  if (!fileNoEl) return '';
+  const scope = ($id('profileName') && $id('profileName').value) || 'journal';
+  const fromMonth = ($id('journalMonthFrom') && $id('journalMonthFrom').value.trim()) || '';
+  const toMonth = ($id('journalMonthTo') && $id('journalMonthTo').value.trim()) || '';
+  const fileNo = journalFileNo(scope, fromMonth, toMonth);
+  fileNoEl.value = fileNo;
+  return fileNo;
+}
+
+function journalStatusTone(rec) {
+  const s = String(rec.readinessStatusLight || rec.status || '');
+  if (s.indexOf('紅') !== -1) return 'red';
+  if (s.indexOf('橘') !== -1) return 'orange';
+  if (s.indexOf('黃') !== -1) return 'yellow';
+  return 'green';
+}
+
+function journalText(v, fallback) {
+  const text = String(v == null ? '' : v).trim();
+  return text ? escapeHtml(text).replace(/\n/g, '<br>') : (fallback || '—');
+}
+
+function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
+  const ordered = dedupeLatestByDate(recs || []).slice().reverse(); // 舊→新
+  const total = ordered.length;
+  const first = ordered[0];
+  const last = ordered[ordered.length - 1];
+  const totalScoreVals = ordered.map(r => parseFloat(r.totalScore)).filter(v => !isNaN(v));
+  const avgScore = totalScoreVals.length ? round1(totalScoreVals.reduce((a, b) => a + b, 0) / totalScoreVals.length) : null;
+  const readinessVals = ordered.map(r => parseFloat(r.finalReadinessScore)).filter(v => !isNaN(v));
+  const avgReadiness = readinessVals.length ? Math.round(readinessVals.reduce((a, b) => a + b, 0) / readinessVals.length) : null;
+  const greenCount = ordered.filter(r => String(r.readinessStatusLight || r.status || '').indexOf('綠') !== -1).length;
+  const yellowCount = ordered.filter(r => String(r.readinessStatusLight || r.status || '').indexOf('黃') !== -1).length;
+  const orangeCount = ordered.filter(r => String(r.readinessStatusLight || r.status || '').indexOf('橘') !== -1).length;
+  const redCount = ordered.filter(r => String(r.readinessStatusLight || r.status || '').indexOf('紅') !== -1).length;
+  const bodyRiskDays = ordered.filter(r => String(r.bodyStatus || '') === '疲勞' || String(r.bodyStatus || '') === '不舒服' || String(r.bodyStatus || '') === '受傷中').length;
+  const lowSleepDays = ordered.filter(r => {
+    const s = parseFloat(r.sleepHours);
+    return !isNaN(s) && s < 7;
+  }).length;
+  const rangeLabel = journalRangeLabel(fromMonth, toMonth);
+  const fileNo = journalFileNo(name, fromMonth, toMonth);
+  const coachName = journalCoachLabel();
+
+  function statCard(value, label, sub, tone) {
+    return `<div class="mr-stat ${tone || ''}"><div class="mr-stat-val">${escapeHtml(String(value))}</div><div class="mr-stat-label">${escapeHtml(label)}</div>${sub ? `<div class="mr-stat-sub">${escapeHtml(sub)}</div>` : ''}</div>`;
+  }
+
+  const summaryLines = [];
+  summaryLines.push(`訓練紀錄 ${total} 天`);
+  if (first && last) summaryLines.push(`區間 ${dateSlash(first.date)} ～ ${dateSlash(last.date)}`);
+  if (avgScore != null) summaryLines.push(`平均總分 ${avgScore}`);
+  if (avgReadiness != null) summaryLines.push(`平均準備度 ${avgReadiness}`);
+  if (bodyRiskDays) summaryLines.push(`身體提醒 ${bodyRiskDays} 天`);
+  if (lowSleepDays) summaryLines.push(`睡眠不足 ${lowSleepDays} 天`);
+
+  const summaryCoach = ordered.length ? buildCoachFeedback(
+    ordered[ordered.length - 1],
+    ordered.length > 1 ? ordered[ordered.length - 2] : null,
+    ordered.slice(0, Math.max(ordered.length - 1, 0)),
+    buildAffirmations(ordered[ordered.length - 1], ordered.length > 1 ? ordered[ordered.length - 2] : null, ordered.slice(0, Math.max(ordered.length - 1, 0)))
+  ).versions.coach : null;
+
+  let html = `<div class="mr-report jr-report">`;
+  html += `<section class="mr-page">`;
+  html += `<div class="mr-cover">`;
+  html += `<div class="mr-cover-title">個人訓練日誌</div>`;
+  html += `<div class="mr-cover-sub">${escapeHtml(name)}</div>`;
+  html += `<div class="mr-cover-month">${escapeHtml(rangeLabel)}</div>`;
+  html += `<div class="mr-cover-use">供訓練管理與正式備查使用</div>`;
+  html += `<div class="jr-file-no">文件編號：${escapeHtml(fileNo)}</div>`;
+  html += `</div>`;
+  html += `<div class="mr-grid mr-grid-4">`;
+  html += statCard(total, '紀錄天數', rangeLabel);
+  html += statCard(avgScore != null ? avgScore : '—', '平均總分', avgScore != null ? '/ 150' : '');
+  html += statCard(avgReadiness != null ? avgReadiness : '—', '平均準備度', avgReadiness != null ? '/ 100' : '');
+  html += statCard(`${greenCount}/${yellowCount}/${orangeCount}/${redCount}`, '綠黃橘紅', '綠 / 黃 / 橘 / 紅');
+  html += `</div>`;
+  html += `<div class="mr-two-col">`;
+  html += `<div class="mr-panel blue"><div class="mr-panel-h">文件摘要</div><ul class="jr-mini-list">` +
+    summaryLines.map(t => `<li>${escapeHtml(t)}</li>`).join('') +
+    `</ul></div>`;
+  html += `<div class="mr-panel green"><div class="mr-panel-h">AI 教練摘要</div>` +
+    (summaryCoach ? `<div class="jr-longtext">${escapeHtml(summaryCoach.affirm).replace(/\n/g, '<br>')}</div>
+      <div class="jr-summary-note">觀察：${escapeHtml(summaryCoach.watch).replace(/\n/g, '<br>')}</div>
+      <div class="jr-summary-note">任務：${escapeHtml(summaryCoach.oneThing).replace(/\n/g, '<br>')}</div>` : '<div class="mr-empty sm">尚無可用資料。</div>') +
+    `</div>`;
+  html += `</div>`;
+  html += `<div class="mr-sign"><div class="mr-sign-box"><div class="mr-sign-label">教練簽核</div><div class="mr-sign-line"></div><div class="mr-sign-date">簽名：${escapeHtml(coachName)}</div></div><div class="mr-sign-box"><div class="mr-sign-label">文件編號</div><div class="mr-sign-line"></div><div class="mr-sign-date">${escapeHtml(fileNo)}</div></div></div>`;
+  html += `<div class="mr-privacy">日誌內容依訓練日期彙整，預設以最新資料為準。若同一天有多筆紀錄，會保留最新一筆。</div>`;
+  html += `<div class="mr-page-foot">育林國中技擊隊個人訓練日誌｜${escapeHtml(fileNo)}</div>`;
+  html += `</section>`;
+
+  ordered.forEach((rec, idx) => {
+    const prev = idx > 0 ? ordered[idx - 1] : null;
+    const before = ordered.slice(0, idx);
+    const current = Object.assign({}, rec);
+    applyReadiness(current, before);
+    const affirm = buildAffirmations(current, prev, before);
+    const fb = buildCoachFeedback(current, prev, before, affirm);
+    const coach = fb.versions.coach;
+    const scores = [];
+    if (String(current.trainingTopic || '').trim()) scores.push(current.trainingTopic);
+    if (String(current.lowItems || '').trim()) scores.push(`弱項：${current.lowItems}`);
+    if (String(current.improveTargets || '').trim()) scores.push(`改善：${current.improveTargets}`);
+    const bodyBits = [];
+    if (String(current.bodyStatus || '').trim()) bodyBits.push(current.bodyStatus);
+    if (String(current.sleepHours || '').trim()) bodyBits.push(`睡眠 ${current.sleepHours} 小時`);
+    if (String(current.sleepQuality || '').trim()) bodyBits.push(`睡眠品質 ${current.sleepQuality}`);
+    if (String(current.soreness || '').trim()) bodyBits.push(`痠痛 ${current.soreness}/5`);
+    if (String(current.rpe || '').trim()) bodyBits.push(`RPE ${current.rpe}/10`);
+    if (String(current.injuryArea || '').trim()) bodyBits.push(`不適部位 ${current.injuryArea}`);
+    if (String(current.painScore || '').trim()) bodyBits.push(`疼痛 ${current.painScore}/10`);
+    if (String(current.urineStatus || '').trim()) bodyBits.push(`尿液 ${current.urineStatus}`);
+
+    html += `<section class="mr-page">`;
+    html += `<div class="mr-page-head"><div class="mr-page-title">${escapeHtml(dateSlash(current.date))}｜${escapeHtml(name)}</div><div class="mr-page-meta">${escapeHtml(current.group || '訓練紀錄')}｜第 ${idx + 1} / ${total} 筆</div></div>`;
+    html += `<div class="mr-grid mr-grid-4">`;
+    html += statCard(current.group || '—', '項目', current.trainingTopic || '訓練主題');
+    html += statCard(current.averageScore != null && current.averageScore !== '' ? current.averageScore : '—', '平均 / 總分', current.totalScore != null && current.totalScore !== '' ? `總分 ${current.totalScore}` : '');
+    html += statCard(current.readinessStatusLight || current.status || '—', '狀態', current.finalReadinessScore != null && current.finalReadinessScore !== '' ? `準備度 ${current.finalReadinessScore}` : '');
+    html += statCard(current.bodyStatus || '—', '身體狀態', bodyBits.slice(1, 3).join(' · '));
+    html += `</div>`;
+
+    html += `<div class="mr-two-col">`;
+    html += `<div class="mr-panel blue"><div class="mr-panel-h">訓練課表</div>` +
+      `<div class="jr-longtext">${journalText(current.trainingTopic, '未填')}</div>` +
+      `<ul class="jr-mini-list">` +
+      `<li>訓練強度：${escapeHtml(current.trainingIntensity || '—')}</li>` +
+      `<li>訓練組別：${escapeHtml(current.group || '—')}</li>` +
+      `<li>課表重點：${scores.length ? scores.map(s => escapeHtml(s)).join('；') : '—'}</li>` +
+      `</ul></div>`;
+    html += `<div class="mr-panel yellow"><div class="mr-panel-h">訓練心得</div>` +
+      `<div class="jr-longtext">${journalText(current.reflection, '未填')}</div>` +
+      `<div class="jr-summary-note">明日目標：${journalText(current.tomorrowGoal, '—')}</div>` +
+      `${String(current.gratitude || '').trim() ? `<div class="jr-summary-note">感謝：${journalText(current.gratitude)}</div>` : ''}` +
+      `</div>`;
+    html += `</div>`;
+
+    html += `<div class="mr-two-col">`;
+    html += `<div class="mr-panel red"><div class="mr-panel-h">身體狀態</div>` +
+      `<ul class="jr-mini-list">` +
+      `<li>${escapeHtml(bodyBits.length ? bodyBits.join('；') : '—')}</li>` +
+      `<li>飲食風險：${escapeHtml(current.nutritionRisks || '無')}</li>` +
+      `<li>恢復提醒：${escapeHtml(current.recoveryState || '—')}</li>` +
+      `</ul></div>`;
+    html += `<div class="mr-panel green"><div class="mr-panel-h">教練回饋（AI 草稿）</div>` +
+      `<div class="jr-longtext">【今日狀態】${escapeHtml(coach.affirm).replace(/\n/g, '<br>')}</div>` +
+      `<div class="jr-summary-note">【觀察】${escapeHtml(coach.watch).replace(/\n/g, '<br>')}</div>` +
+      `<div class="jr-summary-note">【任務】${escapeHtml(coach.oneThing).replace(/\n/g, '<br>')}</div>` +
+      `<div class="jr-summary-note">【提醒】${escapeHtml(coach.quote).replace(/\n/g, '<br>')}</div>` +
+      `</div>`;
+    html += `</div>`;
+    html += `<div class="mr-sign"><div class="mr-sign-box"><div class="mr-sign-label">教練簽核</div><div class="mr-sign-line"></div><div class="mr-sign-date">簽名：${escapeHtml(coachName)}</div></div><div class="mr-sign-box"><div class="mr-sign-label">文件編號</div><div class="mr-sign-line"></div><div class="mr-sign-date">${escapeHtml(fileNo)}</div></div></div>`;
+    html += `<div class="mr-privacy">本頁由系統自動整理，教練可在送出紀錄後直接核對與調整後再正式輸出。</div>`;
+    html += `<div class="mr-page-foot">第 ${idx + 1} / ${total} 頁｜${escapeHtml(fileNo)}</div>`;
+    html += `</section>`;
+  });
+
+  html += `</div>`;
+
+  const fileBase = `育林國中技擊隊_個人訓練日誌_${journalSafePart(name)}_${journalSafePart(fromMonth || 'all')}_${journalSafePart(toMonth || 'all')}_${journalSafePart(fileNo)}`;
+  return { html, fileBase, fileNo, coachName };
+}
+
+let _currentJournalReport = null;
+
+function clearPersonalJournalPreview(showHint) {
+  _currentJournalReport = null;
+  const previewCard = $id('journalPreviewCard');
+  const preview = $id('journalPreview');
+  const downloadBtn = $id('btnDownloadJournalPdf');
+  const printBtn = $id('btnPrintJournal');
+  if (downloadBtn) downloadBtn.disabled = true;
+  if (printBtn) printBtn.disabled = true;
+  if (preview) preview.innerHTML = showHint ? '<div class="hint-box">請先選擇選手與月份區間，然後產生日誌預覽。</div>' : '';
+  if (previewCard) previewCard.style.display = showHint ? 'block' : 'none';
+}
+
+function renderPersonalJournalPreview(report) {
+  const previewCard = $id('journalPreviewCard');
+  const preview = $id('journalPreview');
+  const downloadBtn = $id('btnDownloadJournalPdf');
+  const printBtn = $id('btnPrintJournal');
+  if (!previewCard || !preview) return;
+  if (!report) {
+    preview.innerHTML = '<div class="hint-box">請先選擇選手與月份區間，然後產生日誌預覽。</div>';
+    previewCard.style.display = 'block';
+    if (downloadBtn) downloadBtn.disabled = true;
+    if (printBtn) printBtn.disabled = true;
+    return;
+  }
+  preview.innerHTML = report.html;
+  previewCard.style.display = 'block';
+  if (downloadBtn) downloadBtn.disabled = false;
+  if (printBtn) printBtn.disabled = false;
+  previewCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function buildBatchJournalReport(names, grouped, fromMonth, toMonth) {
+  const scope = `batch-${names.length}`;
+  const fileNo = journalFileNo(scope, fromMonth, toMonth);
+  const coachName = journalCoachLabel();
+  const rangeLabel = journalRangeLabel(fromMonth, toMonth);
+  let html = `<div class="mr-report jr-report">`;
+  html += `<section class="mr-page">`;
+  html += `<div class="mr-cover">`;
+  html += `<div class="mr-cover-title">全隊個人訓練日誌</div>`;
+  html += `<div class="mr-cover-sub">${escapeHtml(names.join('、'))}</div>`;
+  html += `<div class="mr-cover-month">${escapeHtml(rangeLabel)}</div>`;
+  html += `<div class="mr-cover-use">批次匯出・供正式備查使用</div>`;
+  html += `<div class="jr-file-no">文件編號：${escapeHtml(fileNo)}</div>`;
+  html += `</div>`;
+  html += `<div class="mr-grid mr-grid-3">`;
+  html += `<div class="mr-stat"><div class="mr-stat-val">${names.length}</div><div class="mr-stat-label">匯出人數</div><div class="mr-stat-sub">${escapeHtml(rangeLabel)}</div></div>`;
+  html += `<div class="mr-stat"><div class="mr-stat-val">${Object.keys(grouped).length}</div><div class="mr-stat-label">有資料人數</div><div class="mr-stat-sub">至少 1 筆紀錄</div></div>`;
+  html += `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(coachName)}</div><div class="mr-stat-label">教練簽名</div><div class="mr-stat-sub">文件編號：${escapeHtml(fileNo)}</div></div>`;
+  html += `</div>`;
+  html += `<div class="mr-panel blue"><div class="mr-panel-h">批次摘要</div><ul class="jr-mini-list">` +
+    `<li>已依月份區間彙整每位選手資料。</li>` +
+    `<li>每位選手保留同一天最新一筆紀錄。</li>` +
+    `<li>下方逐位輸出，便於上傳與歸檔。</li>` +
+    `</ul></div>`;
+  html += `<div class="mr-sign"><div class="mr-sign-box"><div class="mr-sign-label">教練簽核</div><div class="mr-sign-line"></div><div class="mr-sign-date">簽名：${escapeHtml(coachName)}</div></div><div class="mr-sign-box"><div class="mr-sign-label">文件編號</div><div class="mr-sign-line"></div><div class="mr-sign-date">${escapeHtml(fileNo)}</div></div></div>`;
+  html += `<div class="mr-page-foot">全隊批次個人訓練日誌｜${escapeHtml(fileNo)}</div>`;
+  html += `</section>`;
+
+  names.forEach((name, idx) => {
+    const recs = grouped[name] || [];
+    const ordered = dedupeLatestByDate(recs || []).slice().reverse();
+    if (!ordered.length) return;
+    const last = ordered[ordered.length - 1];
+    const before = ordered.slice(0, Math.max(ordered.length - 1, 0));
+    const prev = ordered.length > 1 ? ordered[ordered.length - 2] : null;
+    const current = Object.assign({}, last);
+    applyReadiness(current, before);
+    const aff = buildAffirmations(current, prev, before);
+    const fb = buildCoachFeedback(current, prev, before, aff);
+    const coach = fb.versions.coach;
+    const fileNoLine = `${fileNo}-${String(idx + 1).padStart(2, '0')}`;
+    html += `<section class="mr-page">`;
+    html += `<div class="mr-page-head"><div class="mr-page-title">${escapeHtml(name)}｜個人訓練日誌</div><div class="mr-page-meta">文件編號 ${escapeHtml(fileNoLine)}｜${ordered.length} 筆</div></div>`;
+    html += `<div class="mr-grid mr-grid-4">`;
+    html += `<div class="mr-stat"><div class="mr-stat-val">${ordered.length}</div><div class="mr-stat-label">紀錄天數</div><div class="mr-stat-sub">${escapeHtml(rangeLabel)}</div></div>`;
+    html += `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(current.finalReadinessScore != null ? String(current.finalReadinessScore) : '—')}</div><div class="mr-stat-label">最新準備度</div><div class="mr-stat-sub">${escapeHtml(current.readinessStatusLight || current.status || '—')}</div></div>`;
+    html += `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(current.bodyStatus || '—')}</div><div class="mr-stat-label">最新身體狀態</div><div class="mr-stat-sub">${escapeHtml(current.trainingTopic || '—')}</div></div>`;
+    html += `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(current.averageScore != null && current.averageScore !== '' ? String(current.averageScore) : '—')}</div><div class="mr-stat-label">最新平均</div><div class="mr-stat-sub">${escapeHtml(current.totalScore != null && current.totalScore !== '' ? String(current.totalScore) : '—')}</div></div>`;
+    html += `</div>`;
+    html += `<div class="mr-two-col">`;
+    html += `<div class="mr-panel blue"><div class="mr-panel-h">訓練紀錄</div><ul class="jr-mini-list">` +
+      ordered.slice(0, 8).map(r => `<li>${escapeHtml(dateSlash(r.date))}｜${escapeHtml(r.trainingTopic || '未填')}｜${escapeHtml(r.status || r.readinessStatusLight || '—')}${r.finalReadinessScore != null && r.finalReadinessScore !== '' ? `｜${escapeHtml(String(r.finalReadinessScore))}` : ''}</li>`).join('') +
+      `</ul></div>`;
+    html += `<div class="mr-panel green"><div class="mr-panel-h">AI 教練摘要</div>` +
+      `<div class="jr-longtext">【今日狀態】${escapeHtml(coach.affirm).replace(/\n/g, '<br>')}</div>` +
+      `<div class="jr-summary-note">【觀察】${escapeHtml(coach.watch).replace(/\n/g, '<br>')}</div>` +
+      `<div class="jr-summary-note">【任務】${escapeHtml(coach.oneThing).replace(/\n/g, '<br>')}</div>` +
+      `</div>`;
+    html += `</div>`;
+    html += `<div class="mr-sign"><div class="mr-sign-box"><div class="mr-sign-label">教練簽核</div><div class="mr-sign-line"></div><div class="mr-sign-date">簽名：${escapeHtml(coachName)}</div></div><div class="mr-sign-box"><div class="mr-sign-label">文件編號</div><div class="mr-sign-line"></div><div class="mr-sign-date">${escapeHtml(fileNoLine)}</div></div></div>`;
+    html += `<div class="mr-privacy">批次匯出頁面只顯示該選手資料。</div>`;
+    html += `<div class="mr-page-foot">第 ${idx + 1} / ${names.length} 位｜${escapeHtml(fileNoLine)}</div>`;
+    html += `</section>`;
+  });
+
+  html += `</div>`;
+  const fileBase = `育林國中技擊隊_全隊個人訓練日誌_${journalSafePart(fromMonth || 'all')}_${journalSafePart(toMonth || 'all')}_${journalSafePart(fileNo)}`;
+  return { html, fileBase, fileNo, coachName };
+}
+
+async function loadPersonalJournal() {
+  const name = $id('profileName').value;
+  const fromMonth = $id('journalMonthFrom').value.trim();
+  const toMonth = $id('journalMonthTo').value.trim();
+  const card = $id('journalPreviewCard');
+  if (!name) { toast('請選擇選手'); return; }
+  if (fromMonth && toMonth && fromMonth > toMonth) { toast('開始月份不能晚於結束月份'); return; }
+  toast('讀取個人訓練日誌中...');
+  const all = await fetchRecentRecords(name, 9999);
+  const filtered = (all || []).filter(r => journalInRange(r.date, fromMonth, toMonth));
+  const recs = dedupeLatestByDate(filtered || []).slice().reverse(); // 舊→新
+  if (!recs.length) {
+    clearPersonalJournalPreview(true);
+    if (card) card.style.display = 'block';
+    toast('這個區間沒有資料');
+    return;
+  }
+  _currentJournalReport = buildPersonalJournalReport(name, recs, fromMonth, toMonth);
+  const fileNoEl = $id('journalFileNo');
+  if (fileNoEl) fileNoEl.value = _currentJournalReport.fileNo || journalFileNo(name, fromMonth, toMonth);
+  renderPersonalJournalPreview(_currentJournalReport);
+  if (card) card.style.display = 'block';
+  toast('✅ 日誌已產生');
+}
+
+async function loadPersonalJournalBatch() {
+  if (!isCoachView()) { toast('全隊批次匯出僅供教練使用'); return; }
+  const fromMonth = $id('journalMonthFrom').value.trim();
+  const toMonth = $id('journalMonthTo').value.trim();
+  if (fromMonth && toMonth && fromMonth > toMonth) { toast('開始月份不能晚於結束月份'); return; }
+  toast('讀取全隊個人訓練日誌中...');
+  const roster = getPlayers();
+  const grouped = {};
+  for (const name of roster) {
+    const rows = await fetchRecentRecords(name, 9999);
+    const filtered = (rows || []).filter(r => journalInRange(r.date, fromMonth, toMonth));
+    if (filtered.length) grouped[name] = dedupeLatestByDate(filtered || []);
+  }
+  const names = Object.keys(grouped);
+  if (!names.length) { clearPersonalJournalPreview(true); toast('這個區間沒有可匯出的全隊資料'); return; }
+  _currentJournalReport = buildBatchJournalReport(names, grouped, fromMonth, toMonth);
+  const fileNoEl = $id('journalFileNo');
+  if (fileNoEl) fileNoEl.value = _currentJournalReport.fileNo || journalFileNo('batch', fromMonth, toMonth);
+  renderPersonalJournalPreview(_currentJournalReport);
+  toast('✅ 全隊批次日誌已產生');
+}
+
+function journalPdfOptions(fileBase) {
+  return {
+    margin: 0,
+    filename: fileBase + '.pdf',
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, scrollY: 0, windowWidth: 1200 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] }
+  };
+}
+
+async function downloadPersonalJournalPdf() {
+  if (!_currentJournalReport) { toast('請先產生日誌預覽'); return; }
+  const preview = $id('journalPreview');
+  const node = preview ? (preview.querySelector('.mr-report') || preview) : null;
+  if (!node) { toast('找不到日誌內容'); return; }
+  if (typeof window.html2pdf === 'undefined') {
+    toast('PDF 元件載入中，請改用「列印 / 存 PDF」');
+    return;
+  }
+  toast('產生 PDF 中，請稍候...');
+  try {
+    await window.html2pdf().set(journalPdfOptions(_currentJournalReport.fileBase)).from(node).save();
+    toast('✅ PDF 已下載');
+  } catch (e) {
+    console.error(e);
+    toast('PDF 產生失敗，請改用列印');
+  }
+}
+
+function printPersonalJournal() {
+  if (!_currentJournalReport) { toast('請先產生日誌預覽'); return; }
+  const preview = $id('journalPreview');
+  const node = preview ? (preview.querySelector('.mr-report') || preview) : null;
+  if (!node) { toast('找不到日誌內容'); return; }
+  const win = window.open('', '_blank');
+  if (!win) { toast('請允許彈出視窗以列印'); return; }
+  win.document.open();
+  win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8" />
+    <title>${journalSafePart(_currentJournalReport.fileBase)}</title>
+    <link rel="stylesheet" href="style.css?v=20260623e" />
+    <link rel="stylesheet" href="monthly-report.css?v=20260620a" />
+    <style>body{margin:0;background:#fff;} .mr-report{box-shadow:none;} .mr-page{margin:0 auto 0;} </style>
+  </head><body class="mr-print-window">${node.outerHTML}
+  <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
+  </body></html>`);
+  win.document.close();
+  win.focus();
+}
+
 /* ============================================================
    13. 系統設定：URL 與名單管理
    ============================================================ */
@@ -7111,6 +7517,35 @@ function init() {
   // 個人檔案
   const btnLoadProfile = $id('btnLoadProfile');
   if (btnLoadProfile) btnLoadProfile.addEventListener('click', loadProfile);
+  const profileName = $id('profileName');
+  if (profileName) profileName.addEventListener('change', () => {
+    clearPersonalJournalPreview();
+    refreshJournalFileNo();
+  });
+  const journalMonthFrom = $id('journalMonthFrom');
+  const journalMonthTo = $id('journalMonthTo');
+  if (journalMonthFrom) journalMonthFrom.addEventListener('change', () => {
+    clearPersonalJournalPreview();
+    refreshJournalFileNo();
+  });
+  if (journalMonthTo) journalMonthTo.addEventListener('change', () => {
+    clearPersonalJournalPreview();
+    refreshJournalFileNo();
+  });
+  const journalCoachName = $id('journalCoachName');
+  if (journalCoachName) journalCoachName.addEventListener('change', () => {
+    clearPersonalJournalPreview();
+    refreshJournalFileNo();
+  });
+  const btnLoadJournal = $id('btnLoadJournal');
+  if (btnLoadJournal) btnLoadJournal.addEventListener('click', loadPersonalJournal);
+  const btnLoadJournalBatch = $id('btnLoadJournalBatch');
+  if (btnLoadJournalBatch) btnLoadJournalBatch.addEventListener('click', loadPersonalJournalBatch);
+  const btnDownloadJournalPdf = $id('btnDownloadJournalPdf');
+  if (btnDownloadJournalPdf) btnDownloadJournalPdf.addEventListener('click', downloadPersonalJournalPdf);
+  const btnPrintJournal = $id('btnPrintJournal');
+  if (btnPrintJournal) btnPrintJournal.addEventListener('click', printPersonalJournal);
+  refreshJournalFileNo();
 
   // 系統設定
   setupSettingsHandlers();

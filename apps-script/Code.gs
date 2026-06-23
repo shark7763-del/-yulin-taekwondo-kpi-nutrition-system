@@ -173,7 +173,7 @@ function doGet(e) {
     if (action === 'ping') return jsonOut({ ok: true, message: 'pong', time: new Date().toISOString() });
     return handleAction(action, e.parameter || {});
   } catch (err) {
-    return jsonOut({ ok: false, error: String(err) });
+    return jsonOut({ ok: false, error: String(err), stack: err && err.stack ? String(err.stack).slice(0, 4000) : '' });
   }
 }
 
@@ -192,7 +192,7 @@ function doPost(e) {
     var action = body.action || 'ping';
     return handleAction(action, body);
   } catch (err) {
-    return jsonOut({ ok: false, error: String(err) });
+    return jsonOut({ ok: false, error: String(err), stack: err && err.stack ? String(err.stack).slice(0, 4000) : '' });
   }
 }
 
@@ -323,18 +323,31 @@ function jsonOut(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// 取得綁定的試算表；若目前執行環境沒有 active spreadsheet，嘗試用 Script Properties 補救。
+// 這樣 Web App / 手動執行 / 遷移部署時比較不容易只看到模糊的 getRange 錯誤。
+function getSpreadsheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss) return ss;
+  var spreadsheetId = getProp('SPREADSHEET_ID') || getProp('APP_SPREADSHEET_ID');
+  if (spreadsheetId) return SpreadsheetApp.openById(spreadsheetId);
+  throw new Error('找不到綁定的試算表，請先在 Apps Script 編輯器執行 setupSheet()，或設定 SPREADSHEET_ID。');
+}
+
+function ensureSheetExists_(ss, sheetName) {
+  var sh = ss.getSheetByName(sheetName);
+  if (sh) return sh;
+  sh = ss.insertSheet(sheetName);
+  if (!sh) throw new Error('無法建立工作表：' + sheetName);
+  return sh;
+}
+
 // 取得（或建立）資料表
 function getSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(HEADERS);
-    sheet.setFrozenRows(1);
-  }
+  var ss = getSpreadsheet_();
+  var sheet = ensureSheetExists_(ss, SHEET_NAME);
   // 確保有表頭
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(HEADERS);
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
     sheet.setFrozenRows(1);
   }
   ensureSchema(sheet); // 自動把欄位補到最新版（新增 recordId、教練複評等欄位）
@@ -462,6 +475,7 @@ function getTrainingTasksSheet() { return getSheetWithHeaders(TRAINING_TASKS_SHE
 function getRiskFlagsSheet() { return getSheetWithHeaders(RISK_FLAGS_SHEET, RISK_FLAG_HEADERS); }
 
 function findObjectRow(sh, headers, key, value) {
+  if (!sh) throw new Error('工作表不存在，無法查找資料。');
   var col = headers.indexOf(key);
   if (col < 0 || sh.getLastRow() < 2) return null;
   var values = sh.getRange(2, 1, sh.getLastRow() - 1, headers.length).getValues();
@@ -480,6 +494,8 @@ function findStudentAccountByName(name) {
 }
 
 function updateObjectRow(sh, headers, rowNum, fields) {
+  if (!sh) throw new Error('工作表不存在，無法更新資料。');
+  if (!rowNum || rowNum < 1) throw new Error('更新列號無效：' + rowNum);
   var values = sh.getRange(rowNum, 1, 1, headers.length).getValues()[0];
   Object.keys(fields).forEach(function (key) {
     var idx = headers.indexOf(key);
@@ -1179,10 +1195,9 @@ function dedupeSheet() {
    ============================================================ */
 
 function getRosterSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(ROSTER_SHEET);
-  if (!sh) {
-    sh = ss.insertSheet(ROSTER_SHEET);
+  var ss = getSpreadsheet_();
+  var sh = ensureSheetExists_(ss, ROSTER_SHEET);
+  if (sh.getLastRow() === 0) {
     sh.getRange(1, 1).setValue('name');
     sh.setFrozenRows(1);
   }
@@ -1221,14 +1236,8 @@ function setRoster(players, data) {
    ============================================================ */
 
 function getSheetWithHeaders(sheetName, headers) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(sheetName);
-  if (!sh) {
-    sh = ss.insertSheet(sheetName);
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sh.setFrozenRows(1);
-    return sh;
-  }
+  var ss = getSpreadsheet_();
+  var sh = ensureSheetExists_(ss, sheetName);
   if (sh.getMaxColumns() < headers.length) {
     sh.insertColumnsAfter(sh.getMaxColumns(), headers.length - sh.getMaxColumns());
   }
@@ -1625,6 +1634,7 @@ function updateKpiSessionStatus(data, status) {
   if (!auth.ok) return auth;
   var found = findKpiSession(data.sessionId);
   if (!found) return { ok: false, error: '找不到此 KPI 回報。' };
+  if (!found.sheet) return { ok: false, error: 'KPI 工作表未建立，請先執行 setupSheet()。' };
   if (status === 'open') {
     var conflicts = kpiTargetConflict(found.object, found.object.sessionId);
     if (conflicts.length) return { ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' };
@@ -1640,6 +1650,7 @@ function extendKpiSession(data) {
   if (!auth.ok) return auth;
   var found = findKpiSession(data.sessionId);
   if (!found) return { ok: false, error: '找不到此 KPI 回報。' };
+  if (!found.sheet) return { ok: false, error: 'KPI 工作表未建立，請先執行 setupSheet()。' };
   var conflicts = kpiTargetConflict(found.object, found.object.sessionId);
   if (conflicts.length) return { ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' };
   var newClose = resolveCloseAt(data.closeAtPreset || 'custom', data.closeAtTime);
@@ -1850,10 +1861,9 @@ function getAttendanceReportsByName(studentName, limit) {
 var APPDATA_SHEET = 'appdata';
 
 function getAppDataSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(APPDATA_SHEET);
-  if (!sh) {
-    sh = ss.insertSheet(APPDATA_SHEET);
+  var ss = getSpreadsheet_();
+  var sh = ensureSheetExists_(ss, APPDATA_SHEET);
+  if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, 2).setValues([['key', 'value']]);
     sh.setFrozenRows(1);
   }

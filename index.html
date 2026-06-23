@@ -478,8 +478,41 @@
         <select id="profileName" class="text-input"></select>
         <button type="button" id="btnLoadProfile" class="btn btn-primary">🔍 查看個人檔案</button>
       </div>
+      <div class="card" id="journalQueryCard">
+        <h3 class="card-title">📄 個人訓練日誌</h3>
+        <p class="review-label">可選擇月份區間；留空代表全部資料。PDF 會包含訓練課表、心得、身體狀態與 AI 教練回饋摘要。</p>
+        <div class="journal-range-grid">
+          <div>
+            <label class="field-label">開始月份</label>
+            <input type="month" id="journalMonthFrom" class="text-input" />
+          </div>
+          <div>
+            <label class="field-label">結束月份</label>
+            <input type="month" id="journalMonthTo" class="text-input" />
+          </div>
+        </div>
+        <div class="journal-range-grid">
+          <div>
+            <label class="field-label">教練簽名</label>
+            <input type="text" id="journalCoachName" class="text-input" placeholder="例如：李教練" />
+          </div>
+          <div>
+            <label class="field-label">文件編號</label>
+            <input type="text" id="journalFileNo" class="text-input" readonly />
+          </div>
+        </div>
+        <div class="btn-group">
+          <button type="button" id="btnLoadJournal" class="btn btn-primary">📄 產生日誌預覽</button>
+          <button type="button" id="btnLoadJournalBatch" class="btn btn-secondary">🗂️ 全隊批次匯出</button>
+          <button type="button" id="btnDownloadJournalPdf" class="btn btn-secondary" disabled>⬇️ 下載 PDF</button>
+          <button type="button" id="btnPrintJournal" class="btn btn-secondary" disabled>🖨 列印 / 存 PDF</button>
+        </div>
+      </div>
       <div class="card" id="profileResultCard" style="display:none;">
         <div id="profileResult"></div>
+      </div>
+      <div class="card" id="journalPreviewCard" style="display:none;">
+        <div id="journalPreview"></div>
       </div>
     </section>
 

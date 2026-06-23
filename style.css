@@ -891,6 +891,31 @@ textarea.text-input { resize: vertical; }
 .wk-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 .wk-actions .btn { flex: 1 1 0; min-width: 150px; }
 
+/* ============================================================
+   個人訓練日誌（區間 PDF）
+   ============================================================ */
+.journal-range-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0 12px;
+}
+
+.jr-file-no { font-size: 0.82rem; color: var(--text-soft); margin-top: 6px; }
+.jr-sign-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.jr-sign-line { flex: 1 1 240px; border-bottom: 1px solid var(--border); min-height: 34px; }
+.jr-sign-label { font-size: 0.82rem; color: var(--text-soft); }
+.jr-batch-name { font-size: 1.05rem; font-weight: 800; color: var(--gold); }
+.jr-report .mr-page { margin-bottom: 16px; }
+.jr-summary-note { font-size: 0.84rem; color: var(--text-soft); margin-top: 8px; }
+.jr-longtext { white-space: pre-wrap; line-height: 1.75; color: #2a3447; }
+.jr-mini-list { margin: 0; padding-left: 18px; }
+.jr-mini-list li { margin: 4px 0; line-height: 1.6; }
+
+@media (max-width: 820px) {
+  .journal-range-grid { grid-template-columns: 1fr; }
+}
+
 /* 列印 / 存 PDF：只留週報卡，淺色友善 */
 @media print {
   body { background: #fff; color: #111; }
