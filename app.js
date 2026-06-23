@@ -6444,15 +6444,45 @@ async function loadPersonalJournalBatch() {
   toast('✅ 全隊批次日誌已產生');
 }
 
-function journalPdfOptions(fileBase) {
+function journalPdfOptions(fileBase, scale) {
   return {
     margin: 0,
     filename: fileBase + '.pdf',
     image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true, scrollY: 0, windowWidth: 1200 },
+    html2canvas: { scale: scale || 2, useCORS: true, scrollY: 0, windowWidth: 1200, backgroundColor: '#ffffff' },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['css', 'legacy'] }
   };
+}
+// 整份一次渲染時，依頁數壓低 scale，避免超大 canvas 超過瀏覽器上限而全白
+function safeOneShotScale(pageCount) {
+  const n = pageCount || 1;
+  if (n <= 8) return 2;
+  if (n <= 16) return 1.4;
+  if (n <= 28) return 1;
+  return 0.7;
+}
+
+/* 逐頁產生 PDF：每個 .mr-page 各自 render 成獨立小 canvas，再貼進 jsPDF。
+   避免「整份報表一次畫成一張超大 canvas」超過瀏覽器 canvas 上限而全白
+   （多頁日誌最常見的空白主因）。成功回 true，無法執行（缺元件/無分頁）回 false。 */
+async function renderReportPdfByPage(node, fileBase) {
+  const h2c = window.html2canvas;
+  const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (typeof h2c !== 'function' || typeof jsPDFCtor !== 'function') return false;
+  const pages = Array.from(node.querySelectorAll('.mr-page'));
+  if (!pages.length) return false;
+  const pdf = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const pw = pdf.internal.pageSize.getWidth();
+  const ph = pdf.internal.pageSize.getHeight();
+  for (let i = 0; i < pages.length; i++) {
+    const canvas = await h2c(pages[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 794 });
+    const img = canvas.toDataURL('image/jpeg', 0.95);
+    if (i > 0) pdf.addPage();
+    pdf.addImage(img, 'JPEG', 0, 0, pw, ph);
+  }
+  pdf.save(fileBase + '.pdf');
+  return true;
 }
 
 async function downloadPersonalJournalPdf() {
@@ -6466,7 +6496,12 @@ async function downloadPersonalJournalPdf() {
   }
   toast('產生 PDF 中，請稍候...');
   try {
-    await window.html2pdf().set(journalPdfOptions(_currentJournalReport.fileBase)).from(node).save();
+    // 先試逐頁渲染（多頁不會空白）；不支援時回退原本整份渲染
+    const done = await renderReportPdfByPage(node, _currentJournalReport.fileBase);
+    if (!done) {
+      const pageCount = node.querySelectorAll('.mr-page').length;
+      await window.html2pdf().set(journalPdfOptions(_currentJournalReport.fileBase, safeOneShotScale(pageCount))).from(node).save();
+    }
     toast('✅ PDF 已下載');
   } catch (e) {
     console.error(e);
