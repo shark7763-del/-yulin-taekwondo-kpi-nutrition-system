@@ -6157,19 +6157,32 @@ function jrShortDate(d) {
   const m = s.slice(5, 7).replace(/^0/, ''), day = s.slice(8, 10).replace(/^0/, '');
   return (m && day) ? `${m}/${day}` : '';
 }
-function jrTrendChart(title, subtitle, series, yMin, yMax, xLabels) {
-  const W = 700, H = 200, PL = 36, PR = 12, PT = 14, PB = 28;
+function jrTrendChart(title, subtitle, series, yMin, yMax, xLabels, opts) {
+  opts = opts || {};
+  const W = 760, H = opts.height || 220, PL = 42, PR = 16, PT = opts.labels ? 30 : 16, PB = 30;
   const innerW = W - PL - PR, innerH = H - PT - PB;
   const n = series[0] ? series[0].vals.length : 0;
   const span = (yMax - yMin) || 1;
   const xAt = i => PL + (n <= 1 ? innerW / 2 : innerW * i / (n - 1));
   const yAt = v => PT + innerH * (1 - (v - yMin) / span);
-  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">`;
-  [yMin, (yMin + yMax) / 2, yMax].forEach(v => {
-    const y = yAt(v).toFixed(1);
-    svg += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="#e1e7f0" stroke-width="1"/>`;
-    svg += `<text x="${PL - 6}" y="${(parseFloat(y) + 3).toFixed(1)}" font-size="10" fill="#8893a3" text-anchor="end">${Math.round(v * 10) / 10}</text>`;
+  // 明確 width/height 屬性＝有固有尺寸，不會被瀏覽器塌成 0 高（多餘空白頁主因）
+  let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="max-width:100%;height:auto;display:block" font-family="Microsoft JhengHei, PingFang TC, sans-serif">`;
+  [0, 0.25, 0.5, 0.75, 1].forEach(t => {
+    const v = yMin + span * t, y = yAt(v).toFixed(1);
+    svg += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="#e7edf5" stroke-width="1"/>`;
+    svg += `<text x="${PL - 7}" y="${(parseFloat(y) + 4).toFixed(1)}" font-size="11" fill="#9aa4b2" text-anchor="end">${Math.round(v * 10) / 10}</text>`;
   });
+  if (opts.area && series[0]) {
+    const s = series[0]; let d = '', started = false, firstX = null, lastX = null;
+    s.vals.forEach((v, i) => {
+      if (v == null || isNaN(v)) return;
+      const x = xAt(i).toFixed(1), y = yAt(v).toFixed(1);
+      d += (started ? 'L' : 'M') + x + ' ' + y + ' ';
+      if (!started) { started = true; firstX = x; }
+      lastX = x;
+    });
+    if (started) { const base = yAt(yMin).toFixed(1); svg += `<path d="${d}L${lastX} ${base} L${firstX} ${base} Z" fill="${s.fill || 'rgba(31,157,85,0.16)'}" stroke="none"/>`; }
+  }
   series.forEach(s => {
     let d = '', pen = false;
     s.vals.forEach((v, i) => {
@@ -6177,18 +6190,21 @@ function jrTrendChart(title, subtitle, series, yMin, yMax, xLabels) {
       d += (pen ? 'L' : 'M') + xAt(i).toFixed(1) + ' ' + yAt(v).toFixed(1) + ' ';
       pen = true;
     });
-    if (d) svg += `<path d="${d.trim()}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
-    if (n <= 24) s.vals.forEach((v, i) => { if (v != null && !isNaN(v)) svg += `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="2.6" fill="${s.color}"/>`; });
+    if (d) svg += `<path d="${d.trim()}" fill="none" stroke="${s.color}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (n <= 31) s.vals.forEach((v, i) => { if (v != null && !isNaN(v)) svg += `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="3" fill="#fff" stroke="${s.color}" stroke-width="2"/>`; });
+    if (opts.labels && series.length === 1 && n <= 20) s.vals.forEach((v, i) => { if (v != null && !isNaN(v)) svg += `<text x="${xAt(i).toFixed(1)}" y="${(yAt(v) - 9).toFixed(1)}" font-size="11" fill="#36506e" text-anchor="middle" font-weight="700">${Math.round(v * 10) / 10}</text>`; });
   });
-  const idxs = Array.from(new Set(n <= 1 ? [0] : [0, Math.floor((n - 1) / 2), n - 1]));
-  idxs.forEach(i => {
-    svg += `<text x="${xAt(i).toFixed(1)}" y="${H - 9}" font-size="10" fill="#8893a3" text-anchor="middle">${escapeHtml(xLabels[i] || '')}</text>`;
-  });
+  const step = n <= 12 ? 1 : Math.ceil(n / 10);
+  for (let i = 0; i < n; i += step) svg += `<text x="${xAt(i).toFixed(1)}" y="${H - 9}" font-size="10" fill="#9aa4b2" text-anchor="middle">${escapeHtml(xLabels[i] || '')}</text>`;
+  if (n > 1 && (n - 1) % step !== 0) svg += `<text x="${xAt(n - 1).toFixed(1)}" y="${H - 9}" font-size="10" fill="#9aa4b2" text-anchor="middle">${escapeHtml(xLabels[n - 1] || '')}</text>`;
   svg += `</svg>`;
-  const legend = series.map(s => `<span class="jr-chart-key"><i style="background:${s.color}"></i>${escapeHtml(s.name)}</span>`).join('');
-  return `<div class="jr-chart"><div class="jr-chart-h">${escapeHtml(title)}${subtitle ? ` <small>${escapeHtml(subtitle)}</small>` : ''}</div><div class="jr-chart-legend">${legend}</div>${svg}</div>`;
+  const legend = series.length > 1 ? `<div class="jr-chart-legend">${series.map(s => `<span class="jr-chart-key"><i style="background:${s.color}"></i>${escapeHtml(s.name)}</span>`).join('')}</div>` : '';
+  return `<div class="jr-chart"><div class="jr-chart-h">${escapeHtml(title)}${subtitle ? ` <small>${escapeHtml(subtitle)}</small>` : ''}</div>${legend}${svg}</div>`;
 }
-// 本期趨勢總覽頁（封面後一頁）；資料 < 2 筆時回空字串（不插頁）
+function jrStat(value, label, sub) {
+  return `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(String(value))}</div><div class="mr-stat-label">${escapeHtml(label)}</div>${sub ? `<div class="mr-stat-sub">${escapeHtml(sub)}</div>` : ''}</div>`;
+}
+// 成長趨勢總覽頁（報告第一頁）；資料 < 2 筆時回空字串（不插頁）
 function jrBuildTrendPage(name, ordered, fileNo, rangeLabel) {
   if (!ordered || ordered.length < 2) return '';
   const num = v => { const x = parseFloat(v); return isNaN(x) ? null : x; };
@@ -6199,46 +6215,56 @@ function jrBuildTrendPage(name, ordered, fileNo, rangeLabel) {
   const weight = ordered.map(r => num(r.weightKg));
   const target = ordered.map(r => num(r.targetWeightKg));
   const has = arr => arr.filter(v => v != null).length >= 2;
+  if (!has(readiness) && !has(rpe) && !has(pain) && !has(weight)) return '';
 
-  let charts = '';
-  if (has(readiness)) {
-    charts += jrTrendChart('訓練準備度走勢', '0–100，越高代表今天越適合高品質訓練', [{ name: '準備度', color: '#2e6da4', vals: readiness }], 0, 100, xLabels);
-  }
+  // 主圖（一目了然）：準備度填色面積曲線＋每點數字
+  const hero = has(readiness)
+    ? jrTrendChart('訓練準備度走勢', '0–100，越高代表越適合高品質訓練', [{ name: '準備度', color: '#1f9d55', fill: 'rgba(31,157,85,0.16)', vals: readiness }], 0, 100, xLabels, { height: 340, area: true, labels: true })
+    : '';
+
+  // 副圖：RPE+疼痛、體重 vs 目標
+  let sub = '';
   if (has(rpe) || has(pain)) {
     const s = [];
     if (has(rpe)) s.push({ name: 'RPE 主觀強度', color: '#d97316', vals: rpe });
     if (has(pain)) s.push({ name: '疼痛分數', color: '#c0392b', vals: pain });
-    charts += jrTrendChart('疲勞與疼痛走勢', '0–10，持續偏高代表需要降量或關心', s, 0, 10, xLabels);
+    sub += `<div>${jrTrendChart('疲勞與疼痛', '0–10', s, 0, 10, xLabels, { height: 200 })}</div>`;
   }
   if (has(weight)) {
     const all = weight.concat(target).filter(v => v != null);
     let lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
     if (lo === hi) { lo -= 1; hi += 1; } else { const pad = (hi - lo) * 0.15 || 1; lo -= pad; hi += pad; }
-    const s = [{ name: '今日體重', color: '#1f9d55', vals: weight }];
+    const s = [{ name: '今日體重', color: '#1f4e79', vals: weight }];
     if (has(target)) s.push({ name: '目標體重', color: '#8893a3', vals: target });
-    charts += jrTrendChart('體重 vs 目標走勢', 'kg，控重選手追蹤用', s, Math.floor(lo), Math.ceil(hi), xLabels);
+    sub += `<div>${jrTrendChart('體重 vs 目標', 'kg', s, Math.floor(lo), Math.ceil(hi), xLabels, { height: 200 })}</div>`;
   }
-  if (!charts) return '';
 
-  // 文字摘要
-  const firstR = readiness.filter(v => v != null)[0];
-  const lastR = readiness.filter(v => v != null).slice(-1)[0];
+  // 重點數字列
+  const readyVals = readiness.filter(v => v != null);
   const rpeVals = rpe.filter(v => v != null);
   const painVals = pain.filter(v => v != null);
-  const bits = [`本期訓練紀錄 ${ordered.length} 天`];
-  if (firstR != null && lastR != null) {
-    const d = Math.round(lastR - firstR);
-    const dir = d >= 5 ? `↑ 進步 ${d} 分` : d <= -5 ? `↓ 下滑 ${Math.abs(d)} 分` : '→ 大致持平';
-    bits.push(`準備度 ${Math.round(firstR)} → ${Math.round(lastR)}（${dir}）`);
+  const greenCount = ordered.filter(r => String(r.readinessStatusLight || r.status || '').indexOf('綠') !== -1).length;
+  const yellowCount = ordered.filter(r => String(r.readinessStatusLight || r.status || '').indexOf('黃') !== -1).length;
+  const redCount = ordered.filter(r => String(r.readinessStatusLight || r.status || '').indexOf('紅') !== -1).length;
+  const avgReady = readyVals.length ? Math.round(readyVals.reduce((a, b) => a + b, 0) / readyVals.length) : '—';
+  let dirText = '—';
+  if (readyVals.length >= 2) {
+    const d = Math.round(readyVals[readyVals.length - 1] - readyVals[0]);
+    dirText = d >= 5 ? `↑ 進步 ${d}` : d <= -5 ? `↓ 下滑 ${Math.abs(d)}` : '→ 持平';
   }
-  if (rpeVals.length) bits.push(`RPE 平均 ${round1(rpeVals.reduce((a, b) => a + b, 0) / rpeVals.length)}`);
-  if (painVals.length) bits.push(`疼痛最高 ${Math.max.apply(null, painVals)} 分`);
+  const stats = `<div class="mr-grid mr-grid-4">` +
+    jrStat(ordered.length, '紀錄天數', rangeLabel) +
+    jrStat(avgReady, '平均準備度', dirText) +
+    jrStat(`${greenCount}/${yellowCount}/${redCount}`, '綠 / 黃 / 紅', '燈號天數') +
+    jrStat(rpeVals.length ? round1(rpeVals.reduce((a, b) => a + b, 0) / rpeVals.length) : '—', 'RPE 平均', painVals.length ? `疼痛最高 ${Math.max.apply(null, painVals)}` : '') +
+    `</div>`;
 
   let html = `<section class="mr-page">`;
-  html += `<div class="mr-page-head"><div class="mr-page-title">本期趨勢總覽</div><div class="mr-page-meta">${escapeHtml(name)}｜${escapeHtml(rangeLabel)}</div></div>`;
-  html += charts;
-  html += `<div class="mr-panel blue jr-trend-sum"><div class="mr-panel-h">趨勢摘要</div><div class="jr-longtext">${bits.map(escapeHtml).join('　|　')}</div></div>`;
-  html += `<div class="mr-page-foot">本期趨勢總覽｜${escapeHtml(fileNo)}</div>`;
+  html += `<div class="mr-page-head"><div class="mr-page-title">成長趨勢總覽</div><div class="mr-page-meta">${escapeHtml(name)}｜${escapeHtml(rangeLabel)}</div></div>`;
+  html += stats;
+  html += hero;
+  if (sub) html += `<div class="mr-two-col jr-sub-charts">${sub}</div>`;
+  html += `<div class="mr-page-foot">成長趨勢總覽｜${escapeHtml(fileNo)}</div>`;
   html += `</section>`;
   return html;
 }
@@ -6285,6 +6311,8 @@ function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
   ).versions.coach : null;
 
   let html = `<div class="mr-report jr-report">`;
+  // 報告第一頁：成長趨勢總覽（一目了然的曲線圖）
+  html += jrBuildTrendPage(name, ordered, fileNo, rangeLabel);
   html += `<section class="mr-page">`;
   html += `<div class="mr-cover">`;
   html += `<div class="mr-cover-title">個人訓練日誌</div>`;
@@ -6313,9 +6341,6 @@ function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
   html += `<div class="mr-privacy">日誌內容依訓練日期彙整，預設以最新資料為準。若同一天有多筆紀錄，會保留最新一筆。</div>`;
   html += `<div class="mr-page-foot">育林國中技擊隊個人訓練日誌｜${escapeHtml(fileNo)}</div>`;
   html += `</section>`;
-
-  // 封面後插入：本期趨勢總覽頁（準備度 / RPE+疼痛 / 體重）
-  html += jrBuildTrendPage(name, ordered, fileNo, rangeLabel);
 
   ordered.forEach((rec, idx) => {
     const prev = idx > 0 ? ordered[idx - 1] : null;
@@ -6633,7 +6658,7 @@ function printPersonalJournal() {
   win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8" />
     <title>${journalSafePart(_currentJournalReport.fileBase)}</title>
     <link rel="stylesheet" href="style.css?v=20260624a" />
-    <link rel="stylesheet" href="monthly-report.css?v=20260624a" />
+    <link rel="stylesheet" href="monthly-report.css?v=20260624b" />
     <style>body{margin:0;background:#fff;} .mr-report{box-shadow:none;} .mr-page{margin:0 auto 0;} </style>
   </head><body class="mr-print-window">${node.outerHTML}
   <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
