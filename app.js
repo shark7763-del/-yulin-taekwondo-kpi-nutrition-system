@@ -6411,7 +6411,8 @@ function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
   html += `</div>`;
 
   const fileBase = `育林國中技擊隊_個人訓練日誌_${journalSafePart(name)}_${journalSafePart(fromMonth || 'all')}_${journalSafePart(toMonth || 'all')}_${journalSafePart(fileNo)}`;
-  return { html, fileBase, fileNo, coachName };
+  const pdfRecords = buildPdfRecordsFromOrderedRecords(ordered, name, fileNo);
+  return { html, fileBase, fileNo, coachName, records: pdfRecords };
 }
 
 let _currentJournalReport = null;
@@ -6515,7 +6516,12 @@ function buildBatchJournalReport(names, grouped, fromMonth, toMonth) {
 
   html += `</div>`;
   const fileBase = `育林國中技擊隊_全隊個人訓練日誌_${journalSafePart(fromMonth || 'all')}_${journalSafePart(toMonth || 'all')}_${journalSafePart(fileNo)}`;
-  return { html, fileBase, fileNo, coachName };
+  let pdfRecords = [];
+  names.forEach(name => {
+    const ordered = dedupeLatestByDate(grouped[name] || []).slice().reverse();
+    pdfRecords = pdfRecords.concat(buildPdfRecordsFromOrderedRecords(ordered, name, fileNo));
+  });
+  return { html, fileBase, fileNo, coachName, records: pdfRecords };
 }
 
 async function loadPersonalJournal() {
@@ -6578,58 +6584,217 @@ async function loadPersonalJournalBatch() {
   }
 }
 
-function journalPdfOptions(fileBase, scale) {
-  return {
+function truncateText(text, maxLength = 450) {
+  if (!text) return '-';
+  const clean = String(text).trim();
+  if (!clean) return '-';
+  if (clean.length <= maxLength) return clean;
+  return clean.slice(0, maxLength) + '……';
+}
+
+function pdfText(v, fallback) {
+  const s = String(v == null ? '' : v).trim();
+  return s || fallback || '-';
+}
+
+function pdfEsc(s) {
+  return escapeHtml(pdfText(s));
+}
+
+function pdfStripMealTags(s) {
+  return String(s || '').replace(/〔[^〕]*〕/g, '').replace(/\[[^\]]*\]/g, '').trim();
+}
+
+function buildPdfRecordsFromOrderedRecords(ordered, athleteName, fileNo) {
+  ordered = ordered || [];
+  return ordered.map((rec, idx) => {
+    const prev = idx > 0 ? ordered[idx - 1] : null;
+    const before = ordered.slice(0, idx);
+    const current = Object.assign({}, rec);
+    applyReadiness(current, before);
+    const affirm = buildAffirmations(current, prev, before);
+    const fb = buildCoachFeedback(current, prev, before, affirm);
+    const coach = (fb && fb.versions && fb.versions.coach) || {};
+    const trainingParts = [];
+    if (current.trainingTopic) trainingParts.push(`訓練主題：${current.trainingTopic}`);
+    if (current.trainingIntensity) trainingParts.push(`訓練強度：${current.trainingIntensity}`);
+    if (current.group) trainingParts.push(`訓練組別：${current.group}`);
+    if (current.lowItems) trainingParts.push(`弱項：${current.lowItems}`);
+    if (current.improveTargets) trainingParts.push(`改善目標：${current.improveTargets}`);
+
+    const noteParts = [];
+    if (current.reflection) noteParts.push(current.reflection);
+    if (current.tomorrowGoal) noteParts.push(`明日目標：${current.tomorrowGoal}`);
+    if (current.gratitude) noteParts.push(`感謝：${current.gratitude}`);
+
+    const bodyParts = [];
+    if (current.bodyStatus) bodyParts.push(`身體狀態：${current.bodyStatus}`);
+    if (current.sleepHours) bodyParts.push(`睡眠：${current.sleepHours} 小時`);
+    if (current.sleepQuality) bodyParts.push(`睡眠品質：${current.sleepQuality}`);
+    if (current.soreness) bodyParts.push(`痠痛：${current.soreness}/5`);
+    if (current.rpe) bodyParts.push(`RPE：${current.rpe}/10`);
+    if (current.injuryArea) bodyParts.push(`不適部位：${current.injuryArea}`);
+    if (current.painScore) bodyParts.push(`疼痛：${current.painScore}/10`);
+    if (current.urineStatus) bodyParts.push(`尿液：${current.urineStatus}`);
+
+    const recoveryParts = [];
+    if (current.nutritionRisks) recoveryParts.push(`飲食風險：${current.nutritionRisks}`);
+    if (current.recoveryState) recoveryParts.push(`恢復提醒：${current.recoveryState}`);
+    if (current.breakfast) recoveryParts.push(`早餐：${pdfStripMealTags(current.breakfast) || current.breakfast}`);
+    if (current.lunch) recoveryParts.push(`午餐：${pdfStripMealTags(current.lunch) || current.lunch}`);
+    if (current.dinner) recoveryParts.push(`晚餐：${pdfStripMealTags(current.dinner) || current.dinner}`);
+    if (current.waterIntake) recoveryParts.push(`水分：${current.waterIntake}`);
+
+    const suggestionParts = [];
+    if (coach.affirm) suggestionParts.push(`今日狀態：${coach.affirm}`);
+    if (coach.watch) suggestionParts.push(`觀察：${coach.watch}`);
+    if (coach.oneThing) suggestionParts.push(`任務：${coach.oneThing}`);
+    if (coach.quote) suggestionParts.push(`提醒：${coach.quote}`);
+
+    return {
+      date: dateSlash(current.date),
+      athleteName: athleteName || current.name || '',
+      trainingType: current.group || current.trainingTopic || '-',
+      averageScore: current.averageScore != null && current.averageScore !== '' ? String(current.averageScore) : (current.totalScore != null && current.totalScore !== '' ? String(current.totalScore) : '-'),
+      status: current.readinessStatusLight || current.status || '-',
+      trainingContent: trainingParts.join('\n') || '-',
+      trainingNote: noteParts.join('\n') || '-',
+      bodyStatus: bodyParts.join('\n') || '-',
+      nutritionRecovery: recoveryParts.join('\n') || '-',
+      aiSuggestion: suggestionParts.join('\n') || '-',
+      fileNo: fileNo || ''
+    };
+  });
+}
+
+function buildPdfReportPages(records) {
+  const wrapper = document.createElement('div');
+  wrapper.id = 'pdf-export-root';
+  wrapper.style.position = 'fixed';
+  wrapper.style.left = '-99999px';
+  wrapper.style.top = '0';
+  wrapper.style.width = '210mm';
+  wrapper.style.background = '#ffffff';
+
+  (records || []).forEach((record, index) => {
+    const page = document.createElement('div');
+    page.className = 'pdf-page';
+
+    page.innerHTML = `
+      <div class="pdf-header">
+        <div>
+          <h1>TeamPro 選手訓練報告</h1>
+          <p>${pdfEsc(record.date)} ｜ ${pdfEsc(record.athleteName)}</p>
+        </div>
+        <div class="pdf-page-number">第 ${index + 1} / ${records.length} 頁</div>
+      </div>
+
+      <div class="pdf-summary-grid">
+        <div class="pdf-summary-card">
+          <span>項目</span>
+          <strong>${pdfEsc(record.trainingType || '-')}</strong>
+        </div>
+        <div class="pdf-summary-card">
+          <span>平均分數</span>
+          <strong>${pdfEsc(record.averageScore || '-')}</strong>
+        </div>
+        <div class="pdf-summary-card">
+          <span>狀態</span>
+          <strong>${pdfEsc(record.status || '-')}</strong>
+        </div>
+      </div>
+
+      <div class="pdf-grid">
+        <section class="pdf-card">
+          <h2>訓練課表</h2>
+          <p>${pdfEsc(truncateText(record.trainingContent))}</p>
+        </section>
+
+        <section class="pdf-card">
+          <h2>訓練心得</h2>
+          <p>${pdfEsc(truncateText(record.trainingNote))}</p>
+        </section>
+
+        <section class="pdf-card">
+          <h2>身體狀態</h2>
+          <p>${pdfEsc(truncateText(record.bodyStatus))}</p>
+        </section>
+
+        <section class="pdf-card">
+          <h2>飲食與恢復</h2>
+          <p>${pdfEsc(truncateText(record.nutritionRecovery))}</p>
+        </section>
+
+        <section class="pdf-card pdf-card-wide">
+          <h2>教練回饋 / AI 建議</h2>
+          <p>${pdfEsc(truncateText(record.aiSuggestion))}</p>
+        </section>
+      </div>
+
+      <div class="pdf-footer">
+        <div>教練簽核：________________</div>
+        <div>本報告由 TeamPro 自動產生${record.fileNo ? '｜' + pdfEsc(record.fileNo) : ''}</div>
+      </div>
+    `;
+
+    wrapper.appendChild(page);
+  });
+
+  document.body.appendChild(wrapper);
+  return wrapper;
+}
+
+function generatePdfFileName() {
+  const base = (_currentJournalReport && _currentJournalReport.fileBase) || 'TeamPro_選手訓練報告';
+  return journalSafePart(base) + '.pdf';
+}
+
+async function downloadPDF(records) {
+  if (!records || !records.length) {
+    alert('目前沒有可匯出的報告資料');
+    return;
+  }
+  if (typeof window.html2pdf === 'undefined') {
+    if (typeof toast === 'function') toast('PDF 元件載入中，請改用「列印 / 存 PDF」');
+    return;
+  }
+
+  const pdfRoot = buildPdfReportPages(records);
+  await new Promise(resolve => setTimeout(resolve, 300));
+
+  const opt = {
     margin: 0,
-    filename: fileBase + '.pdf',
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: scale || 2, useCORS: true, scrollY: 0, windowWidth: 1200, backgroundColor: '#ffffff' },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['css', 'legacy'] }
-  };
-}
-// 整份一次渲染時，依頁數壓低 scale，避免超大 canvas 超過瀏覽器上限而全白
-function safeOneShotScale(pageCount) {
-  const n = pageCount || 1;
-  if (n <= 8) return 2;
-  if (n <= 16) return 1.4;
-  if (n <= 28) return 1;
-  return 0.7;
-}
-
-/* 把報表 HTML 掛到「離螢幕、固定 210mm 的 .pdf-export-root 容器」再逐頁輸出 PDF。
-   重點：不抓畫面上（手機版）的節點 —— 改用獨立固定寬度容器，並以 .pdf-export-root
-   的 !important 規則強制桌機 A4 版面，完全不受手機 viewport / 響應式斷點影響，
-   所以手機 Chrome 下載也不會跑版、比例正確。逐頁擷取避免超大 canvas 在手機上全白。
-   成功回 true，缺元件回 false。 */
-async function renderReportPdfByPage(reportHtml, fileBase) {
-  const h2c = window.html2canvas;
-  const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
-  if (typeof h2c !== 'function' || typeof jsPDFCtor !== 'function') return false;
-
-  const host = document.createElement('div');
-  host.className = 'pdf-export-root';
-  host.innerHTML = reportHtml;
-  document.body.appendChild(host);
-  try {
-    const pages = Array.from(host.querySelectorAll('.mr-page'));
-    if (!pages.length) return false;
-    const pdf = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-    const pw = pdf.internal.pageSize.getWidth();
-    const ph = pdf.internal.pageSize.getHeight();
-    for (let i = 0; i < pages.length; i++) {
-      const canvas = await h2c(pages[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1024 });
-      const img = canvas.toDataURL('image/jpeg', 0.95);
-      // 保持比例置中，內容高於 A4 才縮到剛好一頁，絕不溢出造成多餘空白頁
-      let imgW = pw, imgH = pw * canvas.height / canvas.width;
-      if (imgH > ph) { imgH = ph; imgW = ph * canvas.width / canvas.height; }
-      if (i > 0) pdf.addPage();
-      pdf.addImage(img, 'JPEG', (pw - imgW) / 2, 0, imgW, imgH);
+    filename: generatePdfFileName(),
+    image: {
+      type: 'jpeg',
+      quality: 0.98
+    },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: 794,
+      windowHeight: 1123
+    },
+    jsPDF: {
+      unit: 'mm',
+      format: 'a4',
+      orientation: 'portrait',
+      compress: true
+    },
+    pagebreak: {
+      mode: ['css'],
+      before: '.pdf-page'
     }
-    pdf.save(fileBase + '.pdf');
-    return true;
+  };
+
+  try {
+    await window.html2pdf().set(opt).from(pdfRoot).save();
   } finally {
-    document.body.removeChild(host);
+    pdfRoot.remove();
   }
 }
 
@@ -6637,15 +6802,7 @@ async function downloadPersonalJournalPdf() {
   if (!_currentJournalReport || !_currentJournalReport.html) { toast('請先產生日誌預覽'); return; }
   toast('產生 PDF 中，請稍候...');
   try {
-    // 從離螢幕固定寬度容器輸出，不抓手機畫面（避免跑版/裁切/比例錯誤）
-    const done = await renderReportPdfByPage(_currentJournalReport.html, _currentJournalReport.fileBase);
-    if (!done) {
-      if (typeof window.html2pdf === 'undefined') { toast('PDF 元件載入中，請改用「列印 / 存 PDF」'); return; }
-      // 後備：整份渲染（依頁數壓低 scale）
-      const node = $id('journalPreview') && $id('journalPreview').querySelector('.mr-report');
-      const pageCount = node ? node.querySelectorAll('.mr-page').length : 1;
-      await window.html2pdf().set(journalPdfOptions(_currentJournalReport.fileBase, safeOneShotScale(pageCount))).from(node).save();
-    }
+    await downloadPDF(_currentJournalReport.records || []);
     toast('✅ PDF 已下載');
   } catch (e) {
     console.error(e);

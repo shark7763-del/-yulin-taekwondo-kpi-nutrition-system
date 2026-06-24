@@ -280,3 +280,148 @@
 .pdf-export-root .jr-chart {
   break-inside: avoid; page-break-inside: avoid;
 }
+
+/* ============================================================
+   個人日誌 PDF 下載專用 DOM
+   ------------------------------------------------------------
+   這一組只給 downloadPDF(records) 使用，不沿用畫面預覽的 .mr-* 結構，
+   避免手機版容器、灰色預覽背景與 html2pdf 自動切頁一起被截進 PDF。
+   ============================================================ */
+#pdf-export-root {
+  width: 210mm !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+  font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif !important;
+}
+
+#pdf-export-root * {
+  box-sizing: border-box !important;
+  max-width: none !important;
+}
+
+.pdf-page {
+  width: 210mm !important;
+  min-height: 297mm !important;
+  height: 297mm !important;
+  padding: 12mm !important;
+  background: #ffffff !important;
+  overflow: hidden !important;
+  page-break-after: always !important;
+  break-after: page !important;
+  position: relative !important;
+}
+
+.pdf-page:last-child {
+  page-break-after: auto !important;
+  break-after: auto !important;
+}
+
+.pdf-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  border-left: 4px solid #2563eb !important;
+  padding-left: 10px !important;
+  margin-bottom: 10mm !important;
+}
+
+.pdf-header h1 {
+  font-size: 20px !important;
+  line-height: 1.25 !important;
+  margin: 0 0 4px 0 !important;
+  color: #0f172a !important;
+  letter-spacing: 0 !important;
+}
+
+.pdf-header p,
+.pdf-page-number {
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+  color: #64748b !important;
+  margin: 0 !important;
+}
+
+.pdf-summary-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 6mm !important;
+  margin-bottom: 8mm !important;
+}
+
+.pdf-summary-card {
+  border: 1px solid #dbeafe !important;
+  background: #f8fafc !important;
+  border-radius: 8px !important;
+  padding: 6mm !important;
+  min-height: 27mm !important;
+}
+
+.pdf-summary-card span {
+  display: block !important;
+  font-size: 10px !important;
+  line-height: 1.4 !important;
+  color: #64748b !important;
+  margin-bottom: 3mm !important;
+}
+
+.pdf-summary-card strong {
+  display: block !important;
+  font-size: 18px !important;
+  line-height: 1.25 !important;
+  color: #1e3a8a !important;
+  word-break: break-word !important;
+}
+
+.pdf-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 6mm !important;
+}
+
+.pdf-card {
+  border: 1px solid #e5e7eb !important;
+  border-left: 4px solid #2563eb !important;
+  border-radius: 8px !important;
+  padding: 6mm !important;
+  background: #ffffff !important;
+  min-height: 38mm !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+
+.pdf-card-wide {
+  grid-column: 1 / -1 !important;
+  min-height: 45mm !important;
+}
+
+.pdf-card h2 {
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+  margin: 0 0 4mm 0 !important;
+  color: #0f172a !important;
+  letter-spacing: 0 !important;
+}
+
+.pdf-card p {
+  font-size: 11px !important;
+  line-height: 1.7 !important;
+  margin: 0 !important;
+  color: #334155 !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+}
+
+.pdf-footer {
+  position: absolute !important;
+  left: 12mm !important;
+  right: 12mm !important;
+  bottom: 10mm !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  gap: 12mm !important;
+  font-size: 10px !important;
+  line-height: 1.4 !important;
+  color: #64748b !important;
+  border-top: 1px solid #e5e7eb !important;
+  padding-top: 4mm !important;
+}
