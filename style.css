@@ -1137,11 +1137,12 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 
 /* 頁首：保留深色底，底線改紅→藍漸層，logo＋文字左右排列 */
 .app-header {
+  position: relative;
   border-bottom: 3px solid transparent;
   border-image: linear-gradient(90deg, var(--brand-red) 0%, #b3140f 30%, var(--brand-blue) 100%) 1;
 }
 .header-inner {
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; gap: 16px;
   text-align: left; max-width: 860px;
 }
 .app-brand-text { min-width: 0; flex: 1 1 auto; }
