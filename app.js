@@ -6684,18 +6684,11 @@ function buildPdfReportPages(records) {
 
     page.innerHTML = `
       <div class="pdf-header">
-        <div class="pdf-brand">
-          <img src="yulinelogo.jpg" alt="YULIN TAEKWONDO Logo" class="pdf-logo" />
-          <div class="pdf-brand-copy">
-            <p class="pdf-brand-eyebrow">YULIN TAEKWONDO</p>
-            <h1>育林跆拳道隊</h1>
-            <p>KPI × 營養 × 訓練狀態系統</p>
-          </div>
-        </div>
-        <div class="pdf-meta">
+        <div>
+          <h1>TeamPro 選手訓練報告</h1>
           <p>${pdfEsc(record.date)} ｜ ${pdfEsc(record.athleteName)}</p>
-          <div class="pdf-page-number">第 ${index + 1} / ${records.length} 頁</div>
         </div>
+        <div class="pdf-page-number">第 ${index + 1} / ${records.length} 頁</div>
       </div>
 
       <div class="pdf-summary-grid">
@@ -7914,9 +7907,9 @@ function renderCoachWarRoom(todays, all) {
    ============================================================ */
 const BRAND_KEY = 'yulin_brand';
 const BRAND_DEFAULT = {
-  teamName: '育林跆拳道隊',
-  orgName: '育林跆拳道隊',
-  sports: 'KPI × 營養 × 訓練狀態系統',
+  teamName: '育林國中技擊隊',
+  orgName: '育林國中',
+  sports: '跆拳道・武術',
   groups: '',
   kpiDomains: '',
   modFreestyle: true, modNutrition: true, modPrecomp: true, modParent: true
@@ -7932,13 +7925,12 @@ function brandModHidden(id, on) {
 }
 function applyBrand() {
   const b = getBrand();
-  const teamName = b.teamName === '育林國中技擊隊' ? '育林跆拳道隊' : (b.teamName || '育林跆拳道隊');
-  const subtitle = (b.sports === '跆拳道・武術' ? 'KPI × 營養 × 訓練狀態系統' : (b.sports || 'KPI × 營養 × 訓練狀態系統'));
-  document.querySelectorAll('.app-title').forEach(el => { el.textContent = teamName; });
+  const subtitle = `${b.sports} ｜ TeamPro AI 訓練準備度系統`;
+  document.querySelectorAll('.app-title').forEach(el => { el.textContent = '🥋 ' + b.teamName; });
   document.querySelectorAll('.app-subtitle').forEach(el => { el.textContent = subtitle; });
-  const lt = document.querySelector('.login-title'); if (lt) lt.textContent = teamName;
+  const lt = document.querySelector('.login-title'); if (lt) lt.textContent = '🥋 ' + b.teamName;
   const ls = document.querySelector('.login-sub'); if (ls) ls.textContent = subtitle;
-  try { document.title = teamName + '｜KPI × 營養 × 訓練狀態系統'; } catch (e) { /* */ }
+  try { document.title = b.teamName + '｜TeamPro AI 訓練準備度系統'; } catch (e) { /* */ }
   // 模組開關（關閉時隱藏對應區塊；不動到必填欄位邏輯）
   brandModHidden('freestyleSection', b.modFreestyle);
   brandModHidden('nutritionCard', b.modNutrition);
