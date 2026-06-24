@@ -74,8 +74,21 @@
     if (!res || !res.ok) { box.innerHTML = '<div class="hint-box warn">' + esc((res && res.error) || '讀取失敗') + '</div>'; return; }
 
     var sessions = res.data || [];
+
+    // 逐人快速開關：載入有帳號的選手
+    var toggleStudents = [];
+    try {
+      var accRes = await api({ action: 'getAccountAdminData' });
+      if (accRes && accRes.ok && accRes.data) {
+        toggleStudents = (accRes.data.students || []).filter(function (s) {
+          return s.studentId && s.studentName && s.accountStatus !== 'disabled';
+        }).sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
+      }
+    } catch (e) { /* 名單讀取失敗就不顯示逐人開關 */ }
+
     var html = '<button type="button" class="btn btn-primary" id="kpiOpenNewBtn">➕ 手動開啟 KPI</button>';
     html += '<div id="kpiNewForm" class="kpi-new-form" style="display:none;"></div>';
+    html += renderPersonToggles(toggleStudents, sessions);
 
     if (!sessions.length) {
       html += '<div class="hint-box" style="margin-top:12px">目前沒有任何 KPI 回報。按上方按鈕手動開啟一次。</div>';
@@ -109,6 +122,70 @@
     box.querySelectorAll('.kpi-op').forEach(function (b) {
       b.addEventListener('click', function () { coachOp(b.dataset.op, b.dataset.id); });
     });
+    box.querySelectorAll('.kpi-person-toggle').forEach(function (b) {
+      b.addEventListener('click', function () { personToggle(b); });
+    });
+  }
+
+  // 找出「對此選手 open 且包含他」的 session（優先個人指定）
+  function personOpenSession(studentId, sessions) {
+    var hit = null;
+    (sessions || []).forEach(function (s) {
+      if (s.effectiveStatus !== 'open') return;
+      var ids = String(s.targetStudentIds || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (ids.indexOf(String(studentId)) === -1) return;
+      if (!hit || s.targetGroup === '指定選手') hit = s;
+    });
+    return hit;
+  }
+
+  // 逐人快速開關清單
+  function renderPersonToggles(students, sessions) {
+    if (!students || !students.length) return '';
+    var rows = students.map(function (s) {
+      var open = personOpenSession(s.studentId, sessions);
+      var on = !!open;
+      var individual = on && open.targetGroup === '指定選手';
+      return '<div class="kpi-person-row">' +
+        '<span class="kpi-person-name">' + esc(s.studentName) + (s.group ? '<small>' + esc(s.group) + '</small>' : '') + '</span>' +
+        '<button type="button" class="kpi-person-toggle ' + (on ? 'on' : 'off') + '"' +
+        ' data-sid="' + esc(s.studentId) + '" data-name="' + esc(s.studentName) + '"' +
+        ' data-act="' + (on ? (individual ? 'close' : 'group') : 'open') + '"' +
+        ' data-session="' + esc(on ? open.sessionId : '') + '">' +
+        (on ? (individual ? '✓ 開啟中（點此關閉）' : '✓ 團隊開啟中') : '已關（點此開啟）') +
+        '</button></div>';
+    }).join('');
+    return '<details class="kpi-person-fold" open>' +
+      '<summary>👤 逐人快速開關</summary>' +
+      '<div class="kpi-person-list">' + rows + '</div>' +
+      '<p class="review-label">開啟＝替該選手單獨建立一份 KPI（約 60 天後自動截止，可隨時關閉）。標「團隊開啟中」表示由下方全隊／組別 session 開啟，需到該 session 關閉。</p>' +
+      '</details>';
+  }
+
+  async function personToggle(b) {
+    var act = b.dataset.act, sid = b.dataset.sid, name = b.dataset.name, sessionId = b.dataset.session;
+    if (act === 'group') { notify(name + ' 是由團隊／組別 session 開啟，請到下方該 session 關閉。'); return; }
+    b.disabled = true; b.textContent = '處理中...';
+    try {
+      if (act === 'open') {
+        var d = new Date(); d.setDate(d.getDate() + 60);
+        var pad = function (n) { return ('0' + n).slice(-2); };
+        var closeTime = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T21:00';
+        var res = await api({
+          action: 'createKpiSession', sessionName: '個人 KPI－' + name, sessionType: 'simple',
+          targetGroup: '指定選手', targetStudentIds: [sid], closeAtPreset: 'custom', closeAtTime: closeTime,
+          includeInWeeklyReport: true, includeInMonthlyReport: true, lineNotify: false
+        });
+        notify(res && res.ok ? ('✅ 已開啟 ' + name + ' 的 KPI') : ((res && res.error) || '開啟失敗'));
+      } else {
+        if (!sessionId) { notify('找不到可關閉的 KPI'); }
+        else {
+          var res2 = await api({ action: 'closeKpiSession', sessionId: sessionId });
+          notify(res2 && res2.ok ? ('已關閉 ' + name + ' 的 KPI') : ((res2 && res2.error) || '關閉失敗'));
+        }
+      }
+    } catch (e) { notify('操作失敗，請確認連線'); }
+    finally { renderCoachKpiManage(); }
   }
 
   function typeLabel(v) { var t = SESSION_TYPES.find(function (x) { return x.v === v; }); return t ? t.label : v; }

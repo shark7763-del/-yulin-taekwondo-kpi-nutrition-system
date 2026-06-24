@@ -1195,3 +1195,19 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
   .brand-logo { width: 76px; height: 76px; }
   .login-brand .brand-logo { width: 70px; height: 70px; }
 }
+
+/* ===================== KPI 逐人快速開關 ===================== */
+.kpi-person-fold { border: 1px solid var(--border); border-radius: 12px; padding: 0 12px; margin: 12px 0; background: rgba(15,20,28,0.5); }
+.kpi-person-fold > summary { cursor: pointer; list-style: none; padding: 11px 2px; font-weight: 800; color: var(--brand-blue, #2f80ed); }
+.kpi-person-fold > summary::-webkit-details-marker { display: none; }
+.kpi-person-fold > summary::before { content: '▾ '; }
+.kpi-person-fold:not([open]) > summary::before { content: '▸ '; }
+.kpi-person-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 10px; }
+.kpi-person-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #0f141c; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.kpi-person-name { font-weight: 700; font-size: 0.92rem; display: flex; flex-direction: column; line-height: 1.25; }
+.kpi-person-name small { color: var(--text-soft); font-weight: 500; font-size: 0.72rem; }
+.kpi-person-toggle { border: none; border-radius: 999px; padding: 7px 12px; font-size: 0.8rem; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.kpi-person-toggle.on { background: linear-gradient(135deg, #1f9d55, #157a40); color: #fff; }
+.kpi-person-toggle.off { background: #222936; color: var(--text-soft); border: 1px solid var(--border); }
+.kpi-person-toggle:disabled { opacity: 0.6; cursor: default; }
+@media (max-width: 640px) { .kpi-person-list { grid-template-columns: 1fr; } }
