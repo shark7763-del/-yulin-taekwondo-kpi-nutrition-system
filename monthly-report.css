@@ -303,12 +303,14 @@
   width: 210mm !important;
   min-height: 297mm !important;
   height: 297mm !important;
-  padding: 12mm !important;
+  padding: 12mm !important 12mm 18mm !important;
   background: #ffffff !important;
   overflow: hidden !important;
   page-break-after: always !important;
   break-after: page !important;
   position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .pdf-page:last-child {
@@ -376,6 +378,7 @@
   display: grid !important;
   grid-template-columns: 1fr 1fr !important;
   gap: 6mm !important;
+  flex: 1 1 auto !important;
 }
 
 .pdf-card {
@@ -412,10 +415,9 @@
 }
 
 .pdf-footer {
-  position: absolute !important;
-  left: 12mm !important;
-  right: 12mm !important;
-  bottom: 10mm !important;
+  position: static !important;
+  margin-top: auto !important;
+  width: 100% !important;
   display: flex !important;
   justify-content: space-between !important;
   gap: 12mm !important;
