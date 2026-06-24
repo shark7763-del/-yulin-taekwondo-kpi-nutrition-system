@@ -1178,6 +1178,11 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 }
 .login-brand .brand-logo { width: 56px; height: 56px; }
 .login-title { color: #ffffff; }
+/* 登入頁「進入」等主要按鈕＝紅色 */
+.login-overlay .btn-primary {
+  background: linear-gradient(135deg, var(--brand-red), #b3140f);
+  color: #ffffff;
+}
 
 /* 手機：logo 略縮、頁首不擠 */
 @media (max-width: 640px) {
