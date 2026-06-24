@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>育林國中技擊隊｜TeamPro AI 訓練準備度系統</title>
-  <link rel="stylesheet" href="style.css?v=20260624a" />
+  <link rel="stylesheet" href="style.css?v=20260624i" />
   <link rel="stylesheet" href="monthly-report.css?v=20260624g" />
 </head>
 <body>
@@ -12,7 +12,10 @@
   <!-- ===================== 登入／選身分 ===================== -->
   <div id="loginOverlay" class="login-overlay">
     <div class="login-card">
-      <h1 class="login-title">🥋 育林國中技擊隊</h1>
+      <div class="login-brand">
+        <img src="yulinlogo.jpg" alt="YULIN TAEKWONDO" class="brand-logo" />
+        <h1 class="login-title">🥋 育林國中技擊隊</h1>
+      </div>
       <p class="login-sub">跆拳道 ・ 武術 ｜ TeamPro AI 訓練準備度系統</p>
 
       <div id="loginStep1">
@@ -38,10 +41,13 @@
   <header class="app-header">
     <button type="button" id="btnSwitchRole" class="btn-switch-role" style="display:none;">🔄 切換身分</button>
     <div class="header-inner">
-      <h1 class="app-title">🥋 育林國中技擊隊</h1>
-      <h2 class="app-subtitle">跆拳道 ・ 武術 ｜ TeamPro AI 訓練準備度系統</h2>
-      <p class="app-slogan">昨天發現問題，今天帶著目標訓練，明天看見進步。</p>
-      <p id="roleBadge" class="role-badge" style="display:none;"></p>
+      <img src="yulinlogo.jpg" alt="YULIN TAEKWONDO" class="brand-logo" />
+      <div class="app-brand-text">
+        <h1 class="app-title">🥋 育林國中技擊隊</h1>
+        <h2 class="app-subtitle">跆拳道 ・ 武術 ｜ TeamPro AI 訓練準備度系統</h2>
+        <p class="app-slogan">昨天發現問題，今天帶著目標訓練，明天看見進步。</p>
+        <p id="roleBadge" class="role-badge" style="display:none;"></p>
+      </div>
     </div>
   </header>
 
