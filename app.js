@@ -7926,9 +7926,9 @@ function brandModHidden(id, on) {
 function applyBrand() {
   const b = getBrand();
   const subtitle = `${b.sports} ｜ TeamPro AI 訓練準備度系統`;
-  document.querySelectorAll('.app-title').forEach(el => { el.textContent = '🥋 ' + b.teamName; });
+  document.querySelectorAll('.app-title').forEach(el => { el.textContent = b.teamName; });
   document.querySelectorAll('.app-subtitle').forEach(el => { el.textContent = subtitle; });
-  const lt = document.querySelector('.login-title'); if (lt) lt.textContent = '🥋 ' + b.teamName;
+  const lt = document.querySelector('.login-title'); if (lt) lt.textContent = b.teamName;
   const ls = document.querySelector('.login-sub'); if (ls) ls.textContent = subtitle;
   try { document.title = b.teamName + '｜TeamPro AI 訓練準備度系統'; } catch (e) { /* */ }
   // 模組開關（關閉時隱藏對應區塊；不動到必填欄位邏輯）
