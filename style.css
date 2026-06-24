@@ -1164,9 +1164,13 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
   background: rgba(225,27,22,0.12);
 }
 
-/* 主要按鈕＝logo 藍漸層（其餘按鈕不動） */
+/* 主要按鈕＝亮紅、次要按鈕＝深紅（整體紅色系、保留層次） */
 .btn-primary {
-  background: linear-gradient(135deg, var(--brand-blue), #1f5fa8);
+  background: linear-gradient(135deg, var(--brand-red), #b3140f);
+  color: #ffffff;
+}
+.btn-secondary {
+  background: linear-gradient(135deg, #9e1612, #6f0f0c);
   color: #ffffff;
 }
 
