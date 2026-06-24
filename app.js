@@ -5605,6 +5605,27 @@ async function loadPersonRecords() {
   });
   html += '</tbody></table></div>';
 
+  // 訓練時段與身體狀態（含新欄位：時段、排汗量）
+  html += '<h4 style="margin-top:14px">訓練時段與身體狀態（新→舊）</h4><div class="table-scroll"><table class="record-table"><thead><tr>' +
+    '<th>日期</th><th>訓練時段</th><th>RPE</th><th>痠痛</th><th>排汗</th><th>睡眠</th><th>尿液</th><th>疼痛</th>' +
+    '</tr></thead><tbody>';
+  recs.forEach(r => {
+    const sweatTxt = (r.sweatLevel !== '' && r.sweatLevel != null) ? (r.sweatLevel + '/5') : '-';
+    const sleepTxt = (String(r.sleepHours || '').trim() !== '') ? (r.sleepHours + 'h' + (r.sleepQuality ? '・' + r.sleepQuality : '')) : '-';
+    const painTxt = (r.painScore !== '' && r.painScore != null && String(r.painScore) !== '0') ? (r.painScore + '/10') : (String(r.painScore) === '0' ? '0' : '-');
+    html += `<tr>
+      <td>${dateSlash(r.date)}</td>
+      <td>${escapeHtml(r.trainingSession || '-')}</td>
+      <td>${r.rpe ? r.rpe + '/10' : '-'}</td>
+      <td>${r.soreness ? r.soreness + '/5' : '-'}</td>
+      <td>${escapeHtml(sweatTxt)}</td>
+      <td>${escapeHtml(sleepTxt)}</td>
+      <td>${escapeHtml(r.urineStatus || '-')}</td>
+      <td>${escapeHtml(painTxt)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+
   // ---- 評分與對話（交叉辯論）：每筆一張卡 ----
   html += '<h4 style="margin-top:16px">✍️ 評分與對話</h4>';
   recs.forEach(r => html += renderCoachReviewBlock(r));
