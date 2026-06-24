@@ -6670,11 +6670,13 @@ function buildPdfRecordsFromOrderedRecords(ordered, athleteName, fileNo) {
 function buildPdfReportPages(records) {
   const wrapper = document.createElement('div');
   wrapper.id = 'pdf-export-root';
-  wrapper.style.position = 'fixed';
-  wrapper.style.left = '-99999px';
+  wrapper.style.position = 'absolute';
+  wrapper.style.left = '0';
   wrapper.style.top = '0';
+  wrapper.style.transform = 'translateX(-120vw)';
   wrapper.style.width = '210mm';
   wrapper.style.background = '#ffffff';
+  wrapper.style.pointerEvents = 'none';
 
   (records || []).forEach((record, index) => {
     const page = document.createElement('div');
@@ -6754,45 +6756,43 @@ async function downloadPDF(records) {
     alert('目前沒有可匯出的報告資料');
     return;
   }
-  if (typeof window.html2pdf === 'undefined') {
-    if (typeof toast === 'function') toast('PDF 元件載入中，請改用「列印 / 存 PDF」');
+  const h2c = window.html2canvas;
+  const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (typeof h2c !== 'function' || typeof jsPDFCtor !== 'function') {
+    if (typeof toast === 'function') toast('PDF 元件載入中，請稍後再試');
     return;
   }
 
   const pdfRoot = buildPdfReportPages(records);
   await new Promise(resolve => setTimeout(resolve, 300));
 
-  const opt = {
-    margin: 0,
-    filename: generatePdfFileName(),
-    image: {
-      type: 'jpeg',
-      quality: 0.98
-    },
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: 794,
-      windowHeight: 1123
-    },
-    jsPDF: {
-      unit: 'mm',
-      format: 'a4',
-      orientation: 'portrait',
-      compress: true
-    },
-    pagebreak: {
-      mode: ['css'],
-      before: '.pdf-page'
-    }
-  };
-
   try {
-    await window.html2pdf().set(opt).from(pdfRoot).save();
+    const pages = Array.from(pdfRoot.querySelectorAll('.pdf-page'));
+    const pdf = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+    for (let i = 0; i < pages.length; i++) {
+      const canvas = await h2c(pages[i], {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: 794,
+        windowHeight: 1123
+      });
+      const img = canvas.toDataURL('image/jpeg', 0.98);
+      let imgW = pw;
+      let imgH = pw * canvas.height / canvas.width;
+      if (imgH > ph) {
+        imgH = ph;
+        imgW = ph * canvas.width / canvas.height;
+      }
+      if (i > 0) pdf.addPage();
+      pdf.addImage(img, 'JPEG', (pw - imgW) / 2, 0, imgW, imgH);
+    }
+    pdf.save(generatePdfFileName());
   } finally {
     pdfRoot.remove();
   }

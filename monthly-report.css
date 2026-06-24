@@ -303,7 +303,7 @@
   width: 210mm !important;
   min-height: 297mm !important;
   height: 297mm !important;
-  padding: 12mm !important 12mm 18mm !important;
+  padding: 12mm 12mm 18mm 12mm !important;
   background: #ffffff !important;
   overflow: hidden !important;
   page-break-after: always !important;
