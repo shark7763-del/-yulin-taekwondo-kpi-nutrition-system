@@ -5,20 +5,20 @@
    ============================================================ */
 
 :root {
-  --bg-dark: #0e1116;
-  --bg-card: #1a1f29;
-  --bg-card-2: #222936;
-  --gold: #f5c518;
-  --blue: #2e7dd1;
-  --red: #e23b3b;
+  --bg-dark: #050505;
+  --bg-card: #111111;
+  --bg-card-2: #171717;
+  --gold: #e50914;
+  --blue: #2f80ed;
+  --red: #b31217;
   --green: #2ecc71;
-  --yellow: #f1c40f;
-  --orange: #e67e22;
-  --text-main: #f2f4f8;
-  --text-soft: #aab2c0;
-  --border: #2c3442;
-  --radius: 14px;
-  --shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --yellow: #ffd23f;
+  --orange: #ff8c42;
+  --text-main: #ffffff;
+  --text-soft: #c2cad7;
+  --border: #273244;
+  --radius: 16px;
+  --shadow: 0 20px 42px rgba(0, 0, 0, 0.48);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -977,6 +977,830 @@ textarea.text-input { resize: vertical; }
 .trend-ai-tip {
   margin-top: 10px; padding: 9px 12px; border-radius: 8px; font-size: 0.88rem;
   background: rgba(245,197,24,0.10); border: 1px solid rgba(245,197,24,0.4); color: #f3d36b;
+}
+
+.pdf-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.pdf-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(47,128,237,0.22);
+}
+.pdf-brand-copy { min-width: 0; }
+.pdf-brand-eyebrow {
+  margin: 0 0 3px;
+  color: var(--yellow);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.pdf-brand h1 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 1.24rem;
+  line-height: 1.12;
+}
+.pdf-brand p {
+  margin: 2px 0 0;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+.pdf-meta {
+  text-align: right;
+}
+.pdf-meta p {
+  margin: 0 0 4px;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+.pdf-page-number {
+  color: var(--yellow);
+  font-weight: 800;
+}
+
+/* ============================================================
+   YULIN WAR ROOM THEME OVERRIDES
+   ------------------------------------------------------------
+   保留原本功能與 class 名稱，只覆蓋視覺、排版與 RWD。
+   ============================================================ */
+
+html { background: var(--bg-dark); }
+body {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(47, 128, 237, 0.15), transparent 28%),
+    radial-gradient(circle at 85% 10%, rgba(229, 9, 20, 0.16), transparent 24%),
+    linear-gradient(180deg, #050505 0%, #0b0b0d 42%, #101214 100%);
+  color: var(--text-main);
+  position: relative;
+  isolation: isolate;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(120deg, rgba(255,255,255,0.035) 0, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 38px),
+    linear-gradient(0deg, rgba(47,128,237,0.05), rgba(47,128,237,0.05) 1px, transparent 1px, transparent 56px);
+  background-size: 100% 100%, 100% 100%;
+  opacity: 0.35;
+  z-index: -1;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(229,9,20,0.08), transparent 24%, transparent 76%, rgba(47,128,237,0.08));
+  z-index: -1;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 70;
+  background: linear-gradient(180deg, rgba(5,5,5,0.98), rgba(17,17,17,0.96));
+  border-bottom: 1px solid rgba(229,9,20,0.38);
+  box-shadow: 0 16px 30px rgba(0,0,0,0.36);
+  padding: 16px 16px 18px;
+  text-align: left;
+  backdrop-filter: blur(14px);
+}
+.header-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.brand-lockup-lg {
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.brand-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(47,128,237,0.25);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+  padding: 8px;
+}
+.brand-copy { min-width: 0; }
+.brand-eyebrow {
+  margin: 0 0 4px;
+  color: var(--yellow);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.app-title,
+.login-title {
+  font-size: clamp(1.45rem, 2.4vw, 2.45rem);
+  line-height: 1.08;
+  margin: 0;
+  color: var(--text-main);
+  font-weight: 900;
+  letter-spacing: 0;
+}
+.app-subtitle,
+.login-sub {
+  margin: 4px 0 0;
+  color: var(--blue);
+  font-size: clamp(0.95rem, 1.3vw, 1.1rem);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.app-slogan,
+.login-tagline {
+  margin: 12px 0 0;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+.role-badge {
+  background: linear-gradient(135deg, rgba(47,128,237,0.18), rgba(229,9,20,0.18));
+  border-color: rgba(47,128,237,0.45);
+  color: var(--text-main);
+}
+.btn-switch-role {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(47,128,237,0.25);
+  color: var(--text-soft);
+}
+.btn-switch-role:hover {
+  color: var(--text-main);
+  border-color: var(--blue);
+  background: rgba(47,128,237,0.10);
+}
+
+.tab-nav {
+  background: rgba(5,5,5,0.94);
+  border-bottom: 1px solid rgba(47,128,237,0.20);
+  backdrop-filter: blur(12px);
+}
+.tab-btn,
+.tab-link {
+  border-bottom-width: 2px;
+  padding: 15px 14px;
+  color: #b8c3d4;
+}
+.tab-btn.active {
+  color: #fff;
+  border-bottom-color: var(--gold);
+  background: linear-gradient(180deg, rgba(229,9,20,0.18), rgba(47,128,237,0.06));
+}
+.tab-link {
+  color: #8cc7ff;
+}
+.tab-link:hover {
+  color: #fff;
+  border-bottom-color: var(--blue);
+  background: rgba(47,128,237,0.12);
+}
+
+.app-main {
+  max-width: 1240px;
+  padding: 18px 16px 30px;
+}
+.tab-panel.active {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+}
+.tab-panel.active > .card {
+  grid-column: span 12;
+}
+.tab-panel.active > .card:not([style*="display: none"]) {
+  display: block;
+}
+
+.card,
+.form-section,
+.adv-fold,
+.coach-score-card,
+.readiness-group,
+.coach-guide-grid div,
+.warroom-grid > *,
+.overview-grid > *,
+.kpi-session-item,
+.kpi-new-form,
+.redcare-card,
+.star-row,
+.player-list li,
+.parent-status-card,
+.review-card,
+.trend-ai-card {
+  background: linear-gradient(180deg, rgba(17,17,17,0.98), rgba(9,10,12,0.98));
+  border: 1px solid rgba(47,128,237,0.22);
+  border-radius: 18px;
+  box-shadow: 0 18px 42px rgba(0,0,0,0.36);
+}
+.card {
+  padding: 18px 16px;
+}
+.card-title {
+  font-size: 1.08rem;
+  color: #fff;
+  border-left-color: var(--gold);
+  padding-left: 12px;
+  margin-bottom: 16px;
+}
+.card-title::after {
+  content: "";
+  display: block;
+  width: 52px;
+  height: 2px;
+  margin-top: 8px;
+  background: linear-gradient(90deg, var(--gold), var(--blue));
+}
+
+.today-guide-card,
+.quote-card,
+.readiness-info-card,
+.star-card,
+.player-card,
+.coach-fb-card,
+#coachWarRoomCard,
+#coachReadinessCard,
+#coachQuickScoreCard,
+#coachNutritionCard,
+#coachOverviewCard,
+#journalQueryCard,
+#profileQueryCard,
+#lastPerfQueryCard,
+#weeklyReportCard,
+#trendCard,
+#lastPerfResultCard,
+#compareCard,
+#nutritionCard,
+#lineCard,
+#parentTodayGuide,
+#studentForm {
+  grid-column: span 12;
+}
+.today-guide-card,
+.quote-card,
+.star-card,
+.player-card {
+  min-height: 100%;
+}
+.quote-card {
+  background: linear-gradient(160deg, rgba(47,128,237,0.12), rgba(229,9,20,0.08)), #0f1114;
+}
+.readiness-info-card {
+  border-left: 4px solid var(--blue);
+}
+.star-card,
+.player-card {
+  border-left: 4px solid var(--gold);
+}
+.today-guide-card {
+  border-left: 4px solid var(--blue);
+}
+
+.btn-group {
+  gap: 12px;
+}
+.btn {
+  min-height: 48px;
+  border-radius: 14px;
+  letter-spacing: 0;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.24);
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--gold), #7a0b12);
+  color: #fff;
+}
+.btn-secondary {
+  background: linear-gradient(135deg, var(--blue), #1751a8);
+  color: #fff;
+}
+.btn-ghost {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(47,128,237,0.30);
+  color: #c5d4e7;
+}
+.btn-copy {
+  background: rgba(229,9,20,0.14);
+  color: #fff;
+  border: 1px solid rgba(229,9,20,0.42);
+}
+.btn-line-share {
+  background: linear-gradient(135deg, #2f80ed, #56ccf2);
+  color: #fff;
+}
+
+.text-input,
+.login-name-search input,
+.login-name-search .text-input,
+select.text-input,
+textarea.text-input {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(47,128,237,0.22);
+  background: #0a0c10;
+  color: var(--text-main);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+textarea.text-input {
+  min-height: 96px;
+}
+.text-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(47,128,237,0.18);
+}
+.field-label,
+.review-label,
+.login-hint,
+.login-entry-help,
+.login-privacy-note,
+.mood-note,
+.sleep-tip,
+.jr-file-no,
+.mr-hint {
+  color: var(--text-soft);
+}
+.field-label {
+  margin-top: 14px;
+  font-size: 0.92rem;
+}
+.req {
+  color: var(--yellow);
+}
+
+.form-section,
+.adv-fold,
+.coach-score-card,
+.kpi-aspect,
+.kpi-section,
+.redcare-card,
+.trend-ai-card,
+.review-card,
+.parent-status-card,
+.hint-box,
+.line-text,
+.login-entry-help,
+.login-privacy-note,
+.consent-notice,
+.mood-care,
+.cfb-solace,
+.absence-impact,
+.sleep-calc,
+.urine-note {
+  border-color: rgba(47,128,237,0.22);
+}
+.form-section legend,
+.kpi-aspect-head,
+.kpi-section-head,
+.cfb-sec-title,
+.trend-ai-title,
+.trend-summary .up,
+.account-admin-title,
+.pc-sec,
+.mr-sec-h {
+  color: #fff;
+}
+.kpi-aspect-head,
+.kpi-section-head {
+  background: linear-gradient(180deg, #111827, #0a0d12);
+  border-left-color: var(--gold);
+}
+.kpi-item,
+.kpi-section-body,
+.pain-ref-table td,
+.record-table td {
+  border-color: rgba(47,128,237,0.16);
+}
+.kpi-item-score,
+.calc-item span,
+.pc-tile-val,
+.ov-cell .ov-num,
+.mr-stat-val {
+  color: #fff;
+}
+.kpi-item-score.lv-green,
+.pc-streak.on .pc-streak-num,
+.status-dot.green,
+.tag-green,
+.cell-green {
+  color: var(--green);
+}
+.kpi-item-score.lv-yellow,
+.status-dot.yellow,
+.tag-yellow,
+.cell-yellow {
+  color: var(--yellow);
+}
+.kpi-item-score.lv-red,
+.status-dot.red,
+.tag-red,
+.cell-red {
+  color: #ff6b73;
+}
+
+.btn-group .btn,
+.login-role-btn,
+.login-back,
+.cfb-tab,
+.cfb-share-btn,
+.trend-btn,
+.trend-range-btn,
+.chip,
+.mood-btn,
+.coach-score-btn,
+.btn-switch-role,
+.player-list li button,
+.account-actions button {
+  backdrop-filter: blur(10px);
+}
+
+.login-overlay {
+  background:
+    radial-gradient(circle at top, rgba(229,9,20,0.26), transparent 34%),
+    radial-gradient(circle at 80% 20%, rgba(47,128,237,0.18), transparent 24%),
+    linear-gradient(145deg, rgba(0,0,0,0.96), rgba(17,17,17,0.98));
+}
+.login-card {
+  max-width: 560px;
+  padding: 28px 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(47,128,237,0.22);
+  background: linear-gradient(180deg, rgba(17,17,17,0.98), rgba(7,8,10,0.98));
+}
+.login-title {
+  color: #fff;
+  text-align: left;
+}
+.login-sub {
+  text-align: left;
+}
+.login-tagline {
+  text-align: left;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.login-roles {
+  gap: 10px;
+}
+.login-role-btn {
+  min-height: 52px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+  border-color: rgba(47,128,237,0.18);
+}
+.login-role-btn:hover {
+  border-color: var(--gold);
+  background: linear-gradient(135deg, rgba(229,9,20,0.18), rgba(47,128,237,0.12));
+}
+.login-step2-actions {
+  gap: 12px;
+}
+.login-back {
+  min-height: 48px;
+}
+.login-entry-help,
+.login-privacy-note,
+.consent-notice {
+  background: rgba(255,255,255,0.02);
+}
+
+.tab-panel.active > .today-guide-card,
+.tab-panel.active > .quote-card,
+.tab-panel.active > .star-card,
+.tab-panel.active > .player-card {
+  grid-column: span 6;
+}
+.tab-panel.active > #studentKpiCard,
+.tab-panel.active > #studentForm,
+.tab-panel.active > #coachFeedbackCard,
+.tab-panel.active > #compareCard,
+.tab-panel.active > #nutritionCard,
+.tab-panel.active > #lineCard,
+.tab-panel.active > #profileResultCard,
+.tab-panel.active > #journalPreviewCard,
+.tab-panel.active > #lastPerfQueryCard,
+.tab-panel.active > #lastPerfResultCard,
+.tab-panel.active > #weeklyReportCard,
+.tab-panel.active > #trendCard,
+.tab-panel.active > #profileQueryCard,
+.tab-panel.active > #journalQueryCard,
+.tab-panel.active > #parentTodayGuide,
+.tab-panel.active > #parentCoachNotes,
+.tab-panel.active > #parentWeekStats,
+.tab-panel.active > #parentMonthStats,
+.tab-panel.active > #parentSevenDays,
+.tab-panel.active > #parentTodayStatus,
+.tab-panel.active > #parentMakeupTasks,
+.tab-panel.active > #accountAdminCard,
+.tab-panel.active > #coachWarRoomCard,
+.tab-panel.active > #coachReadinessCard,
+.tab-panel.active > #coachQuickScoreCard,
+.tab-panel.active > #coachKpiManageCard,
+.tab-panel.active > #coachNutritionCard,
+.tab-panel.active > #coachOverviewCard,
+.tab-panel.active > #coachSubmitCard,
+.tab-panel.active > #coachAttendanceCard,
+.tab-panel.active > #coachStatusCard,
+.tab-panel.active > #coachRedLightCard,
+.tab-panel.active > #coachAnalysisCard,
+.tab-panel.active > #coachInterviewCard,
+.tab-panel.active > #coachTaskCard,
+.tab-panel.active > #settingsCard,
+.tab-panel.active > #brandCard,
+.tab-panel.active > #lineSettingsCard,
+.tab-panel.active > #sheetSettingsCard {
+  grid-column: span 12;
+}
+
+.overview-grid,
+.coach-guide-grid,
+.readiness-groups,
+.warroom-grid,
+.kpi-session-ops,
+.cfb-status-grid,
+.quick-chips,
+.badge-row,
+.trend-btns,
+.trend-range,
+.line-block-head,
+.account-admin-toolbar,
+.account-parent-form,
+.redcare-actions {
+  gap: 10px;
+}
+.overview-grid > *,
+.coach-guide-grid > div,
+.readiness-group,
+.warroom-grid > *,
+.ov-cell,
+.coach-score-card,
+.kpi-session-item,
+.kpi-new-form,
+.parent-status-card,
+.review-card,
+.trend-ai-card {
+  border: 1px solid rgba(47,128,237,0.20);
+}
+.overview-grid > *,
+.ov-cell {
+  background: linear-gradient(180deg, rgba(17,17,17,0.98), rgba(10,11,14,0.98));
+  border-radius: 16px;
+}
+.overview-grid .ov-num {
+  color: #fff;
+  font-size: 1.7rem;
+}
+.overview-grid .ov-label {
+  color: var(--text-soft);
+}
+
+.record-table,
+.pain-ref-table,
+.mr-table {
+  background: #0a0b0f;
+  color: var(--text-main);
+}
+.record-table th,
+.pain-ref-table th {
+  background: #0f1622;
+  color: #fff;
+}
+.record-table td,
+.pain-ref-table td,
+.table-scroll td {
+  background: rgba(255,255,255,0.02);
+}
+.table-scroll {
+  border-radius: 16px;
+}
+
+.tag {
+  border-radius: 999px;
+  border-width: 1px;
+}
+.tag-blue {
+  background: rgba(47,128,237,0.16);
+  border-color: rgba(47,128,237,0.40);
+  color: #9ed0ff;
+}
+.tag-red,
+.tag-orange,
+.tag-yellow,
+.tag-green {
+  background: rgba(255,255,255,0.03);
+}
+
+.toast {
+  background: rgba(5,5,5,0.96);
+  border-color: rgba(229,9,20,0.45);
+  color: #fff;
+}
+
+.line-text {
+  background: #07090c;
+  border: 1px solid rgba(47,128,237,0.22);
+  border-radius: 16px;
+}
+
+.app-footer {
+  background: linear-gradient(180deg, rgba(5,5,5,0.2), rgba(5,5,5,0.95));
+  border-top: 1px solid rgba(47,128,237,0.14);
+  color: var(--text-soft);
+}
+.footer-note {
+  color: #8d9ab0;
+}
+
+.mr-hint,
+.mr-control-field > label,
+.review-label,
+.sleep-tip,
+.absence-note,
+.pc-prog-label,
+.pc-tile-label,
+.mr-page-meta,
+.jr-summary-note,
+.mr-page-foot,
+.mr-sign-date,
+.mr-stat-label,
+.mr-stat-sub {
+  color: #9aa6b8;
+}
+
+@media (max-width: 920px) {
+  .app-header {
+    padding: 14px 14px 16px;
+  }
+  .brand-lockup {
+    gap: 12px;
+  }
+  .brand-logo {
+    width: 58px;
+    height: 58px;
+  }
+  .tab-panel.active {
+    grid-template-columns: 1fr;
+  }
+  .tab-panel.active > .card,
+  .tab-panel.active > .today-guide-card,
+  .tab-panel.active > .quote-card,
+  .tab-panel.active > .star-card,
+  .tab-panel.active > .player-card {
+    grid-column: auto;
+  }
+  .tab-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    overflow: visible;
+  }
+  .tab-btn,
+  .tab-link {
+    min-width: 0;
+    text-align: center;
+    padding: 12px 8px;
+  }
+  .login-card {
+    padding: 22px 18px;
+  }
+  .login-step2-actions,
+  .btn-group,
+  .account-admin-toolbar,
+  .account-parent-form,
+  .redcare-actions {
+    flex-direction: column;
+  }
+  .btn,
+  .login-role-btn,
+  .login-back,
+  .cfb-tab,
+  .cfb-share-btn,
+  .trend-btn,
+  .trend-range-btn {
+    width: 100%;
+  }
+  .btn-group .btn {
+    min-width: 0;
+  }
+  .coach-guide-grid,
+  .readiness-groups,
+  .overview-grid,
+  .cfb-status-grid,
+  .pc-stats,
+  .aspect-grid {
+    grid-template-columns: 1fr;
+  }
+  .brand-eyebrow {
+    font-size: 0.7rem;
+  }
+  .app-title,
+  .login-title {
+    font-size: 1.6rem;
+  }
+  .app-subtitle,
+  .login-sub {
+    font-size: 0.92rem;
+  }
+  .app-slogan,
+  .login-tagline {
+    font-size: 0.88rem;
+  }
+  .card {
+    padding: 16px 14px;
+  }
+  .card-title {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-main {
+    padding: 14px 12px 24px;
+  }
+  .tab-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .brand-lockup {
+    align-items: flex-start;
+  }
+  .brand-logo {
+    width: 52px;
+    height: 52px;
+    padding: 6px;
+  }
+  .login-card {
+    width: 100%;
+    max-width: none;
+    border-radius: 20px;
+  }
+  .login-name-item {
+    min-width: 96px;
+    font-size: 0.95rem;
+  }
+  .text-input,
+  select.text-input,
+  textarea.text-input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  textarea.text-input {
+    min-height: 88px;
+  }
+  .btn {
+    min-width: 0;
+    font-size: 0.96rem;
+  }
+  .table-scroll,
+  #accountAdminCard .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .record-table,
+  .pain-ref-table {
+    min-width: 680px;
+  }
+  .review-row,
+  .cfb-stat,
+  .star-row,
+  .pc-hero,
+  .redcare-head {
+    align-items: flex-start;
+  }
+  .pc-hero,
+  .redcare-head {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .pc-stats,
+  .coach-score-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mood-picker {
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+  .mood-btn {
+    min-width: 76px;
+    flex: 0 0 76px;
+  }
 }
 .tai.good { color: var(--green); font-weight: 700; }
 .tai.warn { color: #ff9c6e; font-weight: 700; }

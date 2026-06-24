@@ -670,8 +670,16 @@
   }
 
   function pageHead(title, data) {
-    return '<div class="mr-page-head"><span class="mr-page-title">' + esc(title) + '</span>' +
-      '<span class="mr-page-meta">育林國中技擊隊 ｜ ' + esc(data.monthLabel) + '</span></div>';
+    return '<div class="mr-page-head">' +
+      '<div class="mr-head-brand">' +
+        '<img src="yulinelogo.jpg" alt="YULIN TAEKWONDO Logo" class="mr-head-logo" />' +
+        '<div class="mr-head-copy">' +
+          '<div class="mr-head-eyebrow">YULIN TAEKWONDO</div>' +
+          '<span class="mr-page-title">' + esc(title) + '</span>' +
+          '<span class="mr-page-meta">育林跆拳道隊 ｜ ' + esc(data.monthLabel) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
   }
   function pageFoot(no) {
     return '<div class="mr-page-foot">本報表僅供校內訓練管理與訪視使用，請勿公開散布。　第 ' + no + ' 頁</div>';
@@ -682,8 +690,14 @@
     var a = data.attendance, k = data.kpi, r = data.recovery, n = data.nutrition, ryg = data.ryg, cs = data.coachSummary;
     var h = '<section class="mr-page">';
     h += '<div class="mr-cover">' +
-      '<div class="mr-cover-title">育林國中技擊隊</div>' +
-      '<div class="mr-cover-sub">跆拳道・武術 ｜ 每月訓練與生活管理報告</div>' +
+      '<div class="mr-cover-brand">' +
+        '<img src="yulinelogo.jpg" alt="YULIN TAEKWONDO Logo" class="mr-cover-logo" />' +
+        '<div class="mr-cover-brand-copy">' +
+          '<div class="mr-cover-eyebrow">YULIN TAEKWONDO</div>' +
+          '<div class="mr-cover-title">育林跆拳道隊</div>' +
+          '<div class="mr-cover-sub">KPI × 營養 × 訓練狀態系統</div>' +
+        '</div>' +
+      '</div>' +
       '<div class="mr-cover-month">月份：' + esc(data.monthLabel) + '</div>' +
       '<div class="mr-cover-use">用途：訪視專用（' + esc(TYPE_LABEL[MR.reportType]) + '）</div>' +
       '</div>';
@@ -1058,8 +1072,15 @@
     var tree = data.trees[child] || calculateAthleteGrowthTree(data.monthKpi, child);
     var att = data.attendance.perAthlete.find(function (x) { return x.name === child; }) || { attendanceRate: 0, trained: 0, leave: 0, absent: 0 };
     var h = '<section class="mr-page">';
-    h += '<div class="mr-cover"><div class="mr-cover-title">育林國中技擊隊</div>' +
-      '<div class="mr-cover-sub">跆拳道・武術 ｜ 每月訓練與生活管理報告（家長版）</div>' +
+    h += '<div class="mr-cover">' +
+      '<div class="mr-cover-brand">' +
+        '<img src="yulinelogo.jpg" alt="YULIN TAEKWONDO Logo" class="mr-cover-logo" />' +
+        '<div class="mr-cover-brand-copy">' +
+          '<div class="mr-cover-eyebrow">YULIN TAEKWONDO</div>' +
+          '<div class="mr-cover-title">育林跆拳道隊</div>' +
+          '<div class="mr-cover-sub">KPI × 營養 × 訓練狀態系統（家長版）</div>' +
+        '</div>' +
+      '</div>' +
       '<div class="mr-cover-month">月份：' + esc(data.monthLabel) + '　選手：' + esc(child) + '</div></div>';
     h += pageHead('孩子本月摘要', data);
     h += '<div class="mr-grid mr-grid-3">';
@@ -1114,7 +1135,7 @@
 
   function fileBase() {
     var m = (MR.lastReportData && MR.lastReportData.month) || selectedMonth();
-    return '育林國中技擊隊_每月訪視報表_' + m + '_' + (TYPE_LABEL[MR.reportType] || '');
+    return '育林跆拳道隊_每月訪視報表_' + m + '_' + (TYPE_LABEL[MR.reportType] || '');
   }
 
   async function downloadMonthlyReportPdf() {
