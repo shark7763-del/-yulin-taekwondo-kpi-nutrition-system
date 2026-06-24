@@ -977,6 +977,14 @@ function updateSleepCalc() {
   box.style.display = '';
   box.className = 'sleep-calc ' + v.cls;
   box.innerHTML = `🛌 睡眠時長 <b>${h}</b> 小時・AI 判讀：<b>${v.label}</b><br><span class="sleep-tip">${v.tip}</span>`;
+  // 防呆：時數極端 → 可能就寢/起床填反了
+  const warn = $id('sleepWarn');
+  if (warn) {
+    if (h >= 14 || h < 3.5) {
+      warn.style.display = '';
+      warn.textContent = `⚠️ 睡眠時數看起來怪怪的（${h} 小時）—— 確認「就寢」填的是晚上睡覺時間、「起床」填的是早上時間，別填反囉。`;
+    } else { warn.style.display = 'none'; warn.textContent = ''; }
+  }
 }
 
 /* ---- 受傷疼痛指數 0–10：依分級顯示體感與關懷 ---- */
@@ -2543,6 +2551,118 @@ function validateForm() {
 }
 
 // 收集整筆紀錄物件（六面向共 30 項 KPI；總分/150、平均決定燈號）
+/* ===================== 每日表單 UI 強化（時段／睡眠防呆／滑桿／尿液色卡／水量AI） ===================== */
+const TRAINING_SESSIONS = ['晨操', '下午訓練', '晚上訓練', '無訓練'];
+function buildTrainingSessionChips() {
+  const box = $id('trainingSessionChips'); if (!box) return;
+  box.innerHTML = TRAINING_SESSIONS.map(s => `<button type="button" class="chip session-chip" data-val="${s}">${s}</button>`).join('');
+  box.querySelectorAll('.session-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.val === '無訓練') {
+        const on = !btn.classList.contains('sel');
+        box.querySelectorAll('.session-chip').forEach(b => b.classList.remove('sel'));
+        if (on) btn.classList.add('sel');
+      } else {
+        const none = box.querySelector('.session-chip[data-val="無訓練"]'); if (none) none.classList.remove('sel');
+        btn.classList.toggle('sel');
+      }
+      syncTrainingSession();
+    });
+  });
+}
+function syncTrainingSession() {
+  const box = $id('trainingSessionChips'), hidden = $id('trainingSession');
+  if (!box || !hidden) return;
+  hidden.value = Array.from(box.querySelectorAll('.session-chip.sel')).map(b => b.dataset.val).join('、');
+}
+function setTrainingSession(str) {
+  const box = $id('trainingSessionChips'); if (!box) return;
+  const want = String(str || '').split(/[、,]/).map(s => s.trim()).filter(Boolean);
+  box.querySelectorAll('.session-chip').forEach(b => b.classList.toggle('sel', want.indexOf(b.dataset.val) !== -1));
+  syncTrainingSession();
+}
+
+const SORENESS_TXT = ['', '幾乎不痠', '輕微痠', '中等痠', '蠻痠的', '非常痠'];
+function updateSorenessReadout() {
+  const el = $id('soreness'), out = $id('sorenessReadout'); if (!el || !out) return;
+  const n = parseInt(el.value, 10) || 1;
+  out.textContent = `${n} 分・${SORENESS_TXT[n] || ''}`;
+  out.className = 'slider-readout ' + (n >= 4 ? 'bad' : n >= 3 ? 'warn' : 'good');
+}
+function rpeText(n) {
+  if (n <= 2) return '很輕鬆'; if (n <= 4) return '輕鬆';
+  if (n <= 6) return '中等'; if (n <= 8) return '吃力';
+  return '非常吃力（接近極限）';
+}
+function updateRpeReadout() {
+  const el = $id('rpe'), out = $id('rpeReadout'); if (!el || !out) return;
+  const n = parseInt(el.value, 10) || 1;
+  out.textContent = `${n} 分・${rpeText(n)}`;
+  out.className = 'slider-readout ' + (n >= 9 ? 'bad' : n >= 7 ? 'warn' : 'good');
+}
+const SWEAT_TXT = ['', '微乎其微', '少量', '中等', '大量', '大量濕透'];
+function updateSweatReadout() {
+  const el = $id('sweatLevel'), out = $id('sweatReadout'); if (!el || !out) return;
+  const n = parseInt(el.value, 10) || 1;
+  out.textContent = `${n}/5・${SWEAT_TXT[n] || ''}`;
+  out.className = 'slider-readout ' + (n >= 4 ? 'warn' : 'good');
+  updateWaterAdvice();
+}
+
+const URINE_SWATCHES = [
+  { v: '透明無色', color: '#eef6ff', label: '透明' },
+  { v: '淡黃清澈', color: '#f3ee9e', label: '淡黃' },
+  { v: '黃色', color: '#ecd64b', label: '黃' },
+  { v: '深黃', color: '#d2a01c', label: '深黃' },
+  { v: '琥珀色', color: '#9a6510', label: '琥珀' }
+];
+function buildUrineSwatches() {
+  const box = $id('urineSwatches'); if (!box) return;
+  box.innerHTML = URINE_SWATCHES.map(s =>
+    `<button type="button" class="urine-swatch" data-val="${s.v}" title="${escapeHtml(s.v)}"><span class="us-dot" style="background:${s.color}"></span><span class="us-label">${s.label}</span></button>`
+  ).join('');
+  box.querySelectorAll('.urine-swatch').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const hidden = $id('urineStatus');
+      const already = btn.classList.contains('sel');
+      box.querySelectorAll('.urine-swatch').forEach(b => b.classList.remove('sel'));
+      if (!already) btn.classList.add('sel');
+      if (hidden) hidden.value = already ? '' : btn.dataset.val;
+      updateUrineNote();
+    });
+  });
+}
+function syncUrineSwatchSelection() {
+  const box = $id('urineSwatches'), hidden = $id('urineStatus'); if (!box || !hidden) return;
+  box.querySelectorAll('.urine-swatch').forEach(b => b.classList.toggle('sel', b.dataset.val === hidden.value && hidden.value !== ''));
+}
+
+const WATER_FROM_SELECT = { '少於 500ml': 250, '500-1000ml': 750, '1000-1500ml': 1250, '1500-2000ml': 1750, '2000ml 以上': 2200 };
+function updateWaterAdvice() {
+  const box = $id('waterAdvice'); if (!box) return;
+  const w = parseFloat($id('weightKg') ? $id('weightKg').value : '');
+  if (isNaN(w) || w <= 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  let ml = w * 32;
+  const intensity = $id('trainingIntensity') ? $id('trainingIntensity').value : '';
+  if (/高|比賽/.test(intensity)) ml += 700;
+  else if (/中/.test(intensity)) ml += 400;
+  else if (/低|輕/.test(intensity)) ml += 200;
+  const sweat = parseInt($id('sweatLevel') ? $id('sweatLevel').value : '0', 10) || 0;
+  ml += sweat * 150;
+  ml = Math.round(ml / 100) * 100;
+  const sel = $id('waterIntake') ? $id('waterIntake').value : '';
+  const actual = WATER_FROM_SELECT[sel];
+  let cmp = '';
+  if (actual != null) {
+    if (actual >= ml * 0.9) cmp = '　你今天的水量充足 👍';
+    else if (actual >= ml * 0.6) cmp = `　你填 ${escapeHtml(sel)}，還差約 <b>${Math.max(0, ml - actual)}ml</b>，記得補水。`;
+    else cmp = `　你填 ${escapeHtml(sel)}，<b class="wa-low">明顯不足</b>，請盡快補到 ${ml}ml。`;
+  }
+  box.style.display = '';
+  box.className = 'water-advice' + (actual != null && actual < ml * 0.6 ? ' bad' : '');
+  box.innerHTML = `💧 AI 建議今日補水約 <b>${ml} ml</b>（體重 ${w}kg＋強度＋排汗估算）。${cmp}`;
+}
+
 function buildRecord() {
   const groupValue = $id('group').value;
   const absenceMode = isAbsenceGroup(groupValue);
@@ -2573,6 +2693,8 @@ function buildRecord() {
   const painScore = $id('painScore') ? $id('painScore').value : '';
   const painLevel = (painScore === '' ? '' : painGrade(parseInt(painScore, 10) || 0).label);
   const urineStatus = $id('urineStatus') ? $id('urineStatus').value : '';
+  const trainingSession = $id('trainingSession') ? $id('trainingSession').value : '';
+  const sweatLevel = $id('sweatLevel') ? $id('sweatLevel').value : '';
 
   // 餐點：文字（學生打的字，給關鍵字分析用）＋快速勾選標籤（給標籤分析用）
   const mealTags = getAllMealTags();
@@ -2640,6 +2762,8 @@ function buildRecord() {
     painScore: painScore,
     painLevel: painLevel,
     urineStatus: urineStatus,
+    trainingSession: trainingSession,
+    sweatLevel: sweatLevel,
     heightCm: heightCm,
     weightKg: weightKg,
     targetWeightKg: targetWeightKg,
@@ -8059,10 +8183,20 @@ function init() {
   // 受傷疼痛指數 0–10
   { const p = $id('painScore'); if (p) p.addEventListener('input', updatePainReadout); }
   { const pr = $id('painRefToggle'); if (pr) pr.addEventListener('click', () => { const r = $id('painRef'); if (r) r.style.display = (r.style.display === 'none' ? '' : 'none'); }); }
-  // 尿液顏色監控
-  { const u = $id('urineStatus'); if (u) u.addEventListener('change', updateUrineNote); }
+  // 訓練時段 chips ＋ 尿液色卡
+  buildTrainingSessionChips();
+  buildUrineSwatches();
+  // 痠痛／RPE／排汗 滑桿即時文字
+  { const s = $id('soreness'); if (s) s.addEventListener('input', updateSorenessReadout); }
+  { const r = $id('rpe'); if (r) r.addEventListener('input', updateRpeReadout); }
+  { const sw = $id('sweatLevel'); if (sw) sw.addEventListener('input', updateSweatReadout); }
+  // 水量 AI 建議：體重／強度／水量改變時更新
+  { const wk = $id('weightKg'); if (wk) wk.addEventListener('input', updateWaterAdvice); }
+  { const ti = $id('trainingIntensity'); if (ti) ti.addEventListener('change', updateWaterAdvice); }
+  { const wi = $id('waterIntake'); if (wi) wi.addEventListener('change', updateWaterAdvice); }
   // 初次顯示
   updateSleepCalc(); updatePainReadout(); updateUrineNote();
+  updateSorenessReadout(); updateRpeReadout(); updateSweatReadout(); updateWaterAdvice();
 
   // 表單草稿自動保存（填一半關掉也不會不見）
   const saveDraftDebounced = debounce(saveDraft, 400);
@@ -8224,11 +8358,20 @@ function clearForm() {
   if ($id('encourageTeammate')) $id('encourageTeammate').selectedIndex = 0;
   $id('lateNightSnack').value = '無';
   // 睡眠 / 疼痛 / 尿液：清空並刷新 AI 顯示
-  ['bedTime', 'wakeTime', 'sleepHours', 'soreness', 'rpe', 'injuryArea'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
+  ['bedTime', 'wakeTime', 'sleepHours', 'injuryArea'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
   if ($id('sleepQuality')) $id('sleepQuality').value = '普通';
   if ($id('urineStatus')) $id('urineStatus').value = '';
   if ($id('painScore')) $id('painScore').value = 0;
+  // 滑桿回預設、時段與尿液色卡清空
+  if ($id('soreness')) $id('soreness').value = 2;
+  if ($id('rpe')) $id('rpe').value = 5;
+  if ($id('sweatLevel')) $id('sweatLevel').value = 2;
+  if (typeof setTrainingSession === 'function') setTrainingSession('');
   updateSleepCalc(); updatePainReadout(); updateUrineNote();
+  if (typeof syncUrineSwatchSelection === 'function') syncUrineSwatchSelection();
+  if (typeof updateSorenessReadout === 'function') updateSorenessReadout();
+  if (typeof updateRpeReadout === 'function') updateRpeReadout();
+  if (typeof updateSweatReadout === 'function') updateSweatReadout();
   clearMood();
   // 清空自由品勢額外欄位
   FREESTYLE_EXTRA_IDS.forEach(id => { const el = $id(id); if (el) { if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = ''; } });
@@ -8253,7 +8396,7 @@ function clearForm() {
 // 草稿要保存的欄位（簡單欄位，KPI 拉桿另外處理）
 const DRAFT_FIELDS = [
   'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'absenceHonesty', 'bodyStatus',
-  'bedTime', 'wakeTime', 'sleepQuality', 'soreness', 'rpe', 'injuryArea', 'painScore',
+  'bedTime', 'wakeTime', 'sleepQuality', 'soreness', 'rpe', 'injuryArea', 'painScore', 'trainingSession', 'sweatLevel',
   'heightCm', 'weightKg', 'targetWeightKg',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'urineStatus', 'lateNightSnack', 'trainingIntensity',
   'reflection', 'tomorrowGoal', 'gratitude', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday'
@@ -8303,8 +8446,13 @@ function restoreDraft() {
   if (d._mealTags) Object.keys(d._mealTags).forEach(meal => setMealTags(meal, d._mealTags[meal]));
   if (d._mood) setMoodIndex(d._mood);
   if (d._moodReason) setMoodReason(d._moodReason);
+  if (typeof setTrainingSession === 'function') setTrainingSession(d.trainingSession || '');
   updateBmiDisplay();
   updateSleepCalc(); updatePainReadout(); updateUrineNote();
+  if (typeof syncUrineSwatchSelection === 'function') syncUrineSwatchSelection();
+  if (typeof updateSorenessReadout === 'function') updateSorenessReadout();
+  if (typeof updateRpeReadout === 'function') updateRpeReadout();
+  if (typeof updateSweatReadout === 'function') updateSweatReadout();
   return true;
 }
 

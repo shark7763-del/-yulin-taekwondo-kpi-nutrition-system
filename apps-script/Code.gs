@@ -154,6 +154,7 @@ var HEADERS = [
   'bedTime', 'wakeTime',          // 就寢時間、起床時間（sleepHours 由兩者推算）
   'painScore', 'painLevel',       // 受傷部位疼痛指數 0–10、對應分級文字
   'urineStatus'                   // 尿液顏色監控（脫水快篩）
+  ,'trainingSession', 'sweatLevel' // 訓練時段（晨操/下午/晚上/無訓練）、排汗量 1–5
   ,'selfScore', 'coachScore', 'readinessRecoveryScore', 'attendanceScore',
   'riskPenalty', 'finalReadinessScore', 'readinessStatusLight', 'aiTags',
   'trainingDirection', 'readinessJson',

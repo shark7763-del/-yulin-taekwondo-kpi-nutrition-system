@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>育林國中技擊隊｜TeamPro AI 訓練準備度系統</title>
-  <link rel="stylesheet" href="style.css?v=20260624o" />
+  <link rel="stylesheet" href="style.css?v=20260624p" />
   <link rel="stylesheet" href="monthly-report.css?v=20260624g" />
 </head>
 <body>
@@ -140,6 +140,10 @@
           <label class="field-label">組別 <span class="req">*</span></label>
           <select id="group" class="text-input"></select>
 
+          <label class="field-label">今日訓練時段 <span class="mood-note">（可複選；今天沒練就點「無訓練」）</span></label>
+          <div id="trainingSessionChips" class="quick-chips session-chips"></div>
+          <input type="hidden" id="trainingSession" />
+
           <div id="absenceReasonWrap" style="display:none;">
             <div class="hint-box warn">未出席訓練只需填寫報告書（含反思），不需要填寫訓練 KPI。</div>
 
@@ -185,14 +189,15 @@
             <div id="moodReasonChips" class="quick-chips"></div>
             <div id="moodCareNote" class="mood-care" style="display:none;"></div>
 
-            <label class="field-label">昨晚就寢時間 🌙</label>
+            <label class="field-label">昨晚就寢時間 🌙 <span class="mood-note">（晚上睡覺的時間，例：22:30）</span></label>
             <input type="time" id="bedTime" class="text-input" />
 
-            <label class="field-label">今晨起床時間 ☀️</label>
+            <label class="field-label">今晨起床時間 ☀️ <span class="mood-note">（早上起床的時間，例：06:30）</span></label>
             <input type="time" id="wakeTime" class="text-input" />
 
             <input type="hidden" id="sleepHours" />
             <div id="sleepCalc" class="sleep-calc" style="display:none;"></div>
+            <div id="sleepWarn" class="sleep-warn" style="display:none;"></div>
 
             <label class="field-label">睡眠品質</label>
             <select id="sleepQuality" class="text-input">
@@ -203,10 +208,12 @@
             </select>
 
             <label class="field-label">肌肉痠痛程度（1–5）</label>
-            <input type="number" id="soreness" class="text-input" step="1" min="1" max="5" placeholder="1 不痠，5 很痠" />
+            <input type="range" id="soreness" class="slider-input" min="1" max="5" step="1" value="2" />
+            <div class="slider-readout" id="sorenessReadout"></div>
 
             <label class="field-label">今日主觀強度 RPE（1–10）</label>
-            <input type="number" id="rpe" class="text-input" step="1" min="1" max="10" placeholder="1 很輕鬆，10 非常吃力" />
+            <input type="range" id="rpe" class="slider-input" min="1" max="10" step="1" value="5" />
+            <div class="slider-readout" id="rpeReadout"></div>
 
             <label class="field-label">受傷／不適部位</label>
             <input type="text" id="injuryArea" class="text-input" placeholder="沒有可留空，例如：右膝、腳踝" />
@@ -277,18 +284,17 @@
             <div class="meal-tags quick-chips" id="tagsSnacksDrinks" data-meal="snacksDrinks"></div>
           </details>
 
+          <label class="field-label">今日排汗量 💦 <span class="mood-note">（拖動選擇）</span></label>
+          <input type="range" id="sweatLevel" class="slider-input" min="1" max="5" step="1" value="2" />
+          <div class="slider-readout" id="sweatReadout"></div>
+
           <label class="field-label">今日水量 <span class="req">*</span></label>
           <select id="waterIntake" class="text-input"></select>
+          <div class="water-advice" id="waterAdvice" style="display:none;"></div>
 
-          <label class="field-label">尿液顏色監控 💧 <span class="mood-note">（脫水快篩，上完廁所順手選）</span></label>
-          <select id="urineStatus" class="text-input">
-            <option value="">未填</option>
-            <option value="透明無色">透明無色（可能喝太多）</option>
-            <option value="淡黃清澈">淡黃清澈（理想 ✅）</option>
-            <option value="黃色">黃色（正常偏少）</option>
-            <option value="深黃">深黃（缺水）</option>
-            <option value="琥珀色">琥珀色／濃茶色（嚴重缺水 ⚠️）</option>
-          </select>
+          <label class="field-label">尿液顏色監控 💧 <span class="mood-note">（脫水快篩，點對應顏色）</span></label>
+          <div id="urineSwatches" class="urine-swatches"></div>
+          <input type="hidden" id="urineStatus" />
           <div class="urine-note" id="urineNote" style="display:none;"></div>
 
           <label class="field-label">今日是否有宵夜</label>
@@ -967,7 +973,7 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260624i"></script>
+  <script src="app.js?v=20260624j"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260623c"></script>

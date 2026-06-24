@@ -1211,3 +1211,24 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 .kpi-person-toggle.off { background: #222936; color: var(--text-soft); border: 1px solid var(--border); }
 .kpi-person-toggle:disabled { opacity: 0.6; cursor: default; }
 @media (max-width: 640px) { .kpi-person-list { grid-template-columns: 1fr; } }
+
+/* ===================== 每日表單強化：滑桿 / 尿液色卡 / 水量建議 / 睡眠防呆 ===================== */
+.session-chips .session-chip.sel { background: rgba(46,125,209,0.3); border-color: var(--blue); color: #cfe6ff; }
+.slider-input { width: 100%; margin: 6px 0 2px; accent-color: var(--blue); height: 26px; }
+.slider-readout { font-size: 0.86rem; font-weight: 700; margin: 0 0 10px; padding: 4px 10px; border-radius: 8px; display: inline-block; }
+.slider-readout.good { background: rgba(46,204,113,0.14); color: #5fe39a; }
+.slider-readout.warn { background: rgba(241,196,15,0.14); color: #f1c40f; }
+.slider-readout.bad { background: rgba(226,59,59,0.16); color: #ff7b7b; }
+.sleep-warn { margin: 4px 0 10px; padding: 9px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 700;
+  background: rgba(241,196,15,0.14); border: 1px solid var(--yellow); color: #f1c40f; }
+.water-advice { margin: 6px 0 12px; padding: 9px 12px; border-radius: 8px; font-size: 0.86rem; line-height: 1.6;
+  background: rgba(46,125,209,0.12); border: 1px solid rgba(46,125,209,0.4); color: #cfe6ff; }
+.water-advice.bad { background: rgba(226,59,59,0.12); border-color: var(--red); color: #ffc9c9; }
+.water-advice .wa-low { color: #ff7b7b; }
+.urine-swatches { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+.urine-swatch { display: flex; flex-direction: column; align-items: center; gap: 5px; background: #0f141c;
+  border: 2px solid var(--border); border-radius: 12px; padding: 8px 6px; cursor: pointer; min-width: 60px; flex: 1 0 56px; }
+.urine-swatch .us-dot { width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.35); }
+.urine-swatch .us-label { font-size: 0.76rem; color: var(--text-soft); font-weight: 700; }
+.urine-swatch.sel { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(245,197,24,0.3) inset; }
+.urine-swatch.sel .us-label { color: var(--text-main); }
