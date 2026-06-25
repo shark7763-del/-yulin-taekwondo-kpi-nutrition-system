@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-title" content="TeamPro" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=20260625a" />
+  <link rel="stylesheet" href="style.css?v=20260625b" />
   <link rel="stylesheet" href="monthly-report.css?v=20260624g" />
 </head>
 <body>
@@ -1010,13 +1010,14 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260625a"></script>
+  <script src="app.js?v=20260625b"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260623c"></script>
   <!-- KPI 回報手動開啟（教練後台控制學生每日 30 項 KPI）-->
   <script src="kpi-session.js?v=20260624a"></script>
   <!-- 運動心理小卡（回報完成後抽卡＋集卡）-->
+  <button type="button" id="pwaInstallBtn" class="pwa-install-btn" style="display:none;">📲 安裝 App</button>
   <script src="psych-cards.js?v=20260622b"></script>
   <!-- PWA：註冊 Service Worker（離線快取＋可安裝）。失敗不影響任何功能 -->
   <script>

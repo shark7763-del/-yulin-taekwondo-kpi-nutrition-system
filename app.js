@@ -8402,6 +8402,9 @@ function init() {
   // AI 教練回饋（OpenAI）設定
   setupAiHandlers();
 
+  // PWA 安裝按鈕
+  setupPwaInstall();
+
   // 今日我該做什麼：導引卡點擊捲動
   setupTodayGuideNav();
 
@@ -8582,4 +8585,39 @@ function autofillFromLast(rec) {
 }
 
 // 啟動
+/* ===================== PWA 安裝按鈕 ===================== */
+function pwaIsStandalone() {
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+let _pwaPrompt = null;
+function setupPwaInstall() {
+  const btn = $id('pwaInstallBtn');
+  if (!btn) return;
+  if (pwaIsStandalone()) { btn.style.display = 'none'; return; } // 已在 App 內就不顯示
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/.test(ua) && !window.MSStream;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _pwaPrompt = e;
+    btn.style.display = '';
+  });
+  window.addEventListener('appinstalled', () => { _pwaPrompt = null; btn.style.display = 'none'; });
+
+  // iOS Safari 沒有 beforeinstallprompt → 主動顯示按鈕，點了給教學
+  if (isIOS) btn.style.display = '';
+
+  btn.addEventListener('click', async () => {
+    if (_pwaPrompt) {
+      _pwaPrompt.prompt();
+      try { await _pwaPrompt.userChoice; } catch (e) { /* */ }
+      _pwaPrompt = null; btn.style.display = 'none';
+    } else if (isIOS) {
+      alert('iPhone 安裝步驟：\n1. 請用「Safari」開啟本網站（不能用 Chrome 或 LINE 內建瀏覽器）\n2. 按螢幕最下方中間的「分享 ⬆️」\n3. 往下滑選「加入主畫面」→ 加入');
+    } else {
+      alert('若沒有自動跳出安裝視窗：\n按瀏覽器右上「⋮」→「安裝應用程式 / 加到主畫面」。\n\n如果找不到，代表可能已經安裝過了——請先長按桌面圖示移除，再回來安裝一次。');
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', init);
