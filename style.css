@@ -1248,3 +1248,19 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
   box-shadow: 0 6px 18px rgba(225,27,22,0.30);
 }
 .pwa-install-btn:active { transform: scale(0.98); }
+
+/* PWA 安裝圖文引導彈窗 */
+.pwa-guide-mask{position:fixed;inset:0;z-index:9999;background:rgba(8,12,24,.72);display:flex;align-items:flex-end;justify-content:center;padding:0;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);}
+.pwa-guide-card{width:100%;max-width:480px;background:#fff;color:#0f172a;border-radius:20px 20px 0 0;padding:22px 20px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.3);animation:pwaUp .22s ease-out;}
+@keyframes pwaUp{from{transform:translateY(40px);opacity:.4}to{transform:translateY(0);opacity:1}}
+.pwa-guide-card h3{margin:2px 0 10px;font-size:19px;font-weight:800;color:#b3140f;}
+.pwa-guide-sub{margin:0 0 12px;font-size:14px;line-height:1.6;color:#475569;}
+.pwa-guide-steps{margin:0 0 6px;padding-left:20px;}
+.pwa-guide-steps li{font-size:15px;line-height:1.9;color:#1e293b;}
+.pwa-guide-steps-lg li{font-size:16px;line-height:2.1;}
+.pwa-ico{font-size:18px;}
+.pwa-guide-url{margin:12px 0;padding:11px 13px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;word-break:break-all;color:#334155;user-select:all;}
+.pwa-guide-primary{display:block;width:100%;margin:4px 0 10px;padding:14px;border:none;border-radius:14px;background:linear-gradient(135deg,#e11b16,#b3140f);color:#fff;font-size:16px;font-weight:800;cursor:pointer;}
+.pwa-guide-primary:active{transform:scale(.98);}
+.pwa-guide-tip{margin:8px 0 0;font-size:13px;line-height:1.6;color:#64748b;}
+.pwa-guide-close{display:block;width:100%;margin-top:8px;padding:12px;border:none;border-radius:12px;background:#e2e8f0;color:#475569;font-size:15px;font-weight:700;cursor:pointer;}

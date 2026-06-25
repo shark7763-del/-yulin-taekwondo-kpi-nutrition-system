@@ -8590,12 +8590,84 @@ function pwaIsStandalone() {
   return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
 }
 let _pwaPrompt = null;
+
+// 偵測「App 內建瀏覽器」（LINE / FB / IG / 微信…）——這些瀏覽器沒有「加入主畫面」
+function pwaInApp(ua) {
+  return /\bLine\b|\bFBAN\b|\bFBAV\b|Instagram|MicroMessenger|FB_IAB/i.test(ua);
+}
+
+// 一鍵複製網址（給 in-app 瀏覽器用，貼到 Safari/Chrome）
+async function pwaCopyUrl(targetBtn) {
+  const url = location.href.split('#')[0];
+  let ok = false;
+  try { await navigator.clipboard.writeText(url); ok = true; }
+  catch (e) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      ok = document.execCommand('copy'); document.body.removeChild(ta);
+    } catch (e2) { ok = false; }
+  }
+  if (targetBtn) {
+    const old = targetBtn.textContent;
+    targetBtn.textContent = ok ? '✅ 已複製，去貼到瀏覽器' : '長按上方網址手動複製';
+    setTimeout(() => { targetBtn.textContent = old; }, 2600);
+  }
+  return ok;
+}
+
+// 圖文安裝引導彈窗
+function pwaShowGuide(kind) {
+  document.getElementById('pwaGuideMask')?.remove();
+  const url = location.href.split('#')[0];
+  const mask = document.createElement('div');
+  mask.id = 'pwaGuideMask';
+  mask.className = 'pwa-guide-mask';
+  let inner = '';
+  if (kind === 'inapp') {
+    inner = `
+      <h3>用 Safari / Chrome 開啟才能安裝</h3>
+      <p class="pwa-guide-sub">你現在是用 LINE（或 FB / IG）內建的瀏覽器開啟，這種瀏覽器<b>沒有「加入主畫面」功能</b>。請依下面 2 步：</p>
+      <ol class="pwa-guide-steps">
+        <li><b>複製網址</b>（按下方按鈕）</li>
+        <li>iPhone 開 <b>Safari</b>／Android 開 <b>Chrome</b>，貼上網址打開，再按一次「安裝」</li>
+      </ol>
+      <div class="pwa-guide-url">${url}</div>
+      <button id="pwaCopyBtn" class="pwa-guide-primary">📋 複製網址</button>
+      <p class="pwa-guide-tip">小提醒：iPhone 右上角也可能有「在 Safari 開啟」的選項，更快。</p>`;
+  } else if (kind === 'ios') {
+    inner = `
+      <h3>加到 iPhone 桌面（3 步）</h3>
+      <ol class="pwa-guide-steps pwa-guide-steps-lg">
+        <li>按螢幕<b>最下方中間</b>的「分享」鈕 <span class="pwa-ico">⬆️</span></li>
+        <li>往下滑，點「<b>加入主畫面</b>」 <span class="pwa-ico">➕</span></li>
+        <li>右上角按「<b>新增</b>」即完成</li>
+      </ol>
+      <p class="pwa-guide-tip">⚠️ 一定要用 <b>Safari</b> 開啟才看得到「分享」鈕。</p>`;
+  } else { // android 找不到鈕
+    inner = `
+      <h3>找不到安裝鈕？</h3>
+      <ol class="pwa-guide-steps">
+        <li>按瀏覽器右上角「<b>⋮</b>」</li>
+        <li>選「<b>安裝應用程式</b>／加到主畫面」</li>
+      </ol>
+      <p class="pwa-guide-tip">若仍找不到，可能已安裝過——請長按桌面圖示移除後再安裝一次。</p>`;
+  }
+  mask.innerHTML = `<div class="pwa-guide-card">${inner}<button id="pwaGuideClose" class="pwa-guide-close">關閉</button></div>`;
+  document.body.appendChild(mask);
+  mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
+  document.getElementById('pwaGuideClose')?.addEventListener('click', () => mask.remove());
+  document.getElementById('pwaCopyBtn')?.addEventListener('click', (e) => pwaCopyUrl(e.currentTarget));
+}
+
 function setupPwaInstall() {
   const btn = $id('pwaInstallBtn');
   if (!btn) return;
   if (pwaIsStandalone()) { btn.style.display = 'none'; return; } // 已在 App 內就不顯示
   const ua = navigator.userAgent || '';
   const isIOS = /iPhone|iPad|iPod/.test(ua) && !window.MSStream;
+  const inApp = pwaInApp(ua);
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -8604,18 +8676,20 @@ function setupPwaInstall() {
   });
   window.addEventListener('appinstalled', () => { _pwaPrompt = null; btn.style.display = 'none'; });
 
-  // iOS Safari 沒有 beforeinstallprompt → 主動顯示按鈕，點了給教學
-  if (isIOS) btn.style.display = '';
+  // iOS / App 內建瀏覽器 都沒有 beforeinstallprompt → 主動顯示按鈕，點了給教學
+  if (isIOS || inApp) btn.style.display = '';
+  if (inApp) btn.textContent = '📲 安裝到桌面（請用瀏覽器開）';
 
   btn.addEventListener('click', async () => {
+    if (inApp) { pwaShowGuide('inapp'); return; }   // LINE/FB/IG 內建瀏覽器：先請他換瀏覽器
     if (_pwaPrompt) {
       _pwaPrompt.prompt();
       try { await _pwaPrompt.userChoice; } catch (e) { /* */ }
       _pwaPrompt = null; btn.style.display = 'none';
     } else if (isIOS) {
-      alert('iPhone 安裝步驟：\n1. 請用「Safari」開啟本網站（不能用 Chrome 或 LINE 內建瀏覽器）\n2. 按螢幕最下方中間的「分享 ⬆️」\n3. 往下滑選「加入主畫面」→ 加入');
+      pwaShowGuide('ios');
     } else {
-      alert('若沒有自動跳出安裝視窗：\n按瀏覽器右上「⋮」→「安裝應用程式 / 加到主畫面」。\n\n如果找不到，代表可能已經安裝過了——請先長按桌面圖示移除，再回來安裝一次。');
+      pwaShowGuide('android');
     }
   });
 }
