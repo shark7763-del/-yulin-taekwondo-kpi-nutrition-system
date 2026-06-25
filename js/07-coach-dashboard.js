@@ -919,6 +919,7 @@ function renderRedLightCoaching(todays) {
       html += `<textarea class="text-input" id="redmsg-${r.recordId}" rows="2" placeholder="給 ${r.name} 的方向與鼓勵…（可用下方快捷語帶入）">${escapeHtml(r.coachReply || '')}</textarea>`;
       html += `<div class="quick-chips redcare-chips" id="redchips-${r.recordId}" style="display:none;"></div>`;
       html += `<div class="redcare-actions">
+        <button type="button" class="btn btn-ai btn-sm" data-redai="${r.recordId}">✨ AI 代擬</button>
         <button type="button" class="btn btn-ghost btn-sm" data-redtoggle="${r.recordId}">💬 快捷語 ▾</button>
         <button type="button" class="btn btn-primary" data-redsend="${r.recordId}">📨 送出給選手</button>
         <button type="button" class="btn btn-line-share" data-redshare="${r.recordId}">💬 分享到 LINE</button>
@@ -973,6 +974,34 @@ ${text}
         chipBox.appendChild(chip);
       });
     }
+    // ✨ AI 代擬：用 GPT 依教練語氣、針對此選手今天的偏弱項擬「方向與鼓勵」填入輸入框
+    const aiBtn = box.querySelector(`[data-redai="${r.recordId}"]`);
+    if (aiBtn) aiBtn.addEventListener('click', async () => {
+      const ta = $id(`redmsg-${r.recordId}`);
+      if (!ta) return;
+      let low = [];
+      try { low = findLowItems(JSON.parse(r.rawScoresJson || '{}')); } catch (e) { /* */ }
+      const lowText = low.length ? low.map(l => `${l.item}(${l.score})`).join('、') : '';
+      const suggested = (low.length && suggestionMap[low[0].item]) ? suggestionMap[low[0].item].advice : '明天先把基本動作與節奏做穩。';
+      aiBtn.disabled = true; const old = aiBtn.textContent; aiBtn.textContent = '✨ 生成中…';
+      try {
+        const record = Object.assign({}, r, { _statusLabel: r.status || '', aiTags: lowText });
+        const res = await postToWebApp({ action: 'aiCoachFeedback', record: record });
+        if (res && res.ok && res.versions && res.versions.student) {
+          const v = res.versions.student;
+          ta.value = [v.affirm, v.watch, v.oneThing ? ('明天：' + v.oneThing) : '', v.quote ? ('「' + v.quote + '」') : '']
+            .filter(Boolean).join('\n');
+          toast(res.cached ? '✨ 已帶入 AI 代擬（快取，未扣費）' : '✨ AI 已依你的語氣代擬，過目後再送出');
+        } else if (res && (res.capped || res.disabled)) {
+          ta.value = suggested;
+          toast(res.capped ? '今日 AI 次數已達上限，已帶入系統建議' : 'AI 未啟用，已帶入系統建議');
+        } else {
+          toast('⚠️ AI 代擬失敗：' + ((res && res.error) || '請稍後再試'));
+        }
+      } catch (e) { toast('⚠️ AI 代擬失敗，請檢查連線'); }
+      aiBtn.disabled = false; aiBtn.textContent = old;
+    });
+
     const toggleBtn = box.querySelector(`[data-redtoggle="${r.recordId}"]`);
     if (toggleBtn) toggleBtn.addEventListener('click', () => {
       const cb = $id(`redchips-${r.recordId}`);
