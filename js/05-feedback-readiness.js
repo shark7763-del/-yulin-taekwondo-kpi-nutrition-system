@@ -470,6 +470,9 @@ async function loadAiConfig() {
     if ($id('aiEnabled')) $id('aiEnabled').checked = !!d.enabled;
     if ($id('aiStyle')) $id('aiStyle').value = d.style || '';
     if ($id('aiApiKey')) $id('aiApiKey').placeholder = d.hasKey ? '已設定 ●●●●（要更換才需重貼）' : '貼上 Key（sk-...）後按儲存';
+    if ($id('aiDailyCap')) $id('aiDailyCap').value = d.dailyCap || 300;
+    if ($id('aiUserCap')) $id('aiUserCap').value = d.userCap || 40;
+    if ($id('aiUsageNote')) $id('aiUsageNote').textContent = '　今日已用 ' + (d.usedToday || 0) + ' / ' + (d.dailyCap || 300) + ' 次';
   } catch (e) { /* */ }
 }
 
@@ -483,6 +486,8 @@ function setupAiHandlers() {
       enabled: $id('aiEnabled') ? $id('aiEnabled').checked : false,
       style: $id('aiStyle') ? $id('aiStyle').value : ''
     };
+    if ($id('aiDailyCap') && $id('aiDailyCap').value) payload.dailyCap = parseInt($id('aiDailyCap').value, 10);
+    if ($id('aiUserCap') && $id('aiUserCap').value) payload.userCap = parseInt($id('aiUserCap').value, 10);
     const k = $id('aiApiKey') ? $id('aiApiKey').value.trim() : '';
     if (k) payload.apiKey = k;
     if (st) { st.textContent = '儲存中…'; st.className = 'conn-status info'; }

@@ -1424,6 +1424,38 @@ function setCoachPassword(data) {
    ============================================================ */
 function aiProps_() { return PropertiesService.getScriptProperties(); }
 
+var AI_DAILY_CAP_DEFAULT = 300;   // 全隊每日 OpenAI 呼叫上限（保護額度）
+var AI_USER_CAP_DEFAULT = 40;     // 單一使用者每日呼叫上限（防狂點刷錢）
+
+function aiDailyCap_() { var v = parseInt(aiProps_().getProperty('AI_DAILY_CAP'), 10); return (v > 0) ? v : AI_DAILY_CAP_DEFAULT; }
+function aiUserCap_()  { var v = parseInt(aiProps_().getProperty('AI_USER_CAP'), 10);  return (v > 0) ? v : AI_USER_CAP_DEFAULT; }
+function aiTodayKey_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Taipei', 'yyyy-MM-dd'); }
+
+// 單一 property 記錄今日用量，跨日自動歸零：{ d:'yyyy-MM-dd', n: 全域次數, u:{ 身分: 次數 } }
+function aiReadUsage_() {
+  var raw = aiProps_().getProperty('AI_USAGE');
+  var today = aiTodayKey_();
+  var u = null;
+  try { u = JSON.parse(raw); } catch (e) { u = null; }
+  if (!u || u.d !== today) u = { d: today, n: 0, u: {} };
+  return u;
+}
+function aiSaveUsage_(u) { aiProps_().setProperty('AI_USAGE', JSON.stringify(u)); }
+function aiBumpUsage_(identity) {
+  var u = aiReadUsage_();
+  u.n = (u.n || 0) + 1;
+  u.u[identity] = (u.u[identity] || 0) + 1;
+  aiSaveUsage_(u);
+}
+
+// 以「內容」為鍵的回應快取：同一份回報重複檢視/重整 → 直接回快取，不再扣費（6 小時）
+function aiCacheKey_(model, style, record) {
+  var basis = model + '|' + String(style || '').length + '|' + JSON.stringify(record || {});
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, basis, Utilities.Charset.UTF_8);
+  var hex = digest.map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
+  return 'aifb:' + hex;
+}
+
 function setAiConfig(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
@@ -1433,6 +1465,14 @@ function setAiConfig(data) {
   if (typeof data.model === 'string' && data.model) p.setProperty('AI_MODEL', data.model);
   if (typeof data.enabled !== 'undefined') p.setProperty('AI_ENABLED', data.enabled ? '1' : '0');
   if (typeof data.style === 'string') p.setProperty('AI_STYLE', data.style);
+  if (typeof data.dailyCap !== 'undefined') {
+    var dc = parseInt(data.dailyCap, 10);
+    if (dc > 0) p.setProperty('AI_DAILY_CAP', String(dc));
+  }
+  if (typeof data.userCap !== 'undefined') {
+    var uc = parseInt(data.userCap, 10);
+    if (uc > 0) p.setProperty('AI_USER_CAP', String(uc));
+  }
   return { ok: true };
 }
 
@@ -1440,11 +1480,15 @@ function getAiConfig(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
   var p = aiProps_();
+  var usage = aiReadUsage_();
   return { ok: true, data: {
     enabled: p.getProperty('AI_ENABLED') === '1',
     model: p.getProperty('AI_MODEL') || 'gpt-4o-mini',
     hasKey: !!p.getProperty('OPENAI_API_KEY'),
-    style: p.getProperty('AI_STYLE') || ''
+    style: p.getProperty('AI_STYLE') || '',
+    dailyCap: aiDailyCap_(),
+    userCap: aiUserCap_(),
+    usedToday: usage.n || 0
   } };
 }
 
@@ -1514,6 +1558,25 @@ function aiCoachFeedback(data) {
   if (!key) return { ok: false, disabled: true, error: '尚未設定 API Key' };
   var model = p.getProperty('AI_MODEL') || 'gpt-4o-mini';
   var style = p.getProperty('AI_STYLE') || '';
+
+  // (1) 內容快取：同一份回報重複檢視 → 直接回快取，不扣費
+  var cache = CacheService.getScriptCache();
+  var cacheKey = aiCacheKey_(model, style, data.record);
+  var hit = cache.get(cacheKey);
+  if (hit) {
+    try { return { ok: true, versions: JSON.parse(hit), model: model, cached: true }; } catch (e) {}
+  }
+
+  // (2)(3) 每日上限：全隊上限 + 單一使用者上限 → 超過就回 capped（前端自動退回內建回饋）
+  var identity = auth.session.studentId || auth.session.studentName || auth.session.role || 'unknown';
+  var usage = aiReadUsage_();
+  if ((usage.n || 0) >= aiDailyCap_()) {
+    return { ok: false, capped: true, scope: 'daily', error: '今日 AI 回饋已達全隊上限，已改用系統內建回饋。' };
+  }
+  if ((usage.u[identity] || 0) >= aiUserCap_()) {
+    return { ok: false, capped: true, scope: 'user', error: '你今日的 AI 回饋次數已達上限，已改用系統內建回饋。' };
+  }
+
   try {
     var resp = UrlFetchApp.fetch('https://api.openai.com/v1/chat/completions', {
       method: 'post',
@@ -1539,6 +1602,9 @@ function aiCoachFeedback(data) {
     if (!content) return { ok: false, error: 'OpenAI 無回傳內容' };
     var versions = aiNormalizeVersions_(JSON.parse(content));
     if (!versions) return { ok: false, error: 'AI 回傳格式不符' };
+    // 實際成功呼叫才計次 + 寫快取（快取命中與 capped 都不計次）
+    aiBumpUsage_(identity);
+    try { cache.put(cacheKey, JSON.stringify(versions), 21600); } catch (e) {} // 6 小時
     return { ok: true, versions: versions, model: model };
   } catch (e) {
     return { ok: false, error: '呼叫失敗：' + String(e) };
