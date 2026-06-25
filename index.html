@@ -7,6 +7,15 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>育林國中技擊隊｜TeamPro AI 訓練準備度系統</title>
+  <!-- ===================== PWA（可安裝到手機桌面）===================== -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="TeamPro" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="stylesheet" href="style.css?v=20260625a" />
   <link rel="stylesheet" href="monthly-report.css?v=20260624g" />
 </head>
@@ -1009,5 +1018,13 @@
   <script src="kpi-session.js?v=20260624a"></script>
   <!-- 運動心理小卡（回報完成後抽卡＋集卡）-->
   <script src="psych-cards.js?v=20260622b"></script>
+  <!-- PWA：註冊 Service Worker（離線快取＋可安裝）。失敗不影響任何功能 -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('service-worker.js', { scope: './' }).catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>
