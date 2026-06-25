@@ -1232,3 +1232,9 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 .urine-swatch .us-label { font-size: 0.76rem; color: var(--text-soft); font-weight: 700; }
 .urine-swatch.sel { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(245,197,24,0.3) inset; }
 .urine-swatch.sel .us-label { color: var(--text-main); }
+
+/* ===================== AI 教練回饋 設定：測試結果框 ===================== */
+.ai-test-result {
+  margin-top: 12px; padding: 12px 14px; border-radius: 10px; line-height: 1.7;
+  background: rgba(46,125,209,0.10); border: 1px solid rgba(46,125,209,0.4); color: var(--text-main); font-size: 0.9rem;
+}

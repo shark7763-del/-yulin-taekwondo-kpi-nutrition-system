@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>育林國中技擊隊｜TeamPro AI 訓練準備度系統</title>
-  <link rel="stylesheet" href="style.css?v=20260624p" />
+  <link rel="stylesheet" href="style.css?v=20260625a" />
   <link rel="stylesheet" href="monthly-report.css?v=20260624g" />
 </head>
 <body>
@@ -892,6 +892,34 @@
       </div>
 
       <div class="card">
+        <h3 class="card-title">🤖 AI 教練回饋（OpenAI / GPT）</h3>
+        <p class="review-label">啟用後，選手送出每日回報時，會用 GPT 依「你的語氣＋三明治回饋法」即時生成回饋卡（選手/家長/教練三版）。API Key 只存後端，前端與學生都看不到。沒設定或失敗時自動退回內建模板，不會壞。</p>
+
+        <label class="field-label">OpenAI API Key（sk-...）</label>
+        <input type="password" id="aiApiKey" class="text-input" placeholder="貼上新的 Key 後按儲存（已設定會顯示 ●●●●）" autocomplete="off" />
+
+        <label class="field-label">模型</label>
+        <select id="aiModel" class="text-input">
+          <option value="gpt-4o-mini">gpt-4o-mini（省、快，建議先用）</option>
+          <option value="gpt-4o">gpt-4o（品質更好、較貴）</option>
+        </select>
+
+        <label class="field-label">你的回覆語氣範例（貼 5～10 則，AI 會模仿你的口氣）</label>
+        <textarea id="aiStyle" class="text-input" rows="6" placeholder="貼上你平常怎麼回覆選手的句子，越像你越好。例如：&#10;阿明今天旋踢距離抓得不錯，繼續保持！記得收操不要偷懶。&#10;這週辛苦了，明天放鬆一點，把基本動作做確實就好。"></textarea>
+
+        <label class="toggle-row" style="display:flex;align-items:center;gap:8px;margin-top:12px">
+          <input type="checkbox" id="aiEnabled" style="width:18px;height:18px;" /> 啟用 AI 教練回饋
+        </label>
+
+        <div class="btn-group">
+          <button type="button" id="btnSaveAi" class="btn btn-primary">💾 儲存設定</button>
+          <button type="button" id="btnTestAi" class="btn btn-secondary">🧪 測試生成一則</button>
+        </div>
+        <div id="aiStatus" class="conn-status"></div>
+        <div id="aiTestResult" class="ai-test-result" style="display:none;"></div>
+      </div>
+
+      <div class="card">
         <h3 class="card-title">🌟 本週之星設定</h3>
         <p class="review-label" style="margin-bottom:10px">學生填寫頁上方會顯示「本週之星」，看重努力與堅持（最堅持／進步最多／最佳隊友／最自律），不露任何人的分數。不想用可關閉。</p>
         <label class="field-label">管理密碼（若後端有設 ADMIN_KEY）</label>
@@ -973,7 +1001,7 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260624k"></script>
+  <script src="app.js?v=20260625a"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260623c"></script>

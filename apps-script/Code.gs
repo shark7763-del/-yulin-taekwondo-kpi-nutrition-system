@@ -256,6 +256,14 @@ function handleAction(action, data) {
     case 'setCoachPassword':
       return jsonOut(setCoachPassword(data));
 
+    /* ===== AI 教練回饋（OpenAI／GPT，三明治回饋法、學教練語氣）===== */
+    case 'setAiConfig':
+      return jsonOut(setAiConfig(data));
+    case 'getAiConfig':
+      return jsonOut(getAiConfig(data));
+    case 'aiCoachFeedback':
+      return jsonOut(aiCoachFeedback(data));
+
     /* ===== Phase 2：KPI 回報手動開啟（教練）＋學生 KPI 狀態 ===== */
     case 'createKpiSession':      // 手動開啟 KPI
       return jsonOut(createKpiSession(data));
@@ -1406,6 +1414,135 @@ function setCoachPassword(data) {
     failedLoginCount: 0, lockedUntil: '', updatedAt: nowIso()
   });
   return { ok: true };
+}
+
+/* ============================================================
+   AI 教練回饋（OpenAI / GPT）
+   - 設定（key/model/style/enabled）存 Script Properties（後端，不外洩）
+   - 學生送出後呼叫 aiCoachFeedback，用三明治回饋法＋教練語氣生成三版回饋
+   - 任何失敗都回 ok:false，前端自動退回內建模板
+   ============================================================ */
+function aiProps_() { return PropertiesService.getScriptProperties(); }
+
+function setAiConfig(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var p = aiProps_();
+  if (data.clearKey) p.deleteProperty('OPENAI_API_KEY');
+  else if (typeof data.apiKey === 'string' && data.apiKey.trim()) p.setProperty('OPENAI_API_KEY', data.apiKey.trim());
+  if (typeof data.model === 'string' && data.model) p.setProperty('AI_MODEL', data.model);
+  if (typeof data.enabled !== 'undefined') p.setProperty('AI_ENABLED', data.enabled ? '1' : '0');
+  if (typeof data.style === 'string') p.setProperty('AI_STYLE', data.style);
+  return { ok: true };
+}
+
+function getAiConfig(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var p = aiProps_();
+  return { ok: true, data: {
+    enabled: p.getProperty('AI_ENABLED') === '1',
+    model: p.getProperty('AI_MODEL') || 'gpt-4o-mini',
+    hasKey: !!p.getProperty('OPENAI_API_KEY'),
+    style: p.getProperty('AI_STYLE') || ''
+  } };
+}
+
+function aiBuildSystemPrompt_(style) {
+  var s = '你是「育林國中技擊隊」的跆拳道／武術教練，要用「三明治回饋法」回覆選手的每日訓練回報。\n' +
+    '三明治結構：① 先具體肯定做得好的地方 → ② 針對今天的問題給明確、可執行的調整 → ③ 最後給鼓勵。\n' +
+    '務必針對「今天這位選手的實際數據與問題」客製，不要每天千篇一律；語氣自然像真人教練；避免醫療診斷字眼。\n' +
+    '請只輸出 JSON 物件，結構如下（不要任何多餘文字）：\n' +
+    '{"student":{"affirm":"對選手說今天的狀態與肯定","watch":"針對今天問題的提醒與調整","oneThing":"明天一個具體小任務","quote":"一句鼓勵"},' +
+    '"parent":{"affirm":"對家長說孩子今日狀態，溫暖、不要露出分數","watch":"家長今天可以協助的一件事","oneThing":"今晚或明天家長具體可做的","quote":"給家長的一句話"},' +
+    '"coach":{"affirm":"今日風險等級與重點，專業直接","watch":"主要警示與可能成因","oneThing":"建議的訓練調整","quote":"是否需要一對一晤談或通知家長"}}\n' +
+    '每個欄位 1～3 句、精簡有力。';
+  if (style && String(style).trim()) {
+    s += '\n\n以下是這位教練平常的真實回覆範例，請模仿其語氣、用詞、稱呼方式與長度：\n"""\n' + String(style).slice(0, 4000) + '\n"""';
+  }
+  return s;
+}
+
+function aiBuildUserPrompt_(r) {
+  r = r || {};
+  function g(k) { return (r[k] === undefined || r[k] === null) ? '' : String(r[k]); }
+  var L = [];
+  L.push('選手：' + g('name'));
+  L.push('日期：' + g('date'));
+  if (g('group')) L.push('組別/項目：' + g('group'));
+  if (g('trainingSession')) L.push('訓練時段：' + g('trainingSession'));
+  if (g('trainingTopic')) L.push('今日訓練主題：' + g('trainingTopic'));
+  var light = g('readinessStatusLight') || g('status') || g('_statusLabel');
+  if (light) L.push('今日燈號/狀態：' + light);
+  if (g('finalReadinessScore')) L.push('訓練準備度：' + g('finalReadinessScore') + '/100');
+  if (g('bodyStatus')) L.push('身體狀態：' + g('bodyStatus'));
+  if (g('rpe')) L.push('RPE 主觀強度：' + g('rpe') + '/10');
+  if (g('soreness')) L.push('肌肉痠痛：' + g('soreness') + '/5');
+  if (g('painScore') !== '' && g('painScore') !== '0') L.push('受傷疼痛：' + g('painScore') + '/10' + (g('injuryArea') ? '（' + g('injuryArea') + '）' : ''));
+  if (g('sleepHours')) L.push('睡眠：' + g('sleepHours') + ' 小時' + (g('sleepQuality') ? '（' + g('sleepQuality') + '）' : ''));
+  if (g('sweatLevel')) L.push('排汗量：' + g('sweatLevel') + '/5');
+  if (g('urineStatus')) L.push('尿液：' + g('urineStatus'));
+  if (g('moodIndex')) L.push('心情指數：' + g('moodIndex') + '/5' + (g('moodReason') ? '（' + g('moodReason') + '）' : ''));
+  if (g('reflection')) L.push('今日心得：' + g('reflection'));
+  if (g('tomorrowGoal')) L.push('明日目標：' + g('tomorrowGoal'));
+  if (g('aiTags')) L.push('系統判斷標籤：' + g('aiTags'));
+  return '請依下列「今天這位選手」的資料，用三明治回饋法產生三版回饋（student / parent / coach）：\n' + L.join('\n');
+}
+
+function aiNormalizeVersions_(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null;
+  var roles = ['student', 'parent', 'coach'], out = {};
+  for (var i = 0; i < roles.length; i++) {
+    var v = parsed[roles[i]] || {};
+    out[roles[i]] = {
+      affirm: String(v.affirm || ''),
+      watch: String(v.watch || ''),
+      oneThing: String(v.oneThing || ''),
+      quote: String(v.quote || '')
+    };
+    if (!out[roles[i]].affirm && !out[roles[i]].oneThing) return null;
+  }
+  return out;
+}
+
+function aiCoachFeedback(data) {
+  var auth = requireRole(data, ['student', 'parent', 'coach']);
+  if (!auth.ok) return auth;
+  var p = aiProps_();
+  if (p.getProperty('AI_ENABLED') !== '1') return { ok: false, disabled: true, error: 'AI 回饋未啟用' };
+  var key = p.getProperty('OPENAI_API_KEY');
+  if (!key) return { ok: false, disabled: true, error: '尚未設定 API Key' };
+  var model = p.getProperty('AI_MODEL') || 'gpt-4o-mini';
+  var style = p.getProperty('AI_STYLE') || '';
+  try {
+    var resp = UrlFetchApp.fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + key },
+      muteHttpExceptions: true,
+      payload: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: aiBuildSystemPrompt_(style) },
+          { role: 'user', content: aiBuildUserPrompt_(data.record) }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.8,
+        max_tokens: 900
+      })
+    });
+    var code = resp.getResponseCode();
+    var body = resp.getContentText();
+    if (code !== 200) return { ok: false, error: 'OpenAI 回應 ' + code + '：' + body.slice(0, 300) };
+    var json = JSON.parse(body);
+    var content = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
+    if (!content) return { ok: false, error: 'OpenAI 無回傳內容' };
+    var versions = aiNormalizeVersions_(JSON.parse(content));
+    if (!versions) return { ok: false, error: 'AI 回傳格式不符' };
+    return { ok: true, versions: versions, model: model };
+  } catch (e) {
+    return { ok: false, error: '呼叫失敗：' + String(e) };
+  }
 }
 
 /* ============================================================

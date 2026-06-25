@@ -2958,6 +2958,8 @@ async function doSubmitInner(mode) {
 
   // 顯示回饋卡（AI 教練回饋卡為主，其餘維持原樣）
   renderCoachFeedbackCard(feedback);
+  // 若教練已啟用 OpenAI，背景用 GPT 依語氣＋三明治法重寫三版回饋（失敗自動沿用上面的模板）
+  maybeEnhanceWithAiFeedback(rec, feedback);
   if (rec._kpiEnabled) renderCompareCard(rec, last, affirm);
   else { const compare = $id('compareCard'); if (compare) compare.style.display = 'none'; }
   renderNutritionCard(rec);
@@ -3652,6 +3654,84 @@ function selectFbVersion(version) {
 function fbBlock(title, icon, text, tone) {
   return `<div class="cfb-block cfb-${tone}"><div class="cfb-block-title">${icon} 【${escapeHtml(title)}】</div>` +
     `<div class="cfb-block-text">${escapeHtml(text).replace(/\n/g, '<br>')}</div></div>`;
+}
+
+/* ===================== AI 教練回饋（OpenAI / GPT）===================== */
+// 送出後背景呼叫；成功就把三版回饋換成 AI 生成，失敗靜默沿用內建模板
+async function maybeEnhanceWithAiFeedback(rec, feedback) {
+  if (!getWebAppUrl() || !rec) return;
+  try {
+    const record = Object.assign({}, rec, { _statusLabel: (feedback && feedback.scenarioLabel) || '' });
+    const res = await postToWebApp({ action: 'aiCoachFeedback', record: record });
+    if (!res || !res.ok || !res.versions || !_currentFeedback) return;
+    _currentFeedback.versions = res.versions;
+    _currentFeedback.aiGenerated = true;
+    const intro = document.querySelector('#coachFeedbackCard .cfb-intro');
+    if (intro) intro.innerHTML = '✨ 這是 AI 教練（依教練語氣）看完你今天紀錄後想對你說的話。';
+    selectFbVersion(_currentFbVersion || 'student');
+    toast('✨ AI 教練回饋已生成');
+  } catch (e) { /* 靜默退回模板 */ }
+}
+
+async function loadAiConfig() {
+  if (!getWebAppUrl()) return;
+  try {
+    const res = await postToWebApp({ action: 'getAiConfig' });
+    if (!res || !res.ok || !res.data) return;
+    const d = res.data;
+    if ($id('aiModel')) $id('aiModel').value = d.model || 'gpt-4o-mini';
+    if ($id('aiEnabled')) $id('aiEnabled').checked = !!d.enabled;
+    if ($id('aiStyle')) $id('aiStyle').value = d.style || '';
+    if ($id('aiApiKey')) $id('aiApiKey').placeholder = d.hasKey ? '已設定 ●●●●（要更換才需重貼）' : '貼上 Key（sk-...）後按儲存';
+  } catch (e) { /* */ }
+}
+
+function setupAiHandlers() {
+  const saveBtn = $id('btnSaveAi');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const st = $id('aiStatus');
+    const payload = {
+      action: 'setAiConfig',
+      model: $id('aiModel') ? $id('aiModel').value : 'gpt-4o-mini',
+      enabled: $id('aiEnabled') ? $id('aiEnabled').checked : false,
+      style: $id('aiStyle') ? $id('aiStyle').value : ''
+    };
+    const k = $id('aiApiKey') ? $id('aiApiKey').value.trim() : '';
+    if (k) payload.apiKey = k;
+    if (st) { st.textContent = '儲存中…'; st.className = 'conn-status info'; }
+    try {
+      const res = await postToWebApp(payload);
+      if (res && res.ok) {
+        if (st) { st.textContent = '✅ 已儲存'; st.className = 'conn-status ok'; }
+        if ($id('aiApiKey')) $id('aiApiKey').value = '';
+        loadAiConfig();
+      } else if (st) { st.textContent = '❌ ' + ((res && res.error) || '儲存失敗'); st.className = 'conn-status fail'; }
+    } catch (e) { if (st) { st.textContent = '❌ 儲存失敗，請確認連線'; st.className = 'conn-status fail'; } }
+  });
+
+  const testBtn = $id('btnTestAi');
+  if (testBtn) testBtn.addEventListener('click', async () => {
+    const st = $id('aiStatus'), box = $id('aiTestResult');
+    if (st) { st.textContent = '生成中…（請先按「儲存設定」並勾選啟用）'; st.className = 'conn-status info'; }
+    const sample = {
+      name: '測試選手', date: todayStr(), group: '跆拳道對練', trainingTopic: '旋踢距離控制',
+      status: '🟡 黃燈', bodyStatus: '疲勞', rpe: '8', soreness: '4', sleepHours: '5.5', sleepQuality: '差',
+      moodIndex: '2', reflection: '今天有點累，旋踢一直抓不到距離', tomorrowGoal: '把旋踢做穩'
+    };
+    try {
+      const res = await postToWebApp({ action: 'aiCoachFeedback', record: sample });
+      if (res && res.ok && res.versions) {
+        const v = res.versions.student || {};
+        if (box) {
+          box.style.display = '';
+          box.innerHTML = '<b>✨ 選手版範例（' + escapeHtml(res.model || '') + '）</b><br>' +
+            '【今日狀態】' + escapeHtml(v.affirm || '') + '<br>【提醒】' + escapeHtml(v.watch || '') +
+            '<br>【明日任務】' + escapeHtml(v.oneThing || '') + '<br>「' + escapeHtml(v.quote || '') + '」';
+        }
+        if (st) { st.textContent = '✅ 測試成功，AI 已可使用'; st.className = 'conn-status ok'; }
+      } else if (st) { st.textContent = '❌ ' + ((res && res.error) || '測試失敗'); st.className = 'conn-status fail'; }
+    } catch (e) { if (st) { st.textContent = '❌ 測試失敗，請確認連線'; st.className = 'conn-status fail'; } }
+  });
 }
 
 /* ============================================================
@@ -7734,6 +7814,7 @@ function applyRole() {
   if (r.role === 'coach') {
     loadRosterFromServer().then(() => refreshAccountAdmin());
     refreshCoach();
+    loadAiConfig();
   }
   if (window.KpiSession && window.KpiSession.refresh) {
     setTimeout(() => window.KpiSession.refresh(), 0);
@@ -8317,6 +8398,9 @@ function init() {
   applyBrand();
   renderBrandSettings();
   setupBrandHandlers();
+
+  // AI 教練回饋（OpenAI）設定
+  setupAiHandlers();
 
   // 今日我該做什麼：導引卡點擊捲動
   setupTodayGuideNav();
