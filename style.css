@@ -1274,3 +1274,6 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 .btn-ai:hover{filter:brightness(1.08);}
 .btn-ai:active{transform:scale(.97);}
 .btn-ai:disabled{opacity:.7;cursor:default;}
+
+/* 狀態關懷卡標題列：標題 + 一鍵全隊代擬鈕 */
+.redcare-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}

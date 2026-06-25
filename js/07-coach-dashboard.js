@@ -956,6 +956,29 @@ ${text}
 教練相信你，明天一起調整 💪`;
   }
 
+  // 共用：對單一選手呼叫 GPT 代擬並填入輸入框；回傳狀態字串
+  async function aiDraftFor(r) {
+    const ta = $id(`redmsg-${r.recordId}`);
+    if (!ta) return 'fail';
+    let low = [];
+    try { low = findLowItems(JSON.parse(r.rawScoresJson || '{}')); } catch (e) { /* */ }
+    const lowText = low.length ? low.map(l => `${l.item}(${l.score})`).join('、') : '';
+    const suggested = (low.length && suggestionMap[low[0].item]) ? suggestionMap[low[0].item].advice : '明天先把基本動作與節奏做穩。';
+    try {
+      const record = Object.assign({}, r, { _statusLabel: r.status || '', aiTags: lowText });
+      const res = await postToWebApp({ action: 'aiCoachFeedback', record: record });
+      if (res && res.ok && res.versions && res.versions.student) {
+        const v = res.versions.student;
+        ta.value = [v.affirm, v.watch, v.oneThing ? ('明天：' + v.oneThing) : '', v.quote ? ('「' + v.quote + '」') : '']
+          .filter(Boolean).join('\n');
+        return res.cached ? 'cached' : 'ok';
+      }
+      if (res && res.capped) { ta.value = suggested; return 'capped'; }
+      if (res && res.disabled) { ta.value = suggested; return 'disabled'; }
+      return 'fail';
+    } catch (e) { return 'fail'; }
+  }
+
   // 快捷語 + 送出 + 分享按鈕
   list.forEach(r => {
     if (!r.recordId) return;
@@ -977,28 +1000,11 @@ ${text}
     // ✨ AI 代擬：用 GPT 依教練語氣、針對此選手今天的偏弱項擬「方向與鼓勵」填入輸入框
     const aiBtn = box.querySelector(`[data-redai="${r.recordId}"]`);
     if (aiBtn) aiBtn.addEventListener('click', async () => {
-      const ta = $id(`redmsg-${r.recordId}`);
-      if (!ta) return;
-      let low = [];
-      try { low = findLowItems(JSON.parse(r.rawScoresJson || '{}')); } catch (e) { /* */ }
-      const lowText = low.length ? low.map(l => `${l.item}(${l.score})`).join('、') : '';
-      const suggested = (low.length && suggestionMap[low[0].item]) ? suggestionMap[low[0].item].advice : '明天先把基本動作與節奏做穩。';
       aiBtn.disabled = true; const old = aiBtn.textContent; aiBtn.textContent = '✨ 生成中…';
-      try {
-        const record = Object.assign({}, r, { _statusLabel: r.status || '', aiTags: lowText });
-        const res = await postToWebApp({ action: 'aiCoachFeedback', record: record });
-        if (res && res.ok && res.versions && res.versions.student) {
-          const v = res.versions.student;
-          ta.value = [v.affirm, v.watch, v.oneThing ? ('明天：' + v.oneThing) : '', v.quote ? ('「' + v.quote + '」') : '']
-            .filter(Boolean).join('\n');
-          toast(res.cached ? '✨ 已帶入 AI 代擬（快取，未扣費）' : '✨ AI 已依你的語氣代擬，過目後再送出');
-        } else if (res && (res.capped || res.disabled)) {
-          ta.value = suggested;
-          toast(res.capped ? '今日 AI 次數已達上限，已帶入系統建議' : 'AI 未啟用，已帶入系統建議');
-        } else {
-          toast('⚠️ AI 代擬失敗：' + ((res && res.error) || '請稍後再試'));
-        }
-      } catch (e) { toast('⚠️ AI 代擬失敗，請檢查連線'); }
+      const st = await aiDraftFor(r);
+      const MSG = { ok: '✨ AI 已依你的語氣代擬，過目後再送出', cached: '✨ 已帶入 AI 代擬（快取，未扣費）',
+        capped: '今日 AI 次數已達上限，已帶入系統建議', disabled: 'AI 未啟用，已帶入系統建議', fail: '⚠️ AI 代擬失敗，請稍後再試' };
+      toast(MSG[st] || MSG.fail);
       aiBtn.disabled = false; aiBtn.textContent = old;
     });
 
@@ -1042,6 +1048,35 @@ ${text}
       if (ok) { r.redLightReason = reasons; r.redLightHandling = handling; r.redLightNote = note; }
     });
   });
+
+  // ⚡ 一鍵全隊 AI 代擬：依序為每位紅黃燈選手代擬並填入，最後給總結（用 onclick 避免重複綁定）
+  const allBtn = $id('btnRedAllAi');
+  if (allBtn) {
+    const targets = list.filter(r => r.recordId);
+    allBtn.style.display = targets.length ? '' : 'none';
+    allBtn.onclick = async () => {
+      if (!targets.length) return;
+      allBtn.disabled = true;
+      const old = allBtn.textContent;
+      let ai = 0, cached = 0, sugg = 0, failed = 0, disabled = false;
+      for (let i = 0; i < targets.length; i++) {
+        allBtn.textContent = `✨ 代擬中 ${i + 1}/${targets.length}…`;
+        const st = await aiDraftFor(targets[i]);
+        if (st === 'ok') ai++;
+        else if (st === 'cached') { ai++; cached++; }
+        else if (st === 'capped') sugg++;          // 達上限：已填入系統建議，cap 檢查不扣費，繼續
+        else if (st === 'disabled') { disabled = true; break; }  // AI 整個沒開：停下提醒
+        else failed++;
+      }
+      allBtn.disabled = false; allBtn.textContent = old;
+      if (disabled && ai === 0 && sugg === 0) { toast('AI 尚未啟用，請先到「系統設定 → AI 教練回饋」開啟'); return; }
+      let msg = `✨ 已代擬 ${ai} 位，請逐一過目後送出`;
+      if (cached) msg += `（含 ${cached} 位快取未扣費）`;
+      if (sugg) msg += `；${sugg} 位達當日上限改填系統建議`;
+      if (failed) msg += `；${failed} 位失敗`;
+      toast(msg);
+    };
+  }
 }
 
 function renderAnalysis(todays) {
