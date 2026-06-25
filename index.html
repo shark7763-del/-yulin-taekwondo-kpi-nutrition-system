@@ -1011,7 +1011,17 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
-  <script src="app.js?v=20260625e"></script>
+  <!-- app.js 已模組化拆檔，依序載入（同享全域作用域，語意與單檔等價）-->
+  <script src="js/01-config-data.js?v=20260625f"></script>
+  <script src="js/02-core-utils.js?v=20260625f"></script>
+  <script src="js/03-forms-scoring.js?v=20260625f"></script>
+  <script src="js/04-daily-submit.js?v=20260625f"></script>
+  <script src="js/05-feedback-readiness.js?v=20260625f"></script>
+  <script src="js/06-player-line.js?v=20260625f"></script>
+  <script src="js/07-coach-dashboard.js?v=20260625f"></script>
+  <script src="js/08-profile-journal.js?v=20260625f"></script>
+  <script src="js/09-settings-auth.js?v=20260625f"></script>
+  <script src="js/10-init.js?v=20260625f"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260623c"></script>

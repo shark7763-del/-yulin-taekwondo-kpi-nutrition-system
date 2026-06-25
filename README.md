@@ -46,7 +46,17 @@ yulin-taekwondo-kpi-nutrition-system/
 │
 ├── index.html               # 主畫面（四分頁）
 ├── style.css                # 深色運動風樣式（手機優先）
-├── app.js                   # 全部前端邏輯
+├── js/                      # 前端邏輯（由原 app.js 模組化拆分，依序載入）
+│   ├── 01-config-data.js    # 設定、常數、KPI 定義、教練語錄/鼓勵語
+│   ├── 02-core-utils.js     # localStorage、DOM 小工具、表單狀態
+│   ├── 03-forms-scoring.js  # 每日表單、KPI 滑桿、計分、營養、趨勢圖
+│   ├── 04-daily-submit.js   # 表單送出、回報卡片
+│   ├── 05-feedback-readiness.js # 教練回饋（含 AI）、戰備指數
+│   ├── 06-player-line.js    # 選手卡、LINE 文案
+│   ├── 07-coach-dashboard.js    # 教練戰情室、出席、週之星、任務、報告
+│   ├── 08-profile-journal.js    # 個人檔案、訓練日誌、PDF
+│   ├── 09-settings-auth.js  # 設定、登入/角色、帳號管理、品牌
+│   └── 10-init.js           # 初始化、草稿、PWA 安裝
 ├── apps-script/
 │   └── Code.gs              # Google Apps Script Web App 後端
 ├── README.md                # 本說明
