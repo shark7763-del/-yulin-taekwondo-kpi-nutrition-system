@@ -426,6 +426,8 @@ textarea.text-input { resize: vertical; }
 .quick-reply-ai-btn:disabled { opacity: .7; cursor: wait; }
 .quick-reply-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .quick-reply-actions button { min-height: 40px; }
+.quick-reply-confirm-btn { min-height: 40px; padding: 8px 12px; border: 1px solid rgba(74, 222, 128, .45); border-radius: 10px; background: rgba(20, 83, 45, .42); color: #dcfce7; font-weight: 800; cursor: pointer; }
+.quick-reply-panel.is-confirmed .quick-reply-confirm-btn { border-color: #4ade80; background: rgba(22, 163, 74, .28); color: #f0fdf4; }
 @media (max-width: 640px) { .quick-reply-ai-actions { flex-direction: column; } .quick-reply-ai-btn { width: 100%; } .quick-reply-actions button { flex: 1 1 100%; } }
 .coach-score-card { margin-top: 12px; }
 .coach-score-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 12px; cursor: pointer; user-select: none; }

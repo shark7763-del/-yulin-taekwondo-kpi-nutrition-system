@@ -585,13 +585,24 @@ function renderCoachReadinessOverview(todays, all) {
           <div class="quick-reply-title">教練快速回覆區</div><div class="quick-reply-meta">選手：${escapeHtml(r.name)}｜今日分數：${escapeHtml(score)}｜${escapeHtml(lightText)}｜${name}</div>
           <div class="quick-reply-ai-actions"><button type="button" class="quick-reply-ai-btn primary" data-quick-ai="default" data-quick-ai-player="${playerIndex}">⚡ AI代擬</button><button type="button" class="quick-reply-ai-btn" data-quick-ai="rewrite" data-quick-ai-player="${playerIndex}">換一句</button><button type="button" class="quick-reply-ai-btn" data-quick-ai="coachStyle" data-quick-ai-player="${playerIndex}">✏️ 用我的語氣</button></div>
           <textarea class="quick-reply-textarea" aria-label="${escapeHtml(r.name)} 的教練回覆">${escapeHtml(reply)}</textarea>
-          <div class="quick-reply-actions"><button type="button" class="btn btn-secondary" data-quick-copy="${playerIndex}">複製回覆</button><button type="button" class="btn btn-primary" data-quick-line="${playerIndex}">分享 LINE</button></div>
+          <div class="quick-reply-actions"><button type="button" class="quick-reply-confirm-btn" data-quick-confirm>✓ 確認套用</button><button type="button" class="btn btn-secondary" data-quick-copy="${playerIndex}">複製回覆</button><button type="button" class="btn btn-primary" data-quick-line="${playerIndex}">分享 LINE</button></div>
         </div>` : ''}</div>`;
       }).join('') : '<p class="review-label">無</p>') +
       `</div>`;
   }).join('');
   groupsBox._readinessPlayers = players;
   groupsBox.onclick = async function (event) {
+    const confirmButton = event.target.closest('[data-quick-confirm]');
+    if (confirmButton) {
+      event.stopPropagation();
+      const panel = confirmButton.closest('.quick-reply-panel');
+      const textarea = panel && panel.querySelector('.quick-reply-textarea');
+      if (!textarea || !textarea.value.trim()) { toast('請先輸入教練回覆'); return; }
+      panel.classList.add('is-confirmed');
+      confirmButton.textContent = '✓ 已確認套用';
+      toast('✅ 已確認回覆內容，可直接複製或分享 LINE');
+      return;
+    }
     const aiButton = event.target.closest('[data-quick-ai]');
     if (aiButton) {
       event.stopPropagation();
@@ -608,6 +619,8 @@ function renderCoachReadinessOverview(todays, all) {
         const nextVariant = Number(panel.dataset.aiVariant || 0) + 1;
         panel.dataset.aiVariant = String(nextVariant);
         textarea.value = generateCoachAiReply(Object.assign({}, item.r, { group: item.name, aiVariant: nextVariant }), aiButton.dataset.quickAi);
+        panel.classList.remove('is-confirmed');
+        const confirm = panel.querySelector('[data-quick-confirm]'); if (confirm) confirm.textContent = '✓ 確認套用';
       } catch (e) {
         const nextVariant = Number(panel.dataset.aiVariant || 0) + 1;
         textarea.value = generateCoachAiReply(Object.assign({}, item.r, { group: item.name, aiVariant: nextVariant }), 'default');
@@ -645,6 +658,13 @@ function renderCoachReadinessOverview(todays, all) {
     if (!item) return;
     groupsBox.dataset.selectedReadinessPlayer = selectedKey === item.key ? '' : item.key;
     renderCoachReadinessOverview(todays, all);
+  };
+  groupsBox.oninput = function (event) {
+    if (!event.target.matches('.quick-reply-textarea')) return;
+    const panel = event.target.closest('.quick-reply-panel');
+    if (!panel) return;
+    panel.classList.remove('is-confirmed');
+    const confirm = panel.querySelector('[data-quick-confirm]'); if (confirm) confirm.textContent = '✓ 確認套用';
   };
   groupsBox.onkeydown = function (event) { if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('.readiness-player-card')) { event.preventDefault(); event.target.closest('.readiness-player-card').click(); } };
 }
