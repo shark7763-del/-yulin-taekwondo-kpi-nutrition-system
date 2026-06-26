@@ -486,6 +486,57 @@ function dedupeLatestByDate(records) {
   return Object.keys(map).sort((a, b) => a < b ? 1 : -1).map(k => map[k]);
 }
 
+// 無外部 AI 服務時的穩定 fallback。每組至少 5 種，不依賴任何可能缺少的欄位。
+const COACH_AI_REPLY_TEMPLATES = {
+  '強化組': [
+    '{name}，今天狀態不錯，可以把高品質技術、速度和對打模擬拉起來。但強度上來前，先把動作細節守住，不要只求做快。',
+    '{name}，今天可以加強，但不是亂衝。把節奏、反應和爆發力做好，每一組都要有品質，這樣的加強才有價值。',
+    '{name}，狀態好就把握今天，把該練的強度做出來。不過動作一亂就先收，品質守住，進步才會留下來。',
+    '{name}，今天有條件往上拉。技術速度可以提高一點，但記得控制節奏，做對比做多更重要。',
+    '{name}，今天身體有回應，可以挑戰高品質內容。先把基本動作做穩，再把強度推上去，別急著一次全開。'
+  ],
+  '穩定組': [
+    '{name}，今天照正常節奏訓練就好。把細節補齊、把動作品質做穩，該完成的內容一項一項完成。',
+    '{name}，今天狀態穩定，不用想太多。重點放在節奏和細節，把每一次練習做紮實，就是今天最好的收穫。',
+    '{name}，今天維持正常強度，先求穩再求快。技術有問題就馬上修正，不要把小錯誤一直帶下去。',
+    '{name}，今天按計畫做，品質要比數量重要。把專注留在眼前動作，穩穩完成就很好。',
+    '{name}，今天不需要硬加碼，把自己的節奏守住。細節做好、呼吸穩住，訓練結束時要知道自己進步在哪裡。'
+  ],
+  '調整組': [
+    '{name}，今天先不要硬衝，總量降一點沒關係。把基本功、技術修正和節奏做好，先讓狀態回到穩定。',
+    '{name}，今天的重點是調整，不是證明自己。強度先收住，把動作做乾淨，明天才有力氣繼續往上。',
+    '{name}，今天照自己的節奏來，先避開不必要的硬撐。技術細節做好、身體感覺顧好，這就是有效訓練。',
+    '{name}，今天把訓練量控制住，遇到卡住先慢下來修正。穩住節奏後再往下做，不用急著跟別人比。',
+    '{name}，今天先把基礎做回來。動作穩、呼吸穩、心也穩，狀態才會慢慢拉回來。'
+  ],
+  '保護組': [
+    '{name}，今天先不要硬撐。分數落在保護組，代表身體需要被照顧；強度降下來，先做好恢復、伸展和低強度技術。',
+    '{name}，今天重點不是拚強度，是把身體顧好。先避開高強度訓練，把恢復、基本動作和心理狀態穩住。',
+    '{name}，今天教練希望你先穩住，不要因為想跟上大家就硬撐。保護組不是退步，是提醒我們要聰明訓練。',
+    '{name}，今天先把恢復排前面。身體有不舒服就說，低強度把動作做順就好，狀態回來後再往上拉。',
+    '{name}，今天先照顧身體再談表現。把伸展、呼吸和低強度技術做好，留住恢復的空間，這也是訓練。'
+  ],
+  '關懷組': [
+    '{name}，今天教練會多關心你的狀態，不急著要求你做多好。先把身體、心情和眼前的訓練方向整理好，我們一步一步來。',
+    '{name}，今天先不要給自己太大壓力。有不舒服或心裡卡住的地方就說，我們先把最重要的一件事做好。',
+    '{name}，今天不用急著證明自己。先把狀態穩住、把方向弄清楚，教練會陪你把訓練慢慢接回來。',
+    '{name}，今天先照顧好自己，訓練可以調整。你只要把眼前能做的事情做好，其他的我們一起想辦法。',
+    '{name}，今天教練在意的是你有沒有穩住，不是一次做到多完美。先從呼吸、基本動作和一個小目標開始。'
+  ]
+};
+
+function generateCoachAiReply(playerData, mode) {
+  const data = playerData || {};
+  const templates = COACH_AI_REPLY_TEMPLATES[data.group || data.readinessGroup || '穩定組'] || COACH_AI_REPLY_TEMPLATES['穩定組'];
+  const variant = Math.abs(Number(data.aiVariant || 0));
+  let reply = templates[variant % templates.length].replace('{name}', String(data.name || '你').trim());
+  if (mode === 'coachStyle') {
+    const endings = ['今天照這個方向做，不用多想。', '先把這件事做好，其他明天再說。', '有狀況直接講，別自己硬扛。', '做穩了再加，不需要逞強。', '記住，今天的任務就是把自己顧好。'];
+    reply += endings[variant % endings.length];
+  }
+  return reply;
+}
+
 function renderCoachReadinessOverview(todays, all) {
   const box = $id('coachReadinessOverview');
   const groupsBox = $id('coachReadinessGroups');
@@ -532,6 +583,7 @@ function renderCoachReadinessOverview(todays, all) {
         const reply = replyTemplates[name].replace('{name}', String(r.name || '').trim());
         return `<div class="readiness-person readiness-player-card${isActive ? ' active' : ''}" data-readiness-player="${playerIndex}" role="button" tabindex="0" aria-expanded="${isActive}"><b>${escapeHtml(r.name)}</b><span>${escapeHtml(score)}｜${escapeHtml(lightText)}</span><small>${escapeHtml(r.trainingDirection || '')}</small>${isActive ? `<div class="quick-reply-panel" data-quick-reply-panel>
           <div class="quick-reply-title">教練快速回覆區</div><div class="quick-reply-meta">選手：${escapeHtml(r.name)}｜今日分數：${escapeHtml(score)}｜${escapeHtml(lightText)}｜${name}</div>
+          <div class="quick-reply-ai-actions"><button type="button" class="quick-reply-ai-btn primary" data-quick-ai="default" data-quick-ai-player="${playerIndex}">⚡ AI代擬</button><button type="button" class="quick-reply-ai-btn" data-quick-ai="rewrite" data-quick-ai-player="${playerIndex}">換一句</button><button type="button" class="quick-reply-ai-btn" data-quick-ai="coachStyle" data-quick-ai-player="${playerIndex}">✏️ 用我的語氣</button></div>
           <textarea class="quick-reply-textarea" aria-label="${escapeHtml(r.name)} 的教練回覆">${escapeHtml(reply)}</textarea>
           <div class="quick-reply-actions"><button type="button" class="btn btn-secondary" data-quick-copy="${playerIndex}">複製回覆</button><button type="button" class="btn btn-primary" data-quick-line="${playerIndex}">分享 LINE</button></div>
         </div>` : ''}</div>`;
@@ -540,6 +592,32 @@ function renderCoachReadinessOverview(todays, all) {
   }).join('');
   groupsBox._readinessPlayers = players;
   groupsBox.onclick = async function (event) {
+    const aiButton = event.target.closest('[data-quick-ai]');
+    if (aiButton) {
+      event.stopPropagation();
+      const item = players[Number(aiButton.dataset.quickAiPlayer)];
+      const panel = aiButton.closest('.quick-reply-panel');
+      const textarea = panel && panel.querySelector('.quick-reply-textarea');
+      if (!item || !textarea) return;
+      const originalText = aiButton.textContent;
+      aiButton.disabled = true;
+      aiButton.textContent = '產生中...';
+      try {
+        // 預留非同步介面，日後可在此接入後端 AI；目前必定有內建模板可用。
+        await new Promise(resolve => setTimeout(resolve, 120));
+        const nextVariant = Number(panel.dataset.aiVariant || 0) + 1;
+        panel.dataset.aiVariant = String(nextVariant);
+        textarea.value = generateCoachAiReply(Object.assign({}, item.r, { group: item.name, aiVariant: nextVariant }), aiButton.dataset.quickAi);
+      } catch (e) {
+        const nextVariant = Number(panel.dataset.aiVariant || 0) + 1;
+        textarea.value = generateCoachAiReply(Object.assign({}, item.r, { group: item.name, aiVariant: nextVariant }), 'default');
+        if (typeof toast === 'function') toast('AI 代擬失敗，已使用內建模板。');
+      } finally {
+        aiButton.disabled = false;
+        aiButton.textContent = originalText;
+      }
+      return;
+    }
     const actionButton = event.target.closest('[data-quick-copy], [data-quick-line]');
     const card = event.target.closest('.readiness-player-card');
     if (actionButton) {
