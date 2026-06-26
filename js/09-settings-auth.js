@@ -722,6 +722,9 @@ function applyRole() {
   // 解憂信箱：只給選手看（家長/教練端不顯示這個情感入口）
   const tabSolace = $id('tabSolace');
   if (tabSolace) tabSolace.style.display = (r.role === 'student') ? '' : 'none';
+  // 心理卡夾是選手的個人成長收藏，家長與教練端不顯示導覽入口。
+  const tabPsychPack = $id('tabPsychPack');
+  if (tabPsychPack) tabPsychPack.style.display = (r.role === 'student') ? '' : 'none';
 
   // 選手：鎖定姓名為自己
   if (r.role === 'student' && r.name) {

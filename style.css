@@ -76,6 +76,9 @@ body {
   font-family: inherit; transition: all 0.2s;
 }
 .tab-link:hover { color: #f3c9fb; border-bottom-color: #c77dd8; background: rgba(199,125,216,0.10); }
+.psych-pack-nav-btn { color: #facc15; font-weight: 800; min-height: 44px; }
+.psych-pack-nav-btn:hover { color: #fde68a; border-bottom-color: #facc15; background: rgba(250,204,21,.08); text-shadow: 0 0 10px rgba(250,204,21,.45); }
+.psych-pack-nav-btn::before { content: ""; }
 
 /* ===================== 主內容 ===================== */
 .app-main { max-width: 720px; margin: 0 auto; padding: 16px; }
@@ -409,6 +412,16 @@ textarea.text-input { resize: vertical; }
 .readiness-person:first-of-type { border-top: 0; }
 .readiness-person b { color: var(--text-main); }
 .readiness-person span { color: var(--gold); font-weight: 800; font-size: .86rem; }
+.readiness-player-card { cursor: pointer; border-radius: 10px; padding: 8px; margin: 2px -8px; transition: border-color .15s, box-shadow .15s, background .15s; }
+.readiness-player-card:hover { background: rgba(56, 189, 248, .06); }
+.readiness-player-card.active { border-color: #38bdf8; box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4); background: rgba(15, 23, 42, .65); }
+.quick-reply-panel { margin-top: 10px; padding: 12px; border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 12px; background: rgba(15, 23, 42, 0.92); cursor: default; }
+.quick-reply-title { font-weight: 700; color: #e0f2fe; margin-bottom: 8px; }
+.quick-reply-meta { font-size: 13px; color: #cbd5e1; margin-bottom: 8px; line-height: 1.55; }
+.quick-reply-textarea { box-sizing: border-box; width: 100%; min-height: 96px; resize: vertical; border-radius: 10px; padding: 10px; background: #020617; color: #e5e7eb; border: 1px solid rgba(148, 163, 184, 0.35); font: inherit; line-height: 1.55; }
+.quick-reply-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.quick-reply-actions button { min-height: 40px; }
+@media (max-width: 640px) { .quick-reply-actions button { flex: 1 1 100%; } }
 .coach-score-card { margin-top: 12px; }
 .coach-score-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 12px; cursor: pointer; user-select: none; }
 .coach-score-head-main { flex: 1 1 auto; min-width: 0; }
@@ -1045,6 +1058,23 @@ textarea.text-input { resize: vertical; }
 .pc-mini-foot { margin-top: auto; font-size: 0.72rem; color: var(--gold); }
 .pc-mini.locked .pc-mini-foot { color: var(--text-soft); }
 .pc-mini.r-epic { box-shadow: inset 0 0 14px rgba(245,197,24,0.25); }
+
+/* ===================== TeamPro 心理成長能量卡 ===================== */
+.psych-card-pack-btn { position: fixed; right: 16px; bottom: 88px; z-index: 900; border: 1px solid rgba(56, 189, 248, 0.45); background: linear-gradient(135deg, #0f172a, #1e293b); color: #e0f2fe; border-radius: 999px; padding: 10px 14px; font-weight: 700; box-shadow: 0 12px 30px rgba(0,0,0,.35); cursor: pointer; min-height: 42px; }
+.psych-card-pack-modal, .psych-card-detail-modal { position: fixed; inset: 0; z-index: 9999; display: none; }
+.psych-card-pack-modal.open, .psych-card-detail-modal.open { display: block; }
+.psych-card-pack-backdrop { position: absolute; inset: 0; background: rgba(2, 6, 23, .72); backdrop-filter: blur(4px); }
+.psych-card-pack-panel { position: relative; width: min(92vw, 760px); max-height: 82vh; overflow-y: auto; margin: 8vh auto 0; background: #0f172a; border: 1px solid rgba(56,189,248,.38); border-radius: 18px; padding: 16px; color: #e5e7eb; box-shadow: 0 20px 60px rgba(0,0,0,.55); }
+.psych-card-pack-content { min-width: 0; }
+.psych-card-pack-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }.psych-card-pack-head h3 { margin: 0; color: #e0f2fe; }.psych-card-pack-head small { color: #94a3b8; }.psych-card-pack-head button { min-width: 40px; min-height: 40px; border-radius: 999px; cursor: pointer; }
+.psych-card-pack-stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; padding: 12px; border-radius: 12px; background: rgba(30,41,59,.75); color: #cbd5e1; }.psych-card-pack-stats b { color: #e0f2fe; font-size: 1.05rem; }.psych-card-pack-stats small { flex-basis: 100%; color: #93c5fd; }
+.psych-card-sort { display: flex; gap: 8px; margin: 12px 0; }.psych-card-sort button { min-height: 38px; padding: 6px 12px; border-radius: 9px; border: 1px solid #475569; color: #cbd5e1; background: #172033; cursor: pointer; }.psych-card-sort button.active { border-color: #38bdf8; color: #e0f2fe; background: #12324b; }
+.psych-card-series-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }.psych-card-series-stats span { font-size: .74rem; background: rgba(51,65,85,.8); color: #cbd5e1; border-radius: 999px; padding: 4px 7px; }
+.psych-card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }.psych-card { position: relative; display: flex; min-height: 166px; width: 100%; flex-direction: column; align-items: flex-start; overflow: hidden; text-align: left; border: 1px solid #475569; border-radius: 14px; padding: 10px; background: radial-gradient(circle at 80% 15%, rgba(125,211,252,.2), transparent 34%), #101b30; color: #e5e7eb; cursor: pointer; transition: transform .15s, box-shadow .15s; }.psych-card:hover { transform: translateY(-2px); }.psych-card-id, .psych-card-rarity, .psych-card-series { font-size: .68rem; color: #cbd5e1; }.psych-card-rarity { align-self: flex-end; margin-top: -16px; }.psych-card-series { margin-top: 8px; }.psych-card-icon { align-self: center; margin: 7px 0; font-size: 2.2rem; text-shadow: 0 0 16px currentColor; }.psych-card-title { color: #fff; line-height: 1.35; }.psych-card-quote { margin-top: 8px; font-size: .89rem; line-height: 1.55; color: #e2e8f0; }.psych-card-mission { margin-top: auto; padding-top: 9px; font-size: .78rem; line-height: 1.45; color: #bae6fd; }.psych-card-duplicate { position: absolute; right: 8px; bottom: 7px; font-size: .7rem; color: #fef08a; }.psych-card.compact { min-height: 128px; }.psych-card.compact .psych-card-title { font-size: .82rem; }
+.psych-card.rarity-n { border-color: #64748b; }.psych-card.rarity-r { border-color: #38bdf8; box-shadow: inset 0 0 18px rgba(56,189,248,.14); }.psych-card.rarity-sr { border-color: #c084fc; background: radial-gradient(circle at 80% 15%, rgba(216,180,254,.35), transparent 35%), #211638; }.psych-card.rarity-ssr { border-color: #fbbf24; background: radial-gradient(circle at 80% 15%, rgba(253,224,71,.35), transparent 36%), #2b2110; box-shadow: inset 0 0 20px rgba(251,191,36,.18); }.psych-card.rarity-ur { border-color: #f0abfc; background: linear-gradient(135deg, #1e1b4b, #164e63, #4c1d95); animation: psych-ur-glow 3s ease-in-out infinite; }.psych-card-locked { justify-content: center; align-items: center; color: #64748b; background: #182033; filter: grayscale(1); cursor: default; }.psych-card-lock { font-size: 2.5rem; font-weight: 900; }.psych-card-locked:hover { transform: none; }
+.psych-card-detail-panel { position: relative; width: min(92vw, 390px); max-height: 86vh; overflow-y: auto; margin: 7vh auto 0; padding: 14px; border-radius: 18px; background: #0f172a; box-shadow: 0 20px 60px rgba(0,0,0,.55); }.psych-card-detail-panel .psych-card { min-height: 350px; cursor: default; }.psych-card-detail-panel .btn { width: 100%; margin-top: 12px; min-height: 42px; }
+@keyframes psych-ur-glow { 50% { box-shadow: 0 0 18px #f0abfc, inset 0 0 22px rgba(255,255,255,.18); filter: saturate(1.35); } }
+@media (max-width: 640px) { .psych-card-pack-btn { right: 12px; bottom: 74px; padding: 10px 12px; font-size: 14px; }.psych-card-pack-panel { width: calc(100vw - 24px); max-height: 86vh; margin-top: 6vh; }.psych-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.psych-card { min-height: 146px; }.psych-card-detail-panel { width: calc(100vw - 24px); } }
 
 /* ===================== 每週 KPI 週報（獨立輸出）===================== */
 .kpi-weekly-report { margin-top: 12px; }

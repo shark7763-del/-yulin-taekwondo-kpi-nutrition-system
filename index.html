@@ -69,6 +69,7 @@
     <button class="tab-btn active" data-tab="student">📝 學生填寫</button>
     <button class="tab-btn" data-tab="lastperf">📌 上次表現</button>
     <button class="tab-btn" data-tab="profile">👤 個人檔案</button>
+    <button type="button" class="tab-link psych-pack-nav-btn" id="tabPsychPack" data-open-psych-pack>🎴 我的卡夾</button>
     <button type="button" class="tab-link" id="tabSolace" style="display:none;">💌 解憂信箱</button>
     <button class="tab-btn" data-tab="parent">👨‍👩‍👧 家長後台</button>
     <button class="tab-btn" data-tab="coach">📊 教練後台</button>
@@ -1042,8 +1043,8 @@
   <script src="monthly-report.js?v=20260623c"></script>
   <!-- KPI 回報手動開啟（教練後台控制學生每日 30 項 KPI）-->
   <script src="kpi-session.js?v=20260624a"></script>
-  <!-- 運動心理小卡（回報完成後抽卡＋集卡）-->
-  <script src="psych-cards.js?v=20260622b"></script>
+  <!-- TeamPro 心理成長能量卡（回報完成後抽卡＋集卡）-->
+  <script src="psych-cards.js?v=20260626f"></script>
   <!-- PWA：註冊 Service Worker（離線快取＋可安裝）。失敗不影響任何功能 -->
   <script>
     if ('serviceWorker' in navigator) {

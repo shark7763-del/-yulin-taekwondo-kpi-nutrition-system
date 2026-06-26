@@ -415,7 +415,7 @@ async function doSubmitInner(mode) {
   // 更新選手成長卡（連續天數／段位即時反映今天這筆）
   renderPlayerCard(rec.name);
 
-  // 回報完成 → 抽運動心理小卡（純前端，集卡＋連續天數加成）
+  // 回報完成 → 抽 TeamPro 心理成長能量卡（psych-cards.js 未載入時安全略過）
   if (window.PsychCards) try { window.PsychCards.onReportSubmitted(rec.name); } catch (e) {}
 
   // 捲動到 AI 教練回饋卡

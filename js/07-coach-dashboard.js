@@ -511,12 +511,64 @@ function renderCoachReadinessOverview(todays, all) {
     const light = readinessLight(nval(r.finalReadinessScore) || 0);
     buckets[light.group].push(r);
   });
+  const replyTemplates = {
+    '強化組': '{name}，今天狀態很好，可以安排高品質技術、速度、對打模擬與爆發力訓練。不過記得，狀態好更要把動作品質守住，不是只有衝強度。',
+    '穩定組': '{name}，今天狀態穩定，正常訓練即可。重點放在細節修正、節奏穩定與品質維持，把該做的穩穩完成。',
+    '調整組': '{name}，今天狀態需要調整，不急著硬衝。訓練先降低總量，重點放在技術修正、基本功、節奏與動作品質。',
+    '保護組': '{name}，今天先以保護與恢復為主，避免高強度訓練。可以安排伸展、低強度技術、恢復、心理調整，先把身體顧好。',
+    '關懷組': '{name}，今天教練會多關心你的狀態。不急著要求表現，先把身體、心情和訓練方向整理好，我們一步一步來。'
+  };
+  let selectedKey = groupsBox.dataset.selectedReadinessPlayer || '';
+  const players = [];
   groupsBox.innerHTML = Object.keys(buckets).map(name => {
     const list = buckets[name];
     return `<div class="readiness-group"><h4>${name}（${list.length}）</h4>` +
-      (list.length ? list.map(r => `<div class="readiness-person"><b>${escapeHtml(r.name)}</b><span>${escapeHtml(r.finalReadinessScore || '--')}｜${escapeHtml(r.readinessStatusLight || '')}</span><small>${escapeHtml(r.trainingDirection || '')}</small></div>`).join('') : '<p class="review-label">無</p>') +
+      (list.length ? list.map((r, index) => {
+        const key = `${name}:${String(r.name || '').trim()}:${index}`;
+        const playerIndex = players.push({ r, name, key }) - 1;
+        const isActive = selectedKey === key;
+        const score = r.finalReadinessScore || '--';
+        const lightText = r.readinessStatusLight || `${name}`;
+        const reply = replyTemplates[name].replace('{name}', String(r.name || '').trim());
+        return `<div class="readiness-person readiness-player-card${isActive ? ' active' : ''}" data-readiness-player="${playerIndex}" role="button" tabindex="0" aria-expanded="${isActive}"><b>${escapeHtml(r.name)}</b><span>${escapeHtml(score)}｜${escapeHtml(lightText)}</span><small>${escapeHtml(r.trainingDirection || '')}</small>${isActive ? `<div class="quick-reply-panel" data-quick-reply-panel>
+          <div class="quick-reply-title">教練快速回覆區</div><div class="quick-reply-meta">選手：${escapeHtml(r.name)}｜今日分數：${escapeHtml(score)}｜${escapeHtml(lightText)}｜${name}</div>
+          <textarea class="quick-reply-textarea" aria-label="${escapeHtml(r.name)} 的教練回覆">${escapeHtml(reply)}</textarea>
+          <div class="quick-reply-actions"><button type="button" class="btn btn-secondary" data-quick-copy="${playerIndex}">複製回覆</button><button type="button" class="btn btn-primary" data-quick-line="${playerIndex}">分享 LINE</button></div>
+        </div>` : ''}</div>`;
+      }).join('') : '<p class="review-label">無</p>') +
       `</div>`;
   }).join('');
+  groupsBox._readinessPlayers = players;
+  groupsBox.onclick = async function (event) {
+    const actionButton = event.target.closest('[data-quick-copy], [data-quick-line]');
+    const card = event.target.closest('.readiness-player-card');
+    if (actionButton) {
+      event.stopPropagation();
+      const item = players[Number(actionButton.dataset.quickCopy || actionButton.dataset.quickLine)];
+      const panel = actionButton.closest('.quick-reply-panel');
+      const message = panel && panel.querySelector('.quick-reply-textarea') ? panel.querySelector('.quick-reply-textarea').value.trim() : '';
+      if (actionButton.hasAttribute('data-quick-copy')) {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(message);
+          else {
+            const fallback = document.createElement('textarea'); fallback.value = message; fallback.style.position = 'fixed'; fallback.style.opacity = '0'; document.body.appendChild(fallback); fallback.select(); document.execCommand('copy'); fallback.remove();
+          }
+          toast('✅ 已複製教練回覆');
+        } catch (e) { toast('⚠️ 無法複製，請手動複製文字'); }
+      } else if (item) {
+        const r = item.r;
+        const lineText = `TeamPro 教練回覆\n選手：${r.name}\n今日狀態：${r.finalReadinessScore || '--'}｜${r.readinessStatusLight || item.name}\n分組：${item.name}\n\n教練提醒：\n${message}\n\n今天照這個方向訓練，穩穩做好。`;
+        window.open(`https://line.me/R/msg/text/?${encodeURIComponent(lineText)}`, '_blank', 'noopener');
+      }
+      return;
+    }
+    if (!card) return;
+    const item = players[Number(card.dataset.readinessPlayer)];
+    if (!item) return;
+    groupsBox.dataset.selectedReadinessPlayer = selectedKey === item.key ? '' : item.key;
+    renderCoachReadinessOverview(todays, all);
+  };
+  groupsBox.onkeydown = function (event) { if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('.readiness-player-card')) { event.preventDefault(); event.target.closest('.readiness-player-card').click(); } };
 }
 
 function coachScoreButtons(field, value) {
