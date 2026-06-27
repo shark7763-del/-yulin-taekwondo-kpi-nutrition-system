@@ -473,6 +473,7 @@ async function loadAiConfig() {
     if ($id('aiDailyCap')) $id('aiDailyCap').value = d.dailyCap || 300;
     if ($id('aiUserCap')) $id('aiUserCap').value = d.userCap || 40;
     if ($id('aiUsageNote')) $id('aiUsageNote').textContent = '　今日已用 ' + (d.usedToday || 0) + ' / ' + (d.dailyCap || 300) + ' 次';
+    try { localStorage.setItem('teampro_ai_config_cache', JSON.stringify({ enabled: !!d.enabled, model: d.model || 'gpt-4o-mini', style: d.style || '', hasKey: !!d.hasKey })); } catch (e) { /* */ }
   } catch (e) { /* */ }
 }
 
@@ -495,6 +496,7 @@ function setupAiHandlers() {
       const res = await postToWebApp(payload);
       if (res && res.ok) {
         if (st) { st.textContent = '✅ 已儲存'; st.className = 'conn-status ok'; }
+        try { localStorage.setItem('teampro_ai_config_cache', JSON.stringify({ enabled: !!payload.enabled, model: payload.model || 'gpt-4o-mini', style: payload.style || '', hasKey: !!(k || ($id('aiApiKey') && $id('aiApiKey').placeholder.indexOf('已設定') !== -1)) })); } catch (e) { /* */ }
         if ($id('aiApiKey')) $id('aiApiKey').value = '';
         loadAiConfig();
       } else if (st) { st.textContent = '❌ ' + ((res && res.error) || '儲存失敗'); st.className = 'conn-status fail'; }

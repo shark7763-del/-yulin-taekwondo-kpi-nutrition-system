@@ -429,6 +429,63 @@ textarea.text-input { resize: vertical; }
 .quick-reply-confirm-btn { min-height: 40px; padding: 8px 12px; border: 1px solid rgba(74, 222, 128, .45); border-radius: 10px; background: rgba(20, 83, 45, .42); color: #dcfce7; font-weight: 800; cursor: pointer; }
 .quick-reply-panel.is-confirmed .quick-reply-confirm-btn { border-color: #4ade80; background: rgba(22, 163, 74, .28); color: #f0fdf4; }
 @media (max-width: 640px) { .quick-reply-ai-actions { flex-direction: column; } .quick-reply-ai-btn { width: 100%; } .quick-reply-actions button { flex: 1 1 100%; } }
+
+.coach-reply-card { margin-top: 16px; }
+.coach-reply-summary {
+  border-left: 4px solid #38bdf8;
+  background: rgba(15, 23, 42, 0.82);
+  border-radius: 12px;
+  padding: 12px;
+  color: #e2e8f0;
+  margin-bottom: 12px;
+}
+.coach-reply-summary b { display: block; margin-bottom: 6px; color: #e0f2fe; }
+.coach-reply-summary ul { margin: 0; padding-left: 18px; line-height: 1.7; }
+.coach-reply-ai-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.coach-reply-ai-btn {
+  min-height: 40px;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-weight: 800;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(15, 23, 42, 0.92);
+  color: #e0f2fe;
+  cursor: pointer;
+}
+.coach-reply-ai-btn:hover:not(:disabled) {
+  border-color: rgba(250, 204, 21, 0.55);
+  color: #fde68a;
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.22);
+}
+.coach-reply-ai-btn.primary { background: linear-gradient(135deg, #0369a1, #0f172a); }
+.coach-reply-ai-btn:disabled { opacity: .72; cursor: wait; }
+.coach-reply-textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  border-radius: 12px;
+  padding: 12px;
+  background: #020617;
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+.coach-reply-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+@media (max-width: 640px) {
+  .coach-reply-ai-actions,
+  .coach-reply-actions { flex-direction: column; }
+  .coach-reply-ai-btn,
+  .coach-reply-actions button { width: 100%; }
+}
 .coach-score-card { margin-top: 12px; }
 .coach-score-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 12px; cursor: pointer; user-select: none; }
 .coach-score-head-main { flex: 1 1 auto; min-width: 0; }

@@ -58,6 +58,80 @@ function mergeCoachScores(records, scores) {
   return records;
 }
 
+const COACH_REPLY_LS_KEY = 'teampro_coach_replies';
+const COACH_REPLY_TEMPLATE_BANK = {
+  stable: [
+    '{name}，你最近整體狀態算穩，代表基本訓練有在累積。接下來不要只求完成，重點放在{weakest}和每一次動作品質，把穩定變成更有水準的穩定。',
+    '{name}，近{rangeDays}天表現沒有太大亂掉，這是好事。現在要做的是把細節守住，尤其{weakest}不要放掉，每天一點點修，狀態會更扎實。',
+    '{name}，最近狀態維持得住，表示你有把訓練節奏抓回來。接下來把{weakest}補起來，不用急著衝，先把該做的做到確實。',
+    '{name}，這幾天表現穩定，教練要你繼續守住節奏。今天訓練不要飄，把{weakest}和恢復做好，穩定才會真的變成實力。',
+    '{name}，近期沒有明顯掉下去，這代表你有基本盤。接下來把{strongest}保持住，再把{weakest}補強，訓練品質會更完整。'
+  ],
+  improve: [
+    '{name}，你最近有往上走，這不是運氣，是你有累積。接下來不要因為進步就鬆掉，把{strongest}繼續守住，再把{weakest}補起來。',
+    '{name}，近{rangeDays}天看得出來有進步，這點值得肯定。下一步不是亂加強度，而是把細節做穩，尤其{weakest}要更專心處理。',
+    '{name}，你的狀態正在拉起來，教練看得到。今天繼續用這個節奏訓練，把好的部分留住，弱的地方一次修一點就好。',
+    '{name}，最近表現有變好，代表你前面的努力有回來。不要急著證明自己，把每一回合做確實，進步就會更穩。',
+    '{name}，這幾天有起色，繼續保持。訓練時把注意力放在{weakest}，不要只看分數，動作品質守住才是真的進步。'
+  ],
+  decline: [
+    '{name}，最近狀態有往下掉，先不要急著否定自己。這代表身體或專注需要調整，今天把訓練量和節奏顧好，先從{weakest}穩回來。',
+    '{name}，近{rangeDays}天有下滑，教練要你先面對，不要硬撐。今天重點不是衝強度，是把基本動作、恢復和{weakest}重新整理好。',
+    '{name}，最近分數掉一點不代表你不行，是提醒我們要調整。先把睡眠、恢復和訓練專注顧好，狀態穩了再往上拉。',
+    '{name}，這幾天狀態比較低，今天先不要亂拚。把{weakest}當主題，降低失誤、守住節奏，先讓自己回到穩定。',
+    '{name}，近期表現下來了，教練希望你不要逃避。先從小地方做回來，基本動作確實、心態穩住，後面才有辦法再拉高。'
+  ],
+  focus: [
+    '{name}，最近要特別注意專注度。你不是做不到，是有些細節容易放掉，今天每一組先抓一個重點，做好眼前這一下。',
+    '{name}，這幾天專注需要拉回來。訓練時不要想太多，把注意力放在當下動作，失誤後三秒調整，馬上回到下一次。',
+    '{name}，專注是你這幾天最要守的東西。今天不要被前一次失誤影響，每次開始前先吸一口氣，把節奏抓回來。',
+    '{name}，你最近不是沒有努力，是專注容易散。今天訓練先把目標變小，每一回合只守一個重點，做完再看下一個。',
+    '{name}，今天教練要你把心收回來。先不要急著求快，把基本動作看清楚、做確實，專注回來，分數自然會回來。'
+  ],
+  physical: [
+    '{name}，最近體能要多注意，不是硬撐就會變強。今天把熱身、恢復和節奏做好，強度可以有，但不要超過身體能承受的範圍。',
+    '{name}，你的體能狀態需要補起來。今天訓練先把呼吸和節奏抓穩，該休息就休息，動作品質不要因為累就掉掉。',
+    '{name}，這幾天體能是重點。先不要只想拚速度，把基本耐力、恢復和動作品質守住，身體拉起來後強度才加得上去。',
+    '{name}，體能偏弱時更要聰明訓練。今天不要亂衝，把每一組完成品質顧好，收操和補水也要做確實。',
+    '{name}，最近身體負荷要看緊。訓練時如果開始散掉，就先把節奏降回來，品質守住比硬撐更重要。'
+  ],
+  emotion: [
+    '{name}，最近情緒有點起伏，先不用急著壓掉它。今天先讓自己穩下來，失誤後不要衝動，吸一口氣再回到下一次。',
+    '{name}，情緒不穩時，訓練最重要的是先穩住。今天不要被一句話或一次失誤帶走，把心收回動作上。',
+    '{name}，這幾天心情比較容易影響表現。教練要你先把節奏放慢，該講的可以講，但訓練時先回到眼前任務。',
+    '{name}，你不是不能練，是情緒需要整理。今天先不急著要求完美，把每一次回到穩定都當成訓練的一部分。',
+    '{name}，最近情緒要顧好。遇到卡住不要馬上否定自己，先停三秒，再把下一個動作完成。'
+  ],
+  discipline: [
+    '{name}，最近自律要再拉高一點。不是教練盯才做，而是你自己要知道今天該完成什麼，把小事做好，狀態才會穩。',
+    '{name}，這幾天要把自律補回來。訓練前準備、補水、收操和紀錄都不要省，這些小事會直接影響你的表現。',
+    '{name}，自律不是口號，是每一天該做的事有沒有做到。今天先把一件容易偷懶的事做完整，從這裡開始拉回來。',
+    '{name}，你有能力，但最近要更要求自己。不要等被提醒才動，把基本規矩做好，訓練品質才會跟著上來。',
+    '{name}，今天把自律當目標。該熱身、該補水、該收操、該記錄，都確實做完，這就是你變穩的底。'
+  ],
+  recovery: [
+    '{name}，最近恢復狀況要注意。今天訓練先不要硬撐，把睡眠、伸展和低強度技術做好，身體顧好才有本錢進步。',
+    '{name}，恢復不足時不能只靠意志力。今天先把強度控住，動作品質守住，訓練後收操和補水要確實。',
+    '{name}，這幾天身體需要被照顧。不是退步，是調整節奏，先把恢復做好，狀態才拉得回來。',
+    '{name}，今天不要把疲勞當成小事。訓練可以做，但要聰明做，先顧恢復和基本動作，不要硬衝。',
+    '{name}，恢復是訓練的一部分。今天把睡眠、補水、伸展放進目標裡，身體穩了，後面才加得上去。'
+  ],
+  goal: [
+    '{name}，你有寫目標，這很好，接下來要把它變成今天真的做得到的事。不要只想結果，先把眼前一個重點完成。',
+    '{name}，你的目標方向是清楚的。今天訓練就圍繞這個目標做，不用做很多，先把一件事做扎實。',
+    '{name}，有目標就要落到行動。今天把「{goal}」拆小，先完成最前面那一步，做到了再往下一步走。',
+    '{name}，你知道自己要改什麼，這是進步的開始。今天不要分心，把目標放在訓練裡，一次做好一個重點。',
+    '{name}，目標不是寫完就好，是拿來提醒自己。今天把{weakest}和你設定的目標連起來，訓練會更有方向。'
+  ],
+  encouragement: [
+    '{name}，最近不管分數怎樣，教練要你先穩住。你不是沒有能力，只是需要把節奏找回來，今天先完成一個小進步。',
+    '{name}，這幾天如果覺得卡住，不要急著放棄。先把基本動作做好，把心穩住，教練看的是你願不願意繼續調整。',
+    '{name}，你可以不用一下子變很強，但不能放掉自己。今天先把一件該做的事完成，慢慢把狀態拉回來。',
+    '{name}，教練知道你有時候會急，但先穩住。把今天能控制的事情做好，分數和狀態會慢慢回來。',
+    '{name}，不要只盯著不好的地方。你有能做好的部分，今天把它守住，再補一個弱點，就夠了。'
+  ]
+};
+
 function yesNo(value) {
   if (value === true) return '是';
   if (value === false) return '否';
@@ -1759,6 +1833,249 @@ function wireCoachReviewBlock(rec) {
 /* ============================================================
    12. 上次表現分頁
    ============================================================ */
+function getCoachReplyStore() {
+  try {
+    const data = JSON.parse(localStorage.getItem(COACH_REPLY_LS_KEY) || '[]');
+    return Array.isArray(data) ? data : [];
+  } catch (e) { return []; }
+}
+function saveCoachReplyStore(row) {
+  const arr = getCoachReplyStore();
+  arr.unshift(row);
+  localStorage.setItem(COACH_REPLY_LS_KEY, JSON.stringify(arr.slice(0, 300)));
+}
+function getCoachAiStyleText() {
+  const el = $id('aiStyle');
+  if (el && el.value) return el.value.trim();
+  try {
+    const cached = JSON.parse(localStorage.getItem('teampro_ai_config_cache') || '{}');
+    return cached.style || '';
+  } catch (e) { return ''; }
+}
+function averageNumber(values) {
+  const nums = (values || []).map(v => parseFloat(v)).filter(v => !isNaN(v));
+  return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+}
+function coachReplyRangeRecords(history, days) {
+  const rows = dedupeLatestByDate(history || []);
+  if (!rows.length) return [];
+  const latestDate = normDate(rows[0].date) || todayStr();
+  const end = new Date(latestDate); end.setHours(0, 0, 0, 0);
+  const start = new Date(end); start.setDate(start.getDate() - ((days || 7) - 1));
+  return rows.filter(r => {
+    const d = new Date(normDate(r.date));
+    return !isNaN(d.getTime()) && d >= start && d <= end;
+  });
+}
+function coachReplyAreaStats(records) {
+  const stats = ASPECT_ORDER.map(k => {
+    const vals = (records || []).map(r => parseFloat(r[ASPECT_AVG_FIELD[k]])).filter(v => !isNaN(v));
+    const avg = vals.length ? averageNumber(vals) : null;
+    return { key: k, label: KPI_ASPECTS[k].label, avg: avg };
+  }).filter(x => x.avg != null);
+  let strongest = null, weakest = null;
+  stats.forEach(s => {
+    if (!strongest || s.avg > strongest.avg) strongest = s;
+    if (!weakest || s.avg < weakest.avg) weakest = s;
+  });
+  return { stats, strongest, weakest };
+}
+function buildCoachPerformanceContext(name, rec, history, rangeDays) {
+  const records = coachReplyRangeRecords(history || (rec ? [rec] : []), rangeDays || 7);
+  if (!records.length && rec) records.push(rec);
+  const oldToNew = records.slice().reverse();
+  const totals = oldToNew.map(r => parseFloat(r.totalScore)).filter(v => !isNaN(v));
+  const avgs = oldToNew.map(r => parseFloat(r.averageScore)).filter(v => !isNaN(v));
+  const first = totals.length ? totals[0] : null;
+  const last = totals.length ? totals[totals.length - 1] : null;
+  const delta = (first != null && last != null) ? round1(last - first) : null;
+  const area = coachReplyAreaStats(records);
+  const latest = records[0] || rec || {};
+  const lowScoreCount = totals.filter(v => v < 60).length;
+  const recentFlags = [];
+  if (delta != null && delta >= 5) recentFlags.push('近期進步');
+  if (delta != null && delta <= -5) recentFlags.push('近期下滑');
+  if (lowScoreCount >= 2) recentFlags.push('連續低分');
+  if ((parseFloat(latest.recoveryScore) || 100) < 60 || (parseFloat(latest.sleepHours) || 8) < 6.5) recentFlags.push('恢復不足');
+  if ((parseFloat(latest.moodIndex) || 5) <= 2) recentFlags.push('情緒起伏');
+  return {
+    name: name || latest.name || '',
+    rangeDays: rangeDays || 7,
+    records: records,
+    latest: latest,
+    scoreMin: totals.length ? Math.min.apply(null, totals) : null,
+    scoreMax: totals.length ? Math.max.apply(null, totals) : null,
+    recentTrend: delta == null ? '資料不足' : (delta > 2 ? '上升' : (delta < -2 ? '下降' : '穩定')),
+    scoreDelta: delta,
+    averageScore: avgs.length ? round1(averageNumber(avgs)) : (latest.averageScore || ''),
+    strongestArea: area.strongest ? area.strongest.label : '',
+    weakestArea: area.weakest ? area.weakest.label : '',
+    areaStats: area.stats,
+    reflection: latest.reflection || '',
+    tomorrowGoal: latest.tomorrowGoal || '',
+    mood: latest.mood || latest.moodIndex || '',
+    sleep: latest.sleepHours || latest.sleepQuality || '',
+    recovery: latest.recoveryScore || '',
+    nutrition: latest.nutritionRisks || latest.nutritionAdviceCoach || latest.nutritionAdviceParent || '',
+    recentFlags: recentFlags,
+    coachStyleText: getCoachAiStyleText()
+  };
+}
+function coachPerformanceSummaryHtml(ctx) {
+  const lines = [];
+  if (ctx.scoreMin != null && ctx.scoreMax != null) lines.push(`近${ctx.rangeDays}天總分約落在 ${ctx.scoreMin}～${ctx.scoreMax}`);
+  if (ctx.averageScore) lines.push(`平均分約 ${ctx.averageScore}`);
+  if (ctx.scoreDelta != null) lines.push(`最近趨勢：${ctx.recentTrend}${ctx.scoreDelta ? `（${ctx.scoreDelta > 0 ? '+' : ''}${ctx.scoreDelta}）` : ''}`);
+  if (ctx.strongestArea) lines.push(`相對穩定：${ctx.strongestArea}`);
+  if (ctx.weakestArea) lines.push(`優先補強：${ctx.weakestArea}`);
+  if (ctx.reflection) lines.push(`上次心得提到：${ctx.reflection}`);
+  if (ctx.tomorrowGoal) lines.push(`明日目標是：${ctx.tomorrowGoal}`);
+  if (ctx.recentFlags.length) lines.push(`提醒標籤：${ctx.recentFlags.join('、')}`);
+  if (!lines.length) lines.push('目前資料不足，建議先以最近一筆紀錄和現場觀察回覆。');
+  return `<div class="coach-reply-summary"><b>AI摘要</b><ul>${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul></div>`;
+}
+function pickCoachReplyType(ctx) {
+  const weak = ctx.weakestArea || '';
+  if (ctx.recentFlags.indexOf('近期下滑') !== -1 || ctx.recentFlags.indexOf('連續低分') !== -1) return 'decline';
+  if (ctx.recentFlags.indexOf('恢復不足') !== -1) return 'recovery';
+  if (ctx.recentFlags.indexOf('情緒起伏') !== -1 || weak.indexOf('情緒') !== -1) return 'emotion';
+  if (weak.indexOf('專注') !== -1) return 'focus';
+  if (weak.indexOf('體能') !== -1 || weak.indexOf('體重') !== -1) return 'physical';
+  if (weak.indexOf('自律') !== -1) return 'discipline';
+  if (ctx.tomorrowGoal) return 'goal';
+  if (ctx.recentFlags.indexOf('近期進步') !== -1) return 'improve';
+  if (!ctx.records || ctx.records.length < 2) return 'encouragement';
+  return 'stable';
+}
+function fillCoachReplyTemplate(tpl, ctx) {
+  return tpl
+    .replace(/\{name\}/g, ctx.name || '你')
+    .replace(/\{rangeDays\}/g, ctx.rangeDays || 7)
+    .replace(/\{weakest\}/g, ctx.weakestArea || '細節')
+    .replace(/\{strongest\}/g, ctx.strongestArea || '穩定的地方')
+    .replace(/\{goal\}/g, ctx.tomorrowGoal || '今天的目標');
+}
+function generateCoachReplyFallback(ctx, mode) {
+  const type = pickCoachReplyType(ctx);
+  const bank = COACH_REPLY_TEMPLATE_BANK[type] || COACH_REPLY_TEMPLATE_BANK.stable;
+  const seed = Math.abs(((ctx.name || '').length * 7) + ((ctx.records || []).length * 3) + (ctx.scoreDelta || 0));
+  const offset = mode === 'rewrite' ? 1 : (mode === 'coachStyle' ? 2 : 0);
+  let text = fillCoachReplyTemplate(bank[(seed + offset) % bank.length], ctx);
+  if (mode === 'coachStyle') text = text.replace(/接下來/g, '接著').replace(/教練要你/g, '我希望你').replace(/這是好事/g, '這點可以');
+  return text;
+}
+async function generateCoachReplyFromPerformance(playerContext, mode) {
+  const ctx = playerContext || {};
+  if (getWebAppUrl()) {
+    try {
+      const res = await postToWebApp({ action: 'aiCoachPerformanceReply', context: ctx, mode: mode || 'default' });
+      if (res && res.ok && res.replyText) return { text: res.replyText, source: 'ai' };
+      if (res && res.ok && res.data && res.data.replyText) return { text: res.data.replyText, source: 'ai' };
+    } catch (e) { /* fallback */ }
+    try {
+      const record = Object.assign({}, ctx.latest || {}, {
+        name: ctx.name,
+        _statusLabel: ctx.recentTrend,
+        aiTags: [
+          `近${ctx.rangeDays}天平均 ${ctx.averageScore || '-'}`,
+          ctx.strongestArea ? `穩定：${ctx.strongestArea}` : '',
+          ctx.weakestArea ? `補強：${ctx.weakestArea}` : '',
+          ctx.recentFlags && ctx.recentFlags.length ? `提醒：${ctx.recentFlags.join('、')}` : ''
+        ].filter(Boolean).join('；'),
+        reflection: ctx.reflection,
+        tomorrowGoal: ctx.tomorrowGoal
+      });
+      const res = await postToWebApp({ action: 'aiCoachFeedback', record: record });
+      if (res && res.ok && res.versions && res.versions.student) {
+        const v = res.versions.student;
+        const text = [v.affirm, v.watch, v.oneThing ? `今天方向：${v.oneThing}` : '', v.quote ? `「${v.quote}」` : ''].filter(Boolean).join(' ');
+        if (text.trim()) return { text: text.trim(), source: 'ai' };
+      }
+    } catch (e) { /* fallback */ }
+  }
+  return { text: generateCoachReplyFallback(ctx, mode || 'default'), source: 'fallback' };
+}
+function coachReplyLineText(ctx, reply) {
+  return `TeamPro 教練回覆
+選手：${ctx.name}
+觀察區間：近${ctx.rangeDays}天
+
+教練回覆：
+${reply}
+
+繼續照這個方向調整，穩穩把自己拉上來。`;
+}
+function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
+  const card = $id('coachReplyAssistantCard');
+  const box = $id('coachReplyAssistant');
+  if (!card || !box) return;
+  const role = (getRole() || {}).role;
+  if (role !== 'coach') { card.style.display = 'none'; box.innerHTML = ''; return; }
+  const ctx = buildCoachPerformanceContext(name, rec, history || [], rangeDays || 7);
+  card.style.display = 'block';
+  const saved = (rec && rec.coachReply) || generateCoachReplyFallback(ctx, 'default');
+  box.innerHTML = `
+    <h3 class="card-title">🧑‍🏫 教練回覆助手</h3>
+    <div class="review-row"><span class="review-label">選手</span><span class="review-value">${escapeHtml(ctx.name || '-')}</span></div>
+    <div class="review-row"><span class="review-label">區間</span><span class="review-value">近${ctx.rangeDays}天</span></div>
+    ${coachPerformanceSummaryHtml(ctx)}
+    <div class="coach-reply-ai-actions">
+      <button type="button" class="coach-reply-ai-btn primary" data-coach-reply-ai="default">⚡ AI代擬回覆</button>
+      <button type="button" class="coach-reply-ai-btn" data-coach-reply-ai="rewrite">換一句</button>
+      <button type="button" class="coach-reply-ai-btn" data-coach-reply-ai="coachStyle">✏️ 用我的語氣</button>
+    </div>
+    <textarea id="coachReplyDraft" class="coach-reply-textarea" placeholder="AI 代擬後可直接修改，再複製、分享或儲存。">${escapeHtml(saved)}</textarea>
+    <div class="coach-reply-actions">
+      <button type="button" class="btn btn-secondary" id="btnCopyCoachReply">複製回覆</button>
+      <button type="button" class="btn btn-primary" id="btnLineCoachReply">分享 LINE</button>
+      <button type="button" class="btn btn-primary" id="btnSaveCoachReply">✅ 儲存教練回覆</button>
+    </div>`;
+  box.querySelectorAll('[data-coach-reply-ai]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const mode = btn.getAttribute('data-coach-reply-ai') || 'default';
+      const old = btn.textContent;
+      btn.disabled = true; btn.textContent = '產生中...';
+      const ta = $id('coachReplyDraft');
+      try {
+        const result = await generateCoachReplyFromPerformance(ctx, mode);
+        if (ta) ta.value = result.text || generateCoachReplyFallback(ctx, mode);
+        toast(result.source === 'ai' ? '✨ AI 已代擬回覆' : 'AI 未啟用或呼叫失敗，已使用內建模板');
+      } catch (e) {
+        if (ta) ta.value = generateCoachReplyFallback(ctx, mode);
+        toast('AI 代擬失敗，已使用內建模板');
+      }
+      btn.disabled = false; btn.textContent = old;
+    });
+  });
+  const copyBtn = $id('btnCopyCoachReply');
+  if (copyBtn) copyBtn.addEventListener('click', () => copyText(($id('coachReplyDraft') || {}).value || ''));
+  const lineBtn = $id('btnLineCoachReply');
+  if (lineBtn) lineBtn.addEventListener('click', () => {
+    const text = (($id('coachReplyDraft') || {}).value || '').trim();
+    if (!text) { toast('請先輸入教練回覆'); return; }
+    window.open('https://line.me/R/msg/text/?' + encodeURIComponent(coachReplyLineText(ctx, text)), '_blank');
+  });
+  const saveBtn = $id('btnSaveCoachReply');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const text = (($id('coachReplyDraft') || {}).value || '').trim();
+    if (!text) { toast('請先輸入教練回覆'); return; }
+    saveBtn.disabled = true; saveBtn.textContent = '儲存中...';
+    const row = { timestamp: new Date().toISOString(), studentName: ctx.name, rangeDays: ctx.rangeDays, summary: (box.querySelector('.coach-reply-summary') || {}).textContent || '', replyText: text, createdBy: 'coach' };
+    let ok = false;
+    if (rec && rec.recordId) ok = await updateRecordRemote(rec.recordId, { coachReply: text });
+    if (getWebAppUrl()) {
+      try {
+        const res = await postToWebApp({ action: 'saveCoachReply', payload: row });
+        ok = ok || !!(res && res.ok);
+      } catch (e) { /* local fallback */ }
+    }
+    saveCoachReplyStore(row);
+    if (rec) rec.coachReply = text;
+    saveBtn.disabled = false; saveBtn.textContent = '✅ 儲存教練回覆';
+    toast(ok ? '✅ 已儲存教練回覆' : '✅ 已先儲存在本機，後端未支援時不影響使用');
+  });
+}
+
 async function loadLastPerfPage() {
   const name = $id('lastPerfName').value;
   if (!name) { toast('請選擇選手'); return; }
@@ -1782,11 +2099,13 @@ async function loadLastPerfPage() {
   if (!rec) {
     box.innerHTML = `<div class="hint-box good">這是你的第一筆紀錄，今天開始建立自己的成長軌跡。</div>`;
     card.style.display = 'block';
+    renderCoachPerformanceReplyAssistant(name, null, history || [], 7);
     return;
   }
   // 重用回顧渲染（但不影響填寫頁的改善區）
   renderLastReviewInto(rec, box);
   card.style.display = 'block';
+  renderCoachPerformanceReplyAssistant(name, rec, history || [rec], 7);
 }
 
 /* ============================================================
