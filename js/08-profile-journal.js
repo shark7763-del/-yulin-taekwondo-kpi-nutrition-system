@@ -419,6 +419,7 @@ function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
       <div class="jr-summary-note">任務：${escapeHtml(summaryCoach.oneThing).replace(/\n/g, '<br>')}</div>` : '<div class="mr-empty sm">尚無可用資料。</div>') +
     `</div>`;
   html += `</div>`;
+  html += journalMonthlyCoachFeedbackHtml(name, ordered);
   html += `<div class="mr-sign"><div class="mr-sign-box"><div class="mr-sign-label">教練簽核</div><div class="mr-sign-line"></div><div class="mr-sign-date">簽名：${escapeHtml(coachName)}</div></div><div class="mr-sign-box"><div class="mr-sign-label">文件編號</div><div class="mr-sign-line"></div><div class="mr-sign-date">${escapeHtml(fileNo)}</div></div></div>`;
   html += `<div class="mr-privacy">日誌內容依訓練日期彙整，預設以最新資料為準。若同一天有多筆紀錄，會保留最新一筆。</div>`;
   html += `<div class="mr-page-foot">育林國中技擊隊個人訓練日誌｜${escapeHtml(fileNo)}</div>`;
@@ -495,6 +496,67 @@ function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
   const fileBase = `育林國中技擊隊_個人訓練日誌_${journalSafePart(name)}_${journalSafePart(fromMonth || 'all')}_${journalSafePart(toMonth || 'all')}_${journalSafePart(fileNo)}`;
   const pdfRecords = buildPdfRecordsFromOrderedRecords(ordered, name, fileNo);
   return { html, fileBase, fileNo, coachName, records: pdfRecords };
+}
+
+function journalMonthlyCoachFeedbackManual() {
+  const ta = $id('monthlyCoachFeedbackInput');
+  return ta ? String(ta.value || '').trim() : '';
+}
+
+function journalParseCoachFeedbackText(text, fallback) {
+  text = String(text || '').trim();
+  fallback = fallback || {};
+  if (!text) return fallback;
+  const obs = (text.match(/本月觀察[:：]([\s\S]*?)(?=需要加強[:：]|教練鼓勵[:：]|$)/) || [])[1];
+  const imp = (text.match(/需要加強[:：]([\s\S]*?)(?=本月觀察[:：]|教練鼓勵[:：]|$)/) || [])[1];
+  const enc = (text.match(/教練鼓勵[:：]([\s\S]*?)(?=本月觀察[:：]|需要加強[:：]|$)/) || [])[1];
+  if (!obs && !imp && !enc) return { observation: text, improvement: fallback.improvement || '', encouragement: fallback.encouragement || '' };
+  return {
+    observation: (obs || fallback.observation || '').trim(),
+    improvement: (imp || fallback.improvement || '').trim(),
+    encouragement: (enc || fallback.encouragement || '').trim()
+  };
+}
+
+function journalBuildMonthlyCoachFeedback(name, ordered) {
+  const recs = ordered || [];
+  const avgVals = recs.map(r => parseFloat(r.averageScore)).filter(v => !isNaN(v));
+  const first = avgVals.length ? avgVals[0] : null;
+  const last = avgVals.length ? avgVals[avgVals.length - 1] : null;
+  const trend = first == null || last == null ? '資料不足' : (last > first + 0.2 ? '上升' : (last < first - 0.2 ? '下降' : '持平'));
+  const painDays = recs.filter(r => (parseFloat(r.painScore) || 0) >= 4).length;
+  const lowSleepDays = recs.filter(r => { const s = parseFloat(r.sleepHours); return !isNaN(s) && s < 7; }).length;
+  const nutritionDays = recs.filter(r => String(r.nutritionRisks || '').trim() && String(r.nutritionRisks || '').trim() !== '無明顯風險').length;
+  const lowMoodDays = recs.filter(r => { const m = parseFloat(r.moodIndex); return !isNaN(m) && m <= 2; }).length;
+  const coachReplies = recs.map(r => String(r.coachReply || r.coachComment || r.feedbackCoachText || r.coachPublicNote || '').trim()).filter(Boolean);
+  let weakest = '';
+  try {
+    const aspectVals = ASPECT_ORDER.map(k => {
+      const vals = recs.map(r => parseFloat(r[ASPECT_AVG_FIELD[k]])).filter(v => !isNaN(v));
+      return { key: k, label: KPI_ASPECTS[k].label, avg: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null };
+    }).filter(x => x.avg != null).sort((a, b) => a.avg - b.avg);
+    weakest = aspectVals[0] ? aspectVals[0].label : '';
+  } catch (e) { /* */ }
+  const fallback = recs.length ? {
+    observation: `這個月${name}有持續留下訓練紀錄，教練可以從資料裡看到狀態變化。整體趨勢${trend === '資料不足' ? '仍需要更多資料觀察' : '呈現' + trend}${avgVals.length ? `，平均表現約 ${round1(avgVals.reduce((a, b) => a + b, 0) / avgVals.length)} 分` : ''}。這些紀錄不只是分數，也反映了身體、情緒、恢復和訓練投入。`,
+    improvement: `接下來可以把重點放在${[weakest, painDays ? '疼痛與恢復' : '', lowSleepDays ? '睡眠品質' : '', nutritionDays ? '飲食習慣' : '', lowMoodDays ? '情緒穩定' : ''].filter(Boolean).slice(0, 3).join('、') || '訓練品質、專注狀態與身體恢復'}。訓練時不用急著求快，先把動作做確實，身體狀態顧好，表現才會慢慢拉上來。`,
+    encouragement: coachReplies.length ? coachReplies[coachReplies.length - 1] : '這個月你有願意面對自己的狀態，這就是很重要的進步。接下來每天把一件小事做好，慢慢累積，你會看到自己越來越穩。'
+  } : {
+    observation: '這個月孩子有持續完成訓練紀錄，教練可以從紀錄中看見孩子的狀態變化。',
+    improvement: '接下來會持續觀察訓練品質、身體恢復與專注狀態，讓訓練安排更穩定。',
+    encouragement: '每一次紀錄都是在幫助自己更了解自己。接下來不用急，穩穩把每天該做的做好，進步會慢慢累積起來。'
+  };
+  return journalParseCoachFeedbackText(journalMonthlyCoachFeedbackManual(), fallback);
+}
+
+function journalMonthlyCoachFeedbackHtml(name, ordered) {
+  const fb = journalBuildMonthlyCoachFeedback(name, ordered);
+  return `<div class="monthly-coach-feedback">
+    <h3>🧑‍🏫 教練本月回饋</h3>
+    <div class="monthly-coach-feedback-section"><strong>本月觀察：</strong><div class="monthly-coach-feedback-text">${escapeHtml(fb.observation || '')}</div></div>
+    <div class="monthly-coach-feedback-section"><strong>需要加強：</strong><div class="monthly-coach-feedback-text">${escapeHtml(fb.improvement || '')}</div></div>
+    <div class="monthly-coach-feedback-section"><strong>教練鼓勵：</strong><div class="monthly-coach-feedback-text">${escapeHtml(fb.encouragement || '')}</div></div>
+  </div>`;
 }
 
 let _currentJournalReport = null;
@@ -590,6 +652,7 @@ function buildBatchJournalReport(names, grouped, fromMonth, toMonth) {
       `<div class="jr-summary-note">【任務】${escapeHtml(coach.oneThing).replace(/\n/g, '<br>')}</div>` +
       `</div>`;
     html += `</div>`;
+    html += journalMonthlyCoachFeedbackHtml(name, ordered);
     html += `<div class="mr-sign"><div class="mr-sign-box"><div class="mr-sign-label">教練簽核</div><div class="mr-sign-line"></div><div class="mr-sign-date">簽名：${escapeHtml(coachName)}</div></div><div class="mr-sign-box"><div class="mr-sign-label">文件編號</div><div class="mr-sign-line"></div><div class="mr-sign-date">${escapeHtml(fileNoLine)}</div></div></div>`;
     html += `<div class="mr-privacy">批次匯出頁面只顯示該選手資料。</div>`;
     html += `<div class="mr-page-foot">第 ${idx + 1} / ${names.length} 位｜${escapeHtml(fileNoLine)}</div>`;
@@ -903,7 +966,7 @@ function printPersonalJournal() {
   win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8" />
     <title>${journalSafePart(_currentJournalReport.fileBase)}</title>
     <link rel="stylesheet" href="style.css?v=20260624a" />
-    <link rel="stylesheet" href="monthly-report.css?v=20260624d" />
+    <link rel="stylesheet" href="monthly-report.css?v=20260627f" />
     <style>body{margin:0;background:#fff;} .mr-report{box-shadow:none;} .mr-page{margin:0 auto 0;} </style>
   </head><body class="mr-print-window">${node.outerHTML}
   <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
