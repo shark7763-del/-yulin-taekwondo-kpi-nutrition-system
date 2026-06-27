@@ -140,6 +140,40 @@ function yesNo(value) {
   return ['是', 'yes', 'true', '1', '已', '有'].indexOf(s.toLowerCase()) !== -1 ? '是' : s;
 }
 
+function painScoreValue(rec) {
+  const n = parseFloat(rec && rec.painScore);
+  return isNaN(n) ? 0 : n;
+}
+function painAreaText(rec) {
+  const area = String((rec && rec.injuryArea) || '').trim();
+  return area || '未填部位';
+}
+function painAlertText(rec) {
+  const score = painScoreValue(rec);
+  const parts = [String((rec && rec.name) || '').trim() || '未命名', painAreaText(rec), `${score}分`];
+  if (score >= 7) parts.push('重度疼痛');
+  return parts.join('｜');
+}
+function painAlertItemHtml(rec) {
+  const score = painScoreValue(rec);
+  return `<div class="pain-alert-item">
+    <span class="pain-alert-name">${escapeHtml((rec && rec.name) || '未命名')}</span>
+    <span class="pain-alert-sep">｜</span>
+    <span class="pain-alert-area">${escapeHtml(painAreaText(rec))}</span>
+    <span class="pain-alert-sep">｜</span>
+    <span class="pain-alert-score">${escapeHtml(String(score))}分</span>
+    ${score >= 7 ? '<span class="pain-alert-severe">重度疼痛</span>' : ''}
+  </div>`;
+}
+function renderPainAlertBlock(records) {
+  const list = (records || []).filter(r => painScoreValue(r) >= 4);
+  let html = `<div class="list-block pain-alert-block"><h4>疼痛 4 分以上（${list.length}）</h4>`;
+  if (list.length) html += list.map(painAlertItemHtml).join('');
+  else html += '<span class="review-label">無</span>';
+  html += '</div>';
+  return html;
+}
+
 function normalizeAttendanceStatus(status, row) {
   const s = String(status || '').trim();
   if (s.indexOf('補訓完成') !== -1) return '補訓完成';
@@ -891,10 +925,12 @@ function renderOverview(todays) {
   const avgWeight = weights.length ? round1(weights.reduce((a, b) => a + b, 0) / weights.length) : '--';
   const riskCount = todays.filter(r => r.nutritionRisks && r.nutritionRisks !== '無明顯風險').length;
   const lowWaterCount = todays.filter(r => r.waterIntake === '少於 500ml' || r.waterIntake === '500-1000ml').length;
+  const painAlertCount = todays.filter(r => painScoreValue(r) >= 4).length;
 
   const cells = [
     ['今日提交', count], ['全隊平均', avg], ['🔴 紅燈', red], ['🟡 黃燈', yellow],
-    ['🟢 綠燈', green], ['平均體重', avgWeight + ' kg'], ['飲食風險', riskCount], ['水量不足', lowWaterCount]
+    ['🟢 綠燈', green], ['平均體重', avgWeight + ' kg'], ['飲食風險', riskCount], ['水量不足', lowWaterCount],
+    ['疼痛警示', painAlertCount]
   ];
   box.innerHTML = cells.map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
 }
@@ -1105,6 +1141,7 @@ function renderStatusLists(todays) {
     else html += '<span class="review-label">無</span>';
     html += `</div></div>`;
   });
+  html += renderPainAlertBlock(todays);
   box.innerHTML = html;
 }
 
@@ -1375,7 +1412,7 @@ function renderInterviewList(todays, all) {
     if (r.status && r.status.indexOf('紅') !== -1) add(r.name, '今日紅燈');
     if (r.readinessStatusLight && r.readinessStatusLight.indexOf('紅燈') !== -1) add(r.name, '準備度紅燈關懷日');
     if (r.readinessStatusLight && r.readinessStatusLight.indexOf('橘燈') !== -1) add(r.name, '準備度橘燈保護日');
-    if ((parseFloat(r.painScore) || 0) >= 7) add(r.name, '疼痛 7 分以上');
+    if (painScoreValue(r) >= 7) add(r.name, `${painAreaText(r)}｜疼痛 ${painScoreValue(r)} 分｜建議通知家長`);
     if ((parseFloat(r.coachRiskScore) || 5) <= 2) add(r.name, '教練風險判斷偏高');
     if (String(r.aiTags || '').indexOf('高風險硬撐') !== -1) add(r.name, '高風險硬撐');
     if (parseFloat(r.emotionAvg) < 3) add(r.name, '情緒控制偏低');
@@ -1578,6 +1615,12 @@ function computeAlerts(recs) {
     alerts.push({ level: 'warn', text: '🤕 連續 2 天回報受傷中，建議調整訓練量並關心' });
   else if (every(2, r => r.bodyStatus === '疲勞' || r.bodyStatus === '受傷中'))
     alerts.push({ level: 'warn', text: '😪 連續 2 天疲勞，注意休息與恢復' });
+
+  if (recs[0] && painScoreValue(recs[0]) >= 7) {
+    alerts.push({ level: 'warn', text: `🩹 ${painAreaText(recs[0])}｜疼痛 ${painScoreValue(recs[0])} 分｜建議通知家長` });
+  } else if (every(2, r => painScoreValue(r) >= 4)) {
+    alerts.push({ level: 'warn', text: `🩹 連續疼痛警示｜${painAreaText(recs[0])}｜最近疼痛 ${painScoreValue(recs[0])} 分` });
+  }
 
   if (every(3, lowWater)) alerts.push({ level: 'warn', text: '💧 連續 3 天水量不足，提醒補水' });
   if (every(2, r => r.lateNightSnack && r.lateNightSnack !== '無'))

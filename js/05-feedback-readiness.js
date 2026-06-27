@@ -628,11 +628,12 @@ function computeRiskPenalty(rec, recoveryScore, history) {
   const risks = [];
   let p = 0;
   const pain = nval(rec.painScore) || 0;
+  const painArea = String(rec.injuryArea || '').trim() || '未填部位';
   const sleep = nval(rec.sleepHours);
   const rpe = nval(rec.rpe) || 0;
   const coachRisk = nval(rec.coachRiskScore);
-  if (pain >= 4 && pain <= 6) { p += 8; risks.push('疼痛中度'); }
-  if (pain >= 7) { p += 20; risks.push('受傷風險'); }
+  if (pain >= 4 && pain <= 6) { p += 8; risks.push(`疼痛中度（${painArea}｜疼痛 ${pain} 分）`); }
+  if (pain >= 7) { p += 20; risks.push(`受傷風險（${painArea}｜疼痛 ${pain} 分）`); }
   if (sleep !== null && sleep < 6) { p += 8; risks.push('睡眠不足'); }
   if (rec.sleepQuality === '差') { p += 5; risks.push('睡眠品質差'); }
   if (rec.urineStatus === '深黃') { p += 5; risks.push('恢復不足'); }
@@ -640,7 +641,7 @@ function computeRiskPenalty(rec, recoveryScore, history) {
   if (rpe >= 8 && recoveryScore < 60) { p += 8; risks.push('高風險硬撐'); }
   if (coachRisk === 1) { p += 20; risks.push('教練高風險'); }
   if (coachRisk === 2) { p += 10; risks.push('教練提醒風險'); }
-  if (pain >= 7 && (rec.trainingIntensity === '高' || rec.trainingIntensity === '比賽日')) { p += 10; risks.push('疼痛高仍高強度'); }
+  if (pain >= 7 && (rec.trainingIntensity === '高' || rec.trainingIntensity === '比賽日')) { p += 10; risks.push(`疼痛高仍高強度（${painArea}）`); }
   if (recentBadStreak(history, r => String(r.status || '').indexOf('黃') !== -1)) risks.push('連續黃燈注意');
   if (recentBadStreak(history, r => String(r.status || '').indexOf('紅') !== -1)) risks.push('需要關心');
   if (recentBadStreak(history, r => nval(r.sleepHours) !== null && nval(r.sleepHours) < 6)) risks.push('連續睡眠不足');

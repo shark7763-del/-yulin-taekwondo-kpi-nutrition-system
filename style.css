@@ -259,6 +259,41 @@ textarea.text-input { resize: vertical; }
 .pain-ref-table td.p2 { color: #ff8c00; font-weight: 700; white-space: nowrap; }
 .pain-ref-table td.p3 { color: var(--red); font-weight: 700; white-space: nowrap; }
 .pain-ref-table td.p4 { color: #ff3b3b; font-weight: 700; white-space: nowrap; }
+.pain-alert-block { margin-top: 10px; }
+.pain-alert-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 10px;
+  margin: 6px 0;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+.pain-alert-name {
+  font-weight: 800;
+  color: #f8fafc;
+}
+.pain-alert-area {
+  color: #fde68a;
+  font-weight: 700;
+}
+.pain-alert-score {
+  color: #fb7185;
+  font-weight: 800;
+}
+.pain-alert-sep {
+  color: rgba(226, 232, 240, 0.55);
+}
+.pain-alert-severe {
+  color: #fecaca;
+  background: rgba(220, 38, 38, 0.25);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
 
 /* ---- 尿液顏色監控 ---- */
 .urine-note { margin: 6px 0 4px; padding: 9px 12px; border-radius: 8px; font-size: 0.86rem; border: 1px solid var(--border); border-left: 4px solid var(--blue); background: #0f141c; }
