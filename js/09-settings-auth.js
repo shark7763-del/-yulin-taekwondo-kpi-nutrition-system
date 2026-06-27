@@ -1036,14 +1036,14 @@ function renderCoachWarRoom(todays, all) {
     { key: 'green', label: '🟢 綠燈', num: byLight('green').length, tone: 'good', names: byLight('green').map(nameOf) },
     { key: 'yellow', label: '🟡 黃燈', num: byLight('yellow').length, tone: 'warn', names: byLight('yellow').map(nameOf) },
     { key: 'red', label: '🔴 紅燈', num: byLight('red').length, tone: byLight('red').length ? 'danger' : 'good', names: byLight('red').map(nameOf) },
-    { key: 'pain', label: '疼痛 4 分以上', num: painList.length, tone: painList.length ? 'danger' : 'good', names: painList.map(r => `${nameOf(r)}（${nval(r.painScore)} 分）`) },
+    { key: 'pain', label: '疼痛 4 分以上', num: painList.length, tone: painList.length ? 'danger' : 'good', names: painList.map(r => painAlertText(r)), html: painList.map(r => painAlertItemHtml(r)).join('') },
     { key: 'rpe', label: 'RPE 8 以上', num: rpeList.length, tone: rpeList.length ? 'warn' : 'good', names: rpeList.map(r => `${nameOf(r)}（RPE ${nval(r.rpe)}）`) },
     { key: 'sleep', label: '睡眠差', num: sleepList.length, tone: sleepList.length ? 'warn' : 'good', names: sleepList.map(nameOf) },
     { key: 'mood', label: '心情低落', num: moodList.length, tone: moodList.length ? 'warn' : 'good', names: moodList.map(nameOf) },
-    { key: 'notify', label: '需家長通知', num: notifyList.length, tone: notifyList.length ? 'danger' : 'good', names: notifyList.map(nameOf) }
+    { key: 'notify', label: '需家長通知', num: notifyList.length, tone: notifyList.length ? 'danger' : 'good', names: notifyList.map(r => painScoreValue(r) >= 7 ? `${painAlertText(r)}｜建議通知家長` : nameOf(r)) }
   ];
   _warRoomLists = {};
-  cards.forEach(c => { _warRoomLists[c.key] = { label: c.label, names: c.names }; });
+  cards.forEach(c => { _warRoomLists[c.key] = { label: c.label, names: c.names, html: c.html || '' }; });
 
   grid.innerHTML = cards.map(c =>
     `<button type="button" class="warroom-cell ${c.tone}" data-wr="${c.key}">` +
@@ -1067,7 +1067,9 @@ function renderCoachWarRoom(todays, all) {
       if (!lb) return;
       lb.style.display = '';
       lb.innerHTML = `<h4 class="wr-list-title">${data.label}（${data.names.length}）</h4>` +
-        (data.names.length
+        (data.html
+          ? data.html
+          : data.names.length
           ? `<div class="wr-names">${data.names.map(n => `<span class="wr-name">${escapeHtml(n)}</span>`).join('')}</div>`
           : '<p class="review-label">目前沒有名單 ✅</p>');
     });
