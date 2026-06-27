@@ -185,6 +185,7 @@
       weeklyKpiSessions: weeklyKpiSessions
     };
     data.coachSummary = generateCoachMonthlySummary(data);
+    data.monthlyCoachFeedback = await generateMonthlyCoachFeedback(data);
     return data;
   }
 
@@ -657,6 +658,170 @@
     return { highlights: highlights, cares: cares, actions: actions, psychSummary: psychSummary };
   }
 
+  function monthlyCoachFeedbackManualText() {
+    var ta = el('monthlyCoachFeedbackInput');
+    return ta ? String(ta.value || '').trim() : '';
+  }
+
+  function parseMonthlyCoachFeedbackText(text, fallback) {
+    text = String(text || '').trim();
+    fallback = fallback || {};
+    if (!text) return fallback;
+    var obs = '', improve = '', encourage = '';
+    var mObs = text.match(/本月觀察[:：]([\s\S]*?)(?=需要加強[:：]|教練鼓勵[:：]|$)/);
+    var mImp = text.match(/需要加強[:：]([\s\S]*?)(?=本月觀察[:：]|教練鼓勵[:：]|$)/);
+    var mEnc = text.match(/教練鼓勵[:：]([\s\S]*?)(?=本月觀察[:：]|需要加強[:：]|$)/);
+    obs = mObs ? mObs[1].trim() : '';
+    improve = mImp ? mImp[1].trim() : '';
+    encourage = mEnc ? mEnc[1].trim() : '';
+    if (!obs && !improve && !encourage) obs = text;
+    return {
+      observation: obs || fallback.observation || '',
+      improvement: improve || fallback.improvement || '',
+      encouragement: encourage || fallback.encouragement || '',
+      source: 'manual'
+    };
+  }
+
+  function monthlyCoachRepliesFromStorage(month, targetName) {
+    var rows = [];
+    try {
+      rows = JSON.parse(localStorage.getItem('teampro_coach_replies') || '[]');
+      if (!Array.isArray(rows)) rows = [];
+    } catch (e) { rows = []; }
+    return rows.filter(function (r) {
+      var ts = String(r.timestamp || r.createdAt || '');
+      var sameMonth = !ts || ts.slice(0, 7) === month;
+      var name = String(r.studentName || r.name || '').trim();
+      return sameMonth && (!targetName || name === targetName);
+    }).map(function (r) { return String(r.replyText || r.coachReply || '').trim(); }).filter(Boolean);
+  }
+
+  function buildMonthlyCoachFeedbackContext(data) {
+    var targetName = MR.reportType === 'parent' ? String(MR.parentChild || '').trim() : '';
+    var records = (data.monthKpi || []).filter(function (r) { return !targetName || String(r.name || '').trim() === targetName; });
+    var rows = (data.mergedRows || []).filter(function (r) { return !targetName || String(r.studentName || r.name || '').trim() === targetName; });
+    var sorted = records.slice().sort(function (a, b) { return nd(a.date) < nd(b.date) ? -1 : 1; });
+    var avgs = sorted.map(function (r) { return num(r.averageScore); }).filter(function (v) { return v !== null; });
+    var first = avgs.length ? avgs[0] : null, last = avgs.length ? avgs[avgs.length - 1] : null;
+    var trend = first === null || last === null ? '資料不足' : (last > first + 0.2 ? '上升' : (last < first - 0.2 ? '下降' : '持平'));
+    var aspectAvgs = {};
+    var lowAspect = '';
+    try {
+      if (typeof ASPECT_ORDER !== 'undefined' && typeof ASPECT_AVG_FIELD !== 'undefined') {
+        ASPECT_ORDER.forEach(function (k) {
+          var vals = records.map(function (r) { return num(r[ASPECT_AVG_FIELD[k]]); }).filter(function (v) { return v !== null; });
+          aspectAvgs[k] = vals.length ? r1(avg(vals)) : null;
+        });
+        var keys = ASPECT_ORDER.filter(function (k) { return aspectAvgs[k] !== null; }).sort(function (a, b) { return aspectAvgs[a] - aspectAvgs[b]; });
+        if (keys[0]) lowAspect = aspectLabel(keys[0]);
+      }
+    } catch (e) {}
+    var present = rows.filter(function (r) { var st = normStatus(r.attendanceStatus, r); return st === '已訓練' || st === '補訓完成' || st === '遲到' || st === '早退'; }).length;
+    var attendanceRate = rows.length ? pct(present, rows.length) : (data.attendance && data.attendance.teamAttendanceRate);
+    var painCount = records.filter(function (r) { return (num(r.painScore) || 0) >= 4; }).length;
+    var lowSleepCount = records.filter(function (r) { var s = num(r.sleepHours); return s !== null && s < 7; }).length;
+    var nutritionRiskCount = records.filter(function (r) { return String(r.nutritionRisks || '').trim() && String(r.nutritionRisks || '').trim() !== '無明顯風險'; }).length;
+    var lowMoodCount = records.filter(function (r) { var m = num(r.moodIndex); return m !== null && m <= 2; }).length;
+    var reflections = records.map(function (r) { return String(r.reflection || '').trim(); }).filter(Boolean).slice(-3);
+    var goals = records.map(function (r) { return String(r.tomorrowGoal || '').trim(); }).filter(Boolean).slice(-3);
+    var coachReplies = records.map(function (r) {
+      return String(r.coachReply || r.coachComment || r.feedbackCoachText || r.coachPublicNote || '').trim();
+    }).filter(Boolean);
+    rows.forEach(function (r) { if (r.coachPublicNote) coachReplies.push(String(r.coachPublicNote).trim()); });
+    coachReplies = coachReplies.concat(monthlyCoachRepliesFromStorage(data.month, targetName)).filter(Boolean);
+    return {
+      month: data.month,
+      reportType: MR.reportType,
+      targetName: targetName,
+      recordCount: records.length,
+      athleteCount: targetName ? 1 : data.totalAthletes,
+      avgScore: avgs.length ? r1(avg(avgs)) : data.kpi.overallAvg,
+      maxScore: avgs.length ? Math.max.apply(null, avgs) : null,
+      minScore: avgs.length ? Math.min.apply(null, avgs) : null,
+      trend: trend,
+      attendanceRate: attendanceRate,
+      lowAspect: lowAspect,
+      painCount: painCount,
+      lowSleepCount: lowSleepCount,
+      nutritionRiskCount: nutritionRiskCount,
+      lowMoodCount: lowMoodCount,
+      reflections: reflections,
+      goals: goals,
+      coachReplies: coachReplies.slice(-6)
+    };
+  }
+
+  function fallbackMonthlyCoachFeedback(ctx) {
+    if (!ctx || !ctx.recordCount) {
+      return {
+        observation: '這個月孩子有持續完成訓練紀錄，教練可以從紀錄中看見孩子的狀態變化。',
+        improvement: '接下來會持續觀察訓練品質、身體恢復與專注狀態，讓訓練安排更穩定。',
+        encouragement: '每一次紀錄都是在幫助自己更了解自己。接下來不用急，穩穩把每天該做的做好，進步會慢慢累積起來。',
+        source: 'fallback'
+      };
+    }
+    var who = ctx.targetName ? ctx.targetName : '孩子們';
+    var obs = '這個月' + who + '有持續留下訓練紀錄';
+    if (ctx.attendanceRate !== null && ctx.attendanceRate !== undefined) obs += '，出席率約 ' + ctx.attendanceRate + '%';
+    if (ctx.avgScore !== null && ctx.avgScore !== undefined) obs += '，KPI 平均約 ' + ctx.avgScore + ' 分';
+    obs += '。整體趨勢' + (ctx.trend === '資料不足' ? '仍需要更多資料觀察' : '呈現' + ctx.trend) + '，教練可以從紀錄裡看見訓練狀態不是只有分數，而是每天的身體、心情和投入程度都在變化。';
+
+    var focus = [];
+    if (ctx.lowAspect) focus.push(ctx.lowAspect);
+    if (ctx.painCount) focus.push('疼痛與恢復');
+    if (ctx.lowSleepCount) focus.push('睡眠品質');
+    if (ctx.nutritionRiskCount) focus.push('飲食習慣');
+    if (ctx.lowMoodCount) focus.push('情緒穩定');
+    if (!focus.length) focus.push('訓練品質', '專注狀態', '身體恢復');
+    var imp = '接下來可以把重點放在' + focus.slice(0, 3).join('、') + '。訓練時不用急著求快，先把動作做確實，身體狀態顧好，表現才會慢慢拉上來。';
+
+    var latestReply = ctx.coachReplies && ctx.coachReplies.length ? ctx.coachReplies[ctx.coachReplies.length - 1] : '';
+    var enc = latestReply || '這個月你有願意面對自己的狀態，這就是很重要的進步。接下來每天把一件小事做好，慢慢累積，你會看到自己越來越穩。';
+    return { observation: obs, improvement: imp, encouragement: enc, source: 'fallback' };
+  }
+
+  async function generateMonthlyCoachFeedback(data) {
+    var ctx = buildMonthlyCoachFeedbackContext(data);
+    var fallback = fallbackMonthlyCoachFeedback(ctx);
+    var manual = monthlyCoachFeedbackManualText();
+    if (manual) return parseMonthlyCoachFeedbackText(manual, fallback);
+
+    if (typeof postToWebApp === 'function') {
+      try {
+        var res = await postToWebApp({ action: 'aiMonthlyCoachFeedback', context: ctx });
+        var payload = res && (res.data || res.feedback || res);
+        if (res && res.ok && payload) {
+          var aiText = payload.text || payload.replyText || '';
+          if (payload.observation || payload.improvement || payload.encouragement) {
+            return {
+              observation: payload.observation || fallback.observation,
+              improvement: payload.improvement || fallback.improvement,
+              encouragement: payload.encouragement || fallback.encouragement,
+              source: 'ai'
+            };
+          }
+          if (aiText) {
+            var parsed = parseMonthlyCoachFeedbackText(aiText, fallback);
+            parsed.source = 'ai';
+            return parsed;
+          }
+        }
+      } catch (e) { /* fallback */ }
+    }
+    return fallback;
+  }
+
+  function renderMonthlyCoachFeedback(feedback) {
+    feedback = feedback || fallbackMonthlyCoachFeedback({});
+    return '<div class="monthly-coach-feedback">' +
+      '<h3>🧑‍🏫 教練本月回饋</h3>' +
+      '<div class="monthly-coach-feedback-section"><strong>本月觀察：</strong><div class="monthly-coach-feedback-text">' + esc(feedback.observation || '') + '</div></div>' +
+      '<div class="monthly-coach-feedback-section"><strong>需要加強：</strong><div class="monthly-coach-feedback-text">' + esc(feedback.improvement || '') + '</div></div>' +
+      '<div class="monthly-coach-feedback-section"><strong>教練鼓勵：</strong><div class="monthly-coach-feedback-text">' + esc(feedback.encouragement || '') + '</div></div>' +
+      '</div>';
+  }
+
   /* ============================================================
      六、報表渲染（A4 直式，七頁）
      ============================================================ */
@@ -1030,6 +1195,8 @@
     h += '<div class="mr-panel"><div class="mr-panel-h">🏫 需行政協助事項</div><ul>' +
       '<li>訓練場地與器材維護支援</li><li>受傷選手就醫與保險協助</li><li>比賽報名與交通經費協調</li></ul></div>';
 
+    h += renderMonthlyCoachFeedback(data.monthlyCoachFeedback);
+
     h += '<div class="mr-sign"><div class="mr-sign-box"><div class="mr-sign-label">教練簽核</div><div class="mr-sign-line"></div><div class="mr-sign-date">日期：____ 年 ____ 月 ____ 日</div></div>' +
       '<div class="mr-sign-box"><div class="mr-sign-label">訪視人員簽核</div><div class="mr-sign-line"></div><div class="mr-sign-date">日期：____ 年 ____ 月 ____ 日</div></div></div>';
     h += pageFoot(7) + '</section>';
@@ -1157,7 +1324,7 @@
     win.document.write(
       '<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8" />' +
       '<title>' + esc(fileBase()) + '</title>' +
-      '<link rel="stylesheet" href="monthly-report.css?v=20260620a" />' +
+      '<link rel="stylesheet" href="monthly-report.css?v=20260627f" />' +
       '<style>body{margin:0;background:#fff;} .mr-report{box-shadow:none;}</style>' +
       '</head><body class="mr-print-window">' + (box.innerHTML) +
       '<script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>' +
