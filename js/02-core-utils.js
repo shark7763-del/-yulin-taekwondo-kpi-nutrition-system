@@ -457,22 +457,26 @@ function appKeyTrait(name) { return 'trait:' + String(name || '').trim(); }
 
 // 取某前綴的所有資料（雲端優先，否則掃本機）。回傳 Promise<{key:value}>
 async function appGetAll(prefix) {
+  const local = {};
   if (getWebAppUrl()) {
     try {
       const res = await postToWebApp({ action: 'getAllAppData', prefix: prefix || '' });
-      if (res && res.ok && res.data) return res.data;
+      if (res && res.ok && res.data && typeof res.data === 'object') {
+        Object.assign(local, res.data);
+      }
     } catch (e) { /* 落回本機 */ }
   }
-  const out = {};
   const lp = 'yulin_app_';
   for (let i = 0; i < localStorage.length; i++) {
     const lk = localStorage.key(i);
     if (lk && lk.indexOf(lp) === 0) {
       const key = lk.slice(lp.length);
       if (prefix && key.indexOf(prefix) !== 0) continue;
-      try { out[key] = JSON.parse(localStorage.getItem(lk)); } catch (e) { /* */ }
+      try {
+        if (local[key] === undefined) local[key] = JSON.parse(localStorage.getItem(lk));
+      } catch (e) { /* */ }
     }
   }
-  return out;
+  return local;
 }
 
