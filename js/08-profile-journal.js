@@ -291,12 +291,27 @@ function jrTrendChart(title, subtitle, series, yMin, yMax, xLabels, opts) {
 function jrStat(value, label, sub) {
   return `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(String(value))}</div><div class="mr-stat-label">${escapeHtml(label)}</div>${sub ? `<div class="mr-stat-sub">${escapeHtml(sub)}</div>` : ''}</div>`;
 }
+
+function journalReadinessValue(rec) {
+  if (!rec) return null;
+  const n = parseFloat(rec.finalReadinessScore);
+  if (!isNaN(n)) return round1(n);
+  const avg = parseFloat(rec.averageScore);
+  if (!isNaN(avg)) return round1(Math.min(100, avg * 20));
+  const total = parseFloat(rec.totalScore);
+  if (!isNaN(total)) {
+    const base = total > 50 ? 150 : 50;
+    return round1(Math.min(100, (total / base) * 100));
+  }
+  return null;
+}
+
 // 成長趨勢總覽頁（報告第一頁）；資料 < 2 筆時回空字串（不插頁）
 function jrBuildTrendPage(name, ordered, fileNo, rangeLabel) {
   if (!ordered || ordered.length < 2) return '';
   const num = v => { const x = parseFloat(v); return isNaN(x) ? null : x; };
   const xLabels = ordered.map(r => jrShortDate(r.date));
-  const readiness = ordered.map(r => num(r.finalReadinessScore));
+  const readiness = ordered.map(r => journalReadinessValue(r));
   const rpe = ordered.map(r => num(r.rpe));
   const pain = ordered.map(r => num(r.painScore));
   const weight = ordered.map(r => num(r.weightKg));
@@ -363,7 +378,7 @@ function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
   const last = ordered[ordered.length - 1];
   const totalScoreVals = ordered.map(r => parseFloat(r.totalScore)).filter(v => !isNaN(v));
   const avgScore = totalScoreVals.length ? round1(totalScoreVals.reduce((a, b) => a + b, 0) / totalScoreVals.length) : null;
-  const readinessVals = ordered.map(r => parseFloat(r.finalReadinessScore)).filter(v => !isNaN(v));
+  const readinessVals = ordered.map(r => journalReadinessValue(r)).filter(v => v != null);
   const avgReadiness = readinessVals.length ? Math.round(readinessVals.reduce((a, b) => a + b, 0) / readinessVals.length) : null;
   const greenCount = ordered.filter(r => String(r.readinessStatusLight || r.status || '').indexOf('綠') !== -1).length;
   const yellowCount = ordered.filter(r => String(r.readinessStatusLight || r.status || '').indexOf('黃') !== -1).length;
@@ -457,7 +472,8 @@ function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
     html += `<div class="mr-grid mr-grid-4">`;
     html += statCard(current.group || '—', '項目', current.trainingTopic || '訓練主題');
     html += statCard(current.averageScore != null && current.averageScore !== '' ? current.averageScore : '—', '平均 / 總分', current.totalScore != null && current.totalScore !== '' ? `總分 ${current.totalScore}` : '');
-    html += statCard(current.readinessStatusLight || current.status || '—', '狀態', current.finalReadinessScore != null && current.finalReadinessScore !== '' ? `準備度 ${current.finalReadinessScore}` : '');
+    const currentReadiness = journalReadinessValue(current);
+    html += statCard(current.readinessStatusLight || current.status || '—', '狀態', currentReadiness != null ? `準備度 ${currentReadiness}` : '');
     html += statCard(current.bodyStatus || '—', '身體狀態', bodyBits.slice(1, 3).join(' · '));
     html += `</div>`;
 
@@ -643,13 +659,17 @@ function buildBatchJournalReport(names, grouped, fromMonth, toMonth) {
     html += `<div class="mr-page-head"><div class="mr-page-title">${escapeHtml(name)}｜個人訓練日誌</div><div class="mr-page-meta">文件編號 ${escapeHtml(fileNoLine)}｜${ordered.length} 筆</div></div>`;
     html += `<div class="mr-grid mr-grid-4">`;
     html += `<div class="mr-stat"><div class="mr-stat-val">${ordered.length}</div><div class="mr-stat-label">紀錄天數</div><div class="mr-stat-sub">${escapeHtml(rangeLabel)}</div></div>`;
-    html += `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(current.finalReadinessScore != null ? String(current.finalReadinessScore) : '—')}</div><div class="mr-stat-label">最新準備度</div><div class="mr-stat-sub">${escapeHtml(current.readinessStatusLight || current.status || '—')}</div></div>`;
+    const currentReadiness = journalReadinessValue(current);
+    html += `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(currentReadiness != null ? String(currentReadiness) : '—')}</div><div class="mr-stat-label">最新準備度</div><div class="mr-stat-sub">${escapeHtml(current.readinessStatusLight || current.status || '—')}</div></div>`;
     html += `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(current.bodyStatus || '—')}</div><div class="mr-stat-label">最新身體狀態</div><div class="mr-stat-sub">${escapeHtml(current.trainingTopic || '—')}</div></div>`;
     html += `<div class="mr-stat"><div class="mr-stat-val">${escapeHtml(current.averageScore != null && current.averageScore !== '' ? String(current.averageScore) : '—')}</div><div class="mr-stat-label">最新平均</div><div class="mr-stat-sub">${escapeHtml(current.totalScore != null && current.totalScore !== '' ? String(current.totalScore) : '—')}</div></div>`;
     html += `</div>`;
     html += `<div class="mr-two-col">`;
     html += `<div class="mr-panel blue"><div class="mr-panel-h">訓練紀錄</div><ul class="jr-mini-list">` +
-      ordered.slice(0, 8).map(r => `<li>${escapeHtml(dateSlash(r.date))}｜${escapeHtml(r.trainingTopic || '未填')}｜${escapeHtml(r.status || r.readinessStatusLight || '—')}${r.finalReadinessScore != null && r.finalReadinessScore !== '' ? `｜${escapeHtml(String(r.finalReadinessScore))}` : ''}</li>`).join('') +
+      ordered.slice(0, 8).map(r => {
+        const rr = journalReadinessValue(r);
+        return `<li>${escapeHtml(dateSlash(r.date))}｜${escapeHtml(r.trainingTopic || '未填')}｜${escapeHtml(r.status || r.readinessStatusLight || '—')}${rr != null ? `｜${escapeHtml(String(rr))}` : ''}</li>`;
+      }).join('') +
       `</ul></div>`;
     html += `<div class="mr-panel green"><div class="mr-panel-h">AI 教練摘要</div>` +
       `<div class="jr-longtext">【今日狀態】${escapeHtml(coach.affirm).replace(/\n/g, '<br>')}</div>` +
