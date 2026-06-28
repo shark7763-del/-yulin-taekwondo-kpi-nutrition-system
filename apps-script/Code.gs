@@ -457,6 +457,7 @@ var TEAM_ID_DEFAULT = 'yulin-taekwondo';
 
 function nowIso() { return new Date().toISOString(); }
 function normalizeName(v) { return String(v || '').trim(); }
+function normalizeTraitName(v) { return String(v || '').trim().replace(/\s+/g, ''); }
 // 電話正規化：去掉非數字，並去掉開頭的 0。
 // （Google Sheet 會把 0936... 當數字存成 936...，吃掉開頭 0；統一去 0 後，
 //   家長輸入有沒有加 0 都能比對成功，新舊資料一致。）
@@ -1064,12 +1065,19 @@ function saveStudentTrait(data) {
   var p = data.payload || data || {};
   var name = normalizeName(p.studentName || identity.name);
   if (!name) return { ok: false, error: '缺少 studentName' };
-  if (identity.session && identity.session.role === 'student' && normalizeName(identity.name) !== name) {
+  if (identity.session && identity.session.role === 'student' && normalizeTraitName(identity.name) !== normalizeTraitName(name)) {
     return { ok: false, error: '你沒有權限儲存其他選手的特質。', forbidden: true };
   }
 
   var sh = getStudentTraitsSheet();
-  var existing = findObjectRow(sh, STUDENT_TRAIT_HEADERS, 'studentName', name);
+  var existing = null;
+  var rows = readSheetObjects(sh, STUDENT_TRAIT_HEADERS);
+  for (var i = 0; i < rows.length; i++) {
+    if (normalizeTraitName(rows[i].studentName) === normalizeTraitName(name)) {
+      existing = { row: i + 2, object: rows[i] };
+      break;
+    }
+  }
   var current = existing ? normalizeStudentTraitRow(existing.object) : null;
   var traitScore = p.traitScore;
   if (typeof traitScore === 'string' && traitScore) {
@@ -1092,7 +1100,8 @@ function saveStudentTrait(data) {
 
   // 舊 appdata 也同步一份，維持舊前端與快取相容
   try {
-    writeAppData('trait:' + name, {
+    var compactName = normalizeTraitName(name);
+    var traitPayload = {
       studentName: name,
       label: row.traitLabel,
       typeKey: row.traitType,
@@ -1102,7 +1111,9 @@ function saveStudentTrait(data) {
       trainingTips: row.trainingTips,
       updatedAt: row.updatedAt,
       completedAt: row.timestamp
-    });
+    };
+    writeAppData('trait:' + compactName, traitPayload);
+    if (compactName !== name) writeAppData('trait:' + name, traitPayload);
   } catch (e) {}
 
   return { ok: true, trait: normalizeStudentTraitRow(row) };
@@ -1117,10 +1128,17 @@ function getStudentTrait(data) {
   if (!isCoach) name = identity.name;
   if (!name) return { ok: false, error: '缺少 studentName' };
   var sh = getStudentTraitsSheet();
-  var found = findObjectRow(sh, STUDENT_TRAIT_HEADERS, 'studentName', name);
+  var found = null;
+  var rows = readSheetObjects(sh, STUDENT_TRAIT_HEADERS);
+  for (var i = 0; i < rows.length; i++) {
+    if (normalizeTraitName(rows[i].studentName) === normalizeTraitName(name)) {
+      found = { row: i + 2, object: rows[i] };
+      break;
+    }
+  }
   var trait = found ? normalizeStudentTraitRow(found.object) : null;
   if (!trait) {
-    var appTrait = getAppData('trait:' + name);
+    var appTrait = getAppData('trait:' + normalizeTraitName(name)) || getAppData('trait:' + name);
     if (appTrait) trait = normalizeStudentTraitRow(appTrait);
   }
   return { ok: true, trait: trait };
@@ -1131,8 +1149,25 @@ function getAllStudentTraits(data) {
   if (!identity.ok) return identity;
   if (!(identity.session && identity.session.role === 'coach')) return { ok: false, error: '只有教練可讀取全部特質資料。', forbidden: true };
   var rows = readSheetObjects(getStudentTraitsSheet(), STUDENT_TRAIT_HEADERS).map(normalizeStudentTraitRow);
-  rows.sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
-  return { ok: true, traits: rows };
+  var map = {};
+  rows.forEach(function (row) {
+    map[normalizeTraitName(row.studentName)] = row;
+  });
+  try {
+    var appData = getAllAppData('trait:');
+    Object.keys(appData || {}).forEach(function (key) {
+      var trait = normalizeStudentTraitRow(appData[key] || {});
+      var k = normalizeTraitName(trait.studentName || String(key || '').replace(/^trait:/, ''));
+      if (!k) return;
+      if (!map[k]) map[k] = trait;
+      else {
+        map[k] = Object.assign({}, map[k], trait);
+      }
+    });
+  } catch (e) {}
+  var out = Object.keys(map).map(function (k) { return map[k]; });
+  out.sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
+  return { ok: true, traits: out };
 }
 
 function appendAiScoreFromPayload(payload) {
@@ -2464,7 +2499,7 @@ function appDataKeyAllowedForSession(key, session) {
   key = String(key || '');
   if (session.role === 'coach') return true;
   var name = normalizeName(session.studentName);
-  return key === 'profile:' + name || key === 'motto:' + name || key.indexOf('task:' + name + ':') === 0 || key === 'trait:' + name;
+  return key === 'profile:' + name || key === 'motto:' + name || key.indexOf('task:' + name + ':') === 0 || key === 'trait:' + name || key === 'trait:' + normalizeTraitName(name);
 }
 
 function getAppDataAuthorized(data) {

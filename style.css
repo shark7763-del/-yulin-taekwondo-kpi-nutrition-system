@@ -1850,6 +1850,40 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 .trait-hero-title { color: #cbd5e1; font-size: .9rem; font-weight: 900; }
 .trait-hero-label { color: #f8fafc; font-size: 1.35rem; font-weight: 950; line-height: 1.2; }
 .trait-hero-note, .trait-disclaimer, .trait-coach-note, .trait-quiz-hint { color: var(--text-soft); line-height: 1.7; font-size: .92rem; }
+.student-trait-meta { margin-top: 6px; color: #94a3b8; font-size: .82rem; line-height: 1.5; }
+.trait-sync-state {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  line-height: 1.6;
+  font-size: .92rem;
+  font-weight: 800;
+}
+.trait-sync-state.synced {
+  background: rgba(15, 23, 42, .7);
+  border: 1px solid rgba(56, 189, 248, .22);
+  color: #cbd5e1;
+}
+.trait-sync-state.pending {
+  background: rgba(120, 53, 15, .22);
+  border: 1px solid rgba(251, 191, 36, .32);
+  color: #fde68a;
+}
+.trait-sync-retry {
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, .4);
+  background: rgba(120, 53, 15, .4);
+  color: #fde68a;
+  font-weight: 900;
+  cursor: pointer;
+}
+.trait-sync-retry:hover { background: rgba(146, 64, 14, .52); }
 .trait-disclaimer {
   margin-top: 12px;
   padding: 10px 12px;

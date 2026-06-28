@@ -12,7 +12,34 @@
   function notify(msg) { if (typeof toast === 'function') toast(msg); }
   function role() { try { return (typeof getRole === 'function') ? getRole() : null; } catch (e) { return null; } }
   function nameKey(name) { return String(name || '').trim(); }
-  function traitKey(name) { return (typeof appKeyTrait === 'function') ? appKeyTrait(name) : 'trait:' + nameKey(name); }
+  function traitMatchKey(name) { return String(name || '').trim().replace(/\s+/g, ''); }
+  function traitKey(name) { return 'trait:' + traitMatchKey(name); }
+  function traitAliasKeys(name) {
+    const raw = nameKey(name);
+    const compact = traitMatchKey(name);
+    const keys = [];
+    if (compact) keys.push('trait:' + compact);
+    if (raw && raw !== compact) keys.push('trait:' + raw);
+    return keys;
+  }
+  function traitLabelToType(label) {
+    const v = nameKey(label);
+    if (!v) return '';
+    if (v.indexOf('火箭') !== -1) return 'rocket';
+    if (v.indexOf('火山') !== -1) return 'volcano';
+    if (v.indexOf('盾牌') !== -1) return 'shield';
+    if (v.indexOf('獵豹') !== -1) return 'cheetah';
+    if (v.indexOf('成長') !== -1) return 'growth';
+    return '';
+  }
+  function normalizeTraitType(typeKey, label, rawScore) {
+    const fromType = nameKey(typeKey);
+    if (TRAITS[fromType]) return fromType;
+    const fromLabel = traitLabelToType(label);
+    if (TRAITS[fromLabel]) return fromLabel;
+    if (rawScore && typeof rawScore === 'object') return pickType(rawScore);
+    return 'growth';
+  }
   function appGetAsync(key) {
     return new Promise(resolve => {
       if (typeof appGet !== 'function') { resolve(null); return; }
@@ -263,7 +290,19 @@
   }
 
   function currentRecord(name) {
-    return state.map[nameKey(name)] || null;
+    return state.map[traitMatchKey(name)] || state.map[nameKey(name)] || null;
+  }
+
+  function buildStudentTraitMap(traits) {
+    const map = {};
+    (traits || []).forEach(item => {
+      if (!item) return;
+      const rec = normalizeTraitRecord(item, item.studentName || '');
+      const key = traitMatchKey(rec.studentName || item.studentName || '');
+      if (!key) return;
+      map[key] = rec;
+    });
+    return map;
   }
 
   async function loadCache(force) {
@@ -299,7 +338,10 @@
       const raw = JSON.parse(localStorage.getItem('yulin_trait_cache') || '{}');
       if (raw && typeof raw === 'object') {
         state.map = {};
-        Object.keys(raw).forEach(k => { state.map[nameKey(k)] = normalizeTraitRecord(raw[k], nameKey(k)); });
+        Object.keys(raw).forEach(k => {
+          const key = traitMatchKey(k);
+          if (key) state.map[key] = normalizeTraitRecord(raw[k], nameKey(k));
+        });
         state.loaded = true;
         state.cacheRole = role() && role().role ? role().role : '';
       }
@@ -309,7 +351,7 @@
   function normalizeTraitRecord(raw, name) {
     const record = mergeRecord(raw || {}, nameKey(name));
     const rawScore = record.traitScore || record.rawScore || {};
-    const typeKey = nameKey(record.traitType || record.typeKey || pickType(rawScore));
+    const typeKey = normalizeTraitType(record.traitType || record.typeKey, record.traitLabel || record.label, rawScore);
     const type = TRAITS[typeKey] || TRAITS.growth;
     const label = nameKey(record.traitLabel || record.label || type.label);
     record.studentName = nameKey(record.studentName || name);
@@ -338,7 +380,7 @@
 
   function cacheTraitRecord(raw, name) {
     const record = normalizeTraitRecord(raw, name);
-    const key = nameKey(record.studentName || name);
+    const key = traitMatchKey(record.studentName || name);
     if (!key) return null;
     state.map[key] = record;
     try { localStorage.setItem('yulin_trait_cache', JSON.stringify(state.map)); } catch (e) {}
@@ -382,6 +424,57 @@
     }
   }
 
+  function pendingQueueKey() { return 'yulin_trait_pending_sync'; }
+
+  function readPendingQueue() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(pendingQueueKey()) || '[]');
+      return Array.isArray(raw) ? raw : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function writePendingQueue(queue) {
+    try { localStorage.setItem(pendingQueueKey(), JSON.stringify(queue || [])); } catch (e) {}
+  }
+
+  function queueStudentTraitSync(record) {
+    const rec = normalizeTraitRecord(record, record && record.studentName ? record.studentName : '');
+    const queue = readPendingQueue().filter(item => traitMatchKey(item && item.studentName) !== traitMatchKey(rec.studentName));
+    queue.push(rec);
+    writePendingQueue(queue);
+    try { localStorage.setItem('yulin_trait_last_sync_state', JSON.stringify({ state: 'pending', at: new Date().toISOString(), studentName: rec.studentName })); } catch (e) {}
+    return rec;
+  }
+
+  async function syncQueuedStudentTraits(force) {
+    const queue = readPendingQueue();
+    if (!queue.length) return true;
+    if (!force && typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    const remaining = [];
+    let allOk = true;
+    for (const record of queue) {
+      const res = await traitApi('saveStudentTrait', record);
+      if (res && res.trait) {
+        cacheTraitRecord(res.trait, record.studentName);
+        try { localStorage.setItem('yulin_trait_last_sync_state', JSON.stringify({ state: 'synced', at: new Date().toISOString(), studentName: record.studentName })); } catch (e) {}
+      } else {
+        remaining.push(record);
+        allOk = false;
+      }
+    }
+    writePendingQueue(remaining);
+    try {
+      localStorage.setItem('yulin_trait_last_sync_state', JSON.stringify({
+        state: remaining.length ? 'failed' : 'synced',
+        at: new Date().toISOString(),
+        studentName: remaining.length ? (remaining[0] && remaining[0].studentName) : (queue[0] && queue[0].studentName)
+      }));
+    } catch (e) {}
+    return allOk && !remaining.length;
+  }
+
   async function loadStudentTrait(name) {
     const student = nameKey(name || studentName());
     if (!student) return null;
@@ -389,7 +482,13 @@
     if (cached && cached.studentName) return cached;
     const res = await traitApi('getStudentTrait', { studentName: student });
     let rec = res && res.trait ? res.trait : null;
-    const overlay = typeof appGetAsync === 'function' ? await appGetAsync(traitKey(student)) : null;
+    let overlay = null;
+    if (typeof appGetAsync === 'function') {
+      for (const key of traitAliasKeys(student)) {
+        overlay = await appGetAsync(key);
+        if (overlay) break;
+      }
+    }
     if (rec && overlay) rec = overlayTraitRecord(rec, overlay);
     if (rec) return cacheTraitRecord(rec, student);
     if (overlay) return cacheTraitRecord(overlay, student);
@@ -407,18 +506,19 @@
     if (res && Array.isArray(res.traits)) {
       res.traits.forEach(item => {
         const name = item.studentName || '';
-        const overlay = overlays[traitKey(name)] || overlays['trait:' + nameKey(name)] || overlays['trait:' + String(name || '').trim()];
+        const overlay = overlays[traitKey(name)] || overlays['trait:' + traitMatchKey(name)] || overlays['trait:' + nameKey(name)] || overlays['trait:' + String(name || '').trim()];
         const rec = cacheTraitRecord(overlay ? overlayTraitRecord(item, overlay) : item, name);
         if (rec) list.push(rec);
       });
     }
     Object.keys(overlays || {}).forEach(key => {
       const name = nameKey(String(key).replace(/^trait:/, ''));
-      if (!name || state.map[name]) return;
+      if (!name || state.map[traitMatchKey(name)]) return;
       const rec = cacheTraitRecord(overlays[key], name);
       if (rec) list.push(rec);
     });
-    return list;
+    state.map = buildStudentTraitMap(list.concat(Object.keys(overlays || {}).map(key => overlays[key]).filter(Boolean)));
+    return Object.values(state.map);
   }
 
   function scoreResult(answers) {
@@ -493,6 +593,7 @@
         <div class="trait-hero-label">${esc(display)}</div>
         <div class="trait-hero-note">這不是固定標籤，只是幫助教練更了解你的學習與溝通方式。</div>
       </div>
+      ${syncStatusHtml(name)}
       <div class="trait-summary-strip">
         <div class="trait-summary-chip ${catalog.tone}">${esc(display)}</div>
         <div class="trait-summary-chip none">${esc((normalized && normalized.traitSummary) || (catalog.keywords.join('／')))}</div>
@@ -511,6 +612,23 @@
       </div>
       <div class="trait-disclaimer">本測驗僅作為教練教學與溝通參考，不作為心理診斷、醫療判斷或升學篩選依據。學生特質會隨著年齡、訓練經驗與環境改變，結果僅代表目前傾向。</div>
     `;
+  }
+
+  function syncStatusHtml(name) {
+    const key = traitMatchKey(name);
+    const queue = readPendingQueue();
+    const pending = queue.find(item => traitMatchKey(item && item.studentName) === key);
+    const last = (() => {
+      try { return JSON.parse(localStorage.getItem('yulin_trait_last_sync_state') || 'null'); } catch (e) { return null; }
+    })();
+    if (pending) {
+      const failed = last && last.state === 'failed' && traitMatchKey(last.studentName) === key;
+      return `<div class="trait-sync-state pending">${failed ? '同步失敗，點此重試' : '特質卡暫存在本機，等待同步。'}<button type="button" class="trait-sync-retry" data-trait-sync-retry="${esc(name)}">重試</button></div>`;
+    }
+    if (last && last.state === 'synced' && traitMatchKey(last.studentName) === key) {
+      return `<div class="trait-sync-state synced">已同步雲端</div>`;
+    }
+    return `<div class="trait-sync-state synced">已同步雲端</div>`;
   }
 
   async function renderStudentTraitCard(studentNameValue, container, opts) {
@@ -532,6 +650,7 @@
       <div class="student-trait-card">
         <div class="student-trait-title">選手特質卡</div>
         <div class="student-trait-label">${esc(name)}｜${esc(effectiveLabel(rec))}</div>
+        <div class="student-trait-meta">最後同步：${esc(rec.updatedAt || rec.timestamp || rec.completedAt || '—')}</div>
         <div class="student-trait-section">${escapeHtml((rec.traitSummary || rec.description || '')).replace(/\n/g, '<br>')}</div>
         <div class="student-trait-section"><b>教練溝通建議：</b>${escapeHtml(rec.communicationTips || rec.communication || '')}</div>
         <div class="student-trait-section"><b>訓練安排建議：</b>${escapeHtml(rec.trainingTips || rec.correction || '')}</div>
@@ -675,24 +794,15 @@
       updatedAt: payload.updatedAt || new Date().toISOString(),
       updatedBy: payload.updatedBy || 'student'
     }), name);
-    let saved = false;
-    const res = await traitApi('saveStudentTrait', record);
-    if (res && res.trait) {
-      cacheTraitRecord(res.trait, name);
-      saved = true;
+    cacheTraitRecord(record, name);
+    queueStudentTraitSync(record);
+    const saved = await syncQueuedStudentTraits(true);
+    if (saved) {
+      notify('特質卡已同步，教練可以在後台查看。');
+      return true;
     }
-    if (!saved && typeof appSet === 'function') {
-      try {
-        await appSet(traitKey(name), record);
-        cacheTraitRecord(record, name);
-        saved = true;
-      } catch (e) {}
-    }
-    if (!saved) {
-      cacheTraitRecord(record, name);
-      return false;
-    }
-    return true;
+    notify('特質卡暫存在本機，稍後會再同步。');
+    return false;
   }
 
   async function saveStudentResult() {
@@ -711,8 +821,9 @@
     const names = roster.length ? roster.slice() : Object.keys(state.map);
     const counts = { rocket: 0, volcano: 0, shield: 0, cheetah: 0, growth: 0, none: 0 };
     names.forEach(n => {
-      const rec = state.map[n];
-      if (rec && rec.typeKey) counts[rec.coachLabelOverrideKey || rec.typeKey] = (counts[rec.coachLabelOverrideKey || rec.typeKey] || 0) + 1;
+      const rec = currentRecord(n);
+      const key = rec && (rec.coachLabelOverrideKey || rec.typeKey || traitLabelToType(rec.traitLabel) || '');
+      if (rec && key) counts[key] = (counts[key] || 0) + 1;
       else counts.none += 1;
     });
     const selected = state.selectedCoach || names[0] || '';
@@ -729,7 +840,7 @@
           <div class="trait-coach-note">點擊特質標籤可以展開完整特質卡。學生第一次登入會先進入測驗。</div>
           <div class="trait-coach-list-grid">
             ${names.map(n => {
-              const rec = state.map[n];
+              const rec = currentRecord(n);
               const active = selected === n ? ' active' : '';
               return `<button type="button" class="trait-coach-student${active}" data-trait-select="${esc(n)}">
                 <span class="trait-coach-student-name">${esc(n)}</span>
@@ -759,6 +870,7 @@
         <div class="student-trait-card">
           <div class="student-trait-title">選手特質卡</div>
           <div class="student-trait-label">${esc(normalized.studentName)}｜${esc(display)}</div>
+          <div class="student-trait-meta">最後同步：${esc(normalized.updatedAt || normalized.timestamp || normalized.completedAt || '—')}</div>
           <div class="student-trait-section">${esc(normalized.traitSummary || `${display}：${type.keywords.join('／')}`)}</div>
           <div class="student-trait-section"><b>教練溝通建議：</b>${esc(normalized.communicationTips || type.communication)}</div>
           <div class="student-trait-section"><b>訓練安排建議：</b>${esc(normalized.trainingTips || type.correction)}</div>
@@ -937,8 +1049,7 @@
         renderStudentQuiz();
       } else {
         try {
-          const ok = await saveStudentResult();
-          notify(ok ? '✅ 已完成成長風格測驗' : '儲存失敗，請稍後再試。');
+          await saveStudentResult();
           renderStudentResult();
           if (typeof switchTab === 'function') switchTab('trait');
         } catch (err) {
@@ -953,11 +1064,20 @@
       await saveCoachReview(save.getAttribute('data-trait-save'));
       return;
     }
+    const retry = e.target.closest('[data-trait-sync-retry]');
+    if (retry) {
+      e.preventDefault();
+      await syncQueuedStudentTraits(true).catch(() => {});
+      await loadCache(true);
+      render();
+      return;
+    }
   });
 
   async function boot() {
     loadLocalCache();
     await loadCache();
+    await syncQueuedStudentTraits(false).catch(() => {});
     maybeShowStudentIntro();
     const r = role();
     if (r && r.role === 'coach') renderCoachList();
@@ -997,6 +1117,24 @@
   window.loadAllStudentTraits = loadAllStudentTraits;
   window.renderStudentTraitCard = renderStudentTraitCard;
   window.attachTraitToCoachContext = attachTraitToCoachContext;
+  window.buildStudentTraitMap = buildStudentTraitMap;
+  window.renderStudentTraitRadar = function (roster, traitMap) {
+    if (Array.isArray(roster) || Array.isArray(traitMap)) {
+      const source = Array.isArray(traitMap) ? traitMap : roster;
+      if (Array.isArray(source)) state.map = buildStudentTraitMap(source);
+    }
+    renderCoachList();
+  };
+  window.renderStudentTraitList = window.renderStudentTraitRadar;
+  window.debugStudentTraits = async function () {
+    const traits = await loadAllStudentTraits();
+    if (typeof console !== 'undefined' && console.table) console.table(traits);
+    return traits;
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => { syncQueuedStudentTraits(true).catch(() => {}); });
+  }
 
   boot().catch(() => {});
 })();
