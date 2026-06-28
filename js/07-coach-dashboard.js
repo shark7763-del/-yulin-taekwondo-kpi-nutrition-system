@@ -48,6 +48,26 @@ function traitBadge(name) {
 function traitName(name) {
   return (window.TraitRadar && typeof window.TraitRadar.nameHtml === 'function') ? window.TraitRadar.nameHtml(name) : escapeHtml(name);
 }
+async function attachTraitToCoachContextAsync(ctx) {
+  const base = ctx || {};
+  if (window.TraitRadar && typeof window.TraitRadar.attachTraitToCoachContext === 'function') {
+    return window.TraitRadar.attachTraitToCoachContext(base);
+  }
+  if (window.loadStudentTrait && base.name) {
+    try {
+      const rec = await window.loadStudentTrait(base.name);
+      if (rec) {
+        base.traitType = rec.traitType || rec.typeKey || '';
+        base.traitLabel = rec.traitLabel || rec.label || '';
+        base.traitScore = rec.traitScore || rec.rawScore || {};
+        base.traitSummary = rec.traitSummary || rec.description || '';
+        base.communicationTips = rec.communicationTips || rec.communication || '';
+        base.trainingTips = rec.trainingTips || rec.correction || '';
+      }
+    } catch (e) {}
+  }
+  return base;
+}
 function mergeCoachScores(records, scores) {
   const map = {};
   (scores || []).forEach(s => { map[normDate(s.date) + '|' + String(s.studentName || '').trim()] = s; });
@@ -2379,6 +2399,7 @@ function buildCoachPerformanceContext(name, rec, history, rangeDays) {
   const delta = (first != null && last != null) ? round1(last - first) : null;
   const area = coachReplyAreaStats(records);
   const latest = records[0] || rec || {};
+  const traitRec = (window.TraitRadar && typeof window.TraitRadar.recordFor === 'function') ? (window.TraitRadar.recordFor(name) || window.TraitRadar.recordFor(latest.name || '')) : null;
   const lowScoreCount = totals.filter(v => v < 60).length;
   const recentFlags = [];
   if (delta != null && delta >= 5) recentFlags.push('近期進步');
@@ -2406,7 +2427,12 @@ function buildCoachPerformanceContext(name, rec, history, rangeDays) {
     recovery: latest.recoveryScore || '',
     nutrition: latest.nutritionRisks || latest.nutritionAdviceCoach || latest.nutritionAdviceParent || '',
     recentFlags: recentFlags,
-    coachStyleText: getCoachAiStyleText()
+    coachStyleText: getCoachAiStyleText(),
+    traitType: traitRec ? (traitRec.traitType || traitRec.typeKey || '') : '',
+    traitLabel: traitRec ? (traitRec.traitLabel || traitRec.label || '') : '',
+    traitSummary: traitRec ? (traitRec.traitSummary || traitRec.description || '') : '',
+    communicationTips: traitRec ? (traitRec.communicationTips || traitRec.communication || '') : '',
+    trainingTips: traitRec ? (traitRec.trainingTips || traitRec.correction || '') : ''
   };
 }
 function coachPerformanceSummaryHtml(ctx) {
@@ -2418,6 +2444,7 @@ function coachPerformanceSummaryHtml(ctx) {
   if (ctx.weakestArea) lines.push(`優先補強：${ctx.weakestArea}`);
   if (ctx.reflection) lines.push(`上次心得提到：${ctx.reflection}`);
   if (ctx.tomorrowGoal) lines.push(`明日目標是：${ctx.tomorrowGoal}`);
+  if (ctx.traitLabel) lines.push(`特質卡：${ctx.traitLabel}${ctx.traitSummary ? `｜${ctx.traitSummary}` : ''}`);
   if (ctx.recentFlags.length) lines.push(`提醒標籤：${ctx.recentFlags.join('、')}`);
   if (!lines.length) lines.push('目前資料不足，建議先以最近一筆紀錄和現場觀察回覆。');
   return `<div class="coach-reply-summary"><b>AI摘要</b><ul>${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul></div>`;
@@ -2453,7 +2480,7 @@ function generateCoachReplyFallback(ctx, mode) {
   return text;
 }
 async function generateCoachReplyFromPerformance(playerContext, mode) {
-  const ctx = playerContext || {};
+  const ctx = await attachTraitToCoachContextAsync(playerContext || {});
   if (getWebAppUrl()) {
     try {
       const res = await postToWebApp({ action: 'aiCoachPerformanceReply', context: ctx, mode: mode || 'default' });
@@ -2464,6 +2491,10 @@ async function generateCoachReplyFromPerformance(playerContext, mode) {
       const record = Object.assign({}, ctx.latest || {}, {
         name: ctx.name,
         _statusLabel: ctx.recentTrend,
+        traitLabel: ctx.traitLabel || '',
+        traitSummary: ctx.traitSummary || '',
+        communicationTips: ctx.communicationTips || '',
+        trainingTips: ctx.trainingTips || '',
         aiTags: [
           `近${ctx.rangeDays}天平均 ${ctx.averageScore || '-'}`,
           ctx.strongestArea ? `穩定：${ctx.strongestArea}` : '',
@@ -2505,8 +2536,10 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
   box.innerHTML = `
     <h3 class="card-title">🧑‍🏫 教練回覆助手</h3>
     <div class="review-row"><span class="review-label">選手</span><span class="review-value">${traitName(ctx.name || '-')}</span></div>
+    <div class="review-row"><span class="review-label">特質</span><span class="review-value">${escapeHtml(ctx.traitLabel || '尚未完成特質卡測驗')}</span></div>
     <div class="review-row"><span class="review-label">區間</span><span class="review-value">近${ctx.rangeDays}天</span></div>
     ${coachPerformanceSummaryHtml(ctx)}
+    <div class="coach-trait-card-mount"></div>
     <div class="coach-reply-ai-actions">
       <button type="button" class="coach-reply-ai-btn primary" data-coach-reply-ai="default">⚡ AI代擬回覆</button>
       <button type="button" class="coach-reply-ai-btn" data-coach-reply-ai="rewrite">換一句</button>
@@ -2518,6 +2551,10 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
       <button type="button" class="btn btn-primary" id="btnLineCoachReply">分享 LINE</button>
       <button type="button" class="btn btn-primary" id="btnSaveCoachReply">✅ 儲存教練回覆</button>
     </div>`;
+  const traitMount = box.querySelector('.coach-trait-card-mount');
+  if (traitMount && window.renderStudentTraitCard) {
+    window.renderStudentTraitCard(ctx.name || '', traitMount);
+  }
   box.querySelectorAll('[data-coach-reply-ai]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const mode = btn.getAttribute('data-coach-reply-ai') || 'default';
@@ -2578,6 +2615,9 @@ async function loadLastPerfPage() {
   const name = $id('lastPerfName').value;
   if (!name) { toast('請選擇選手'); return; }
   toast('讀取中...');
+  if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') {
+    await window.TraitRadar.loadCache();
+  }
   // 同時抓最近一筆與歷史（畫趨勢圖）
   const [rec, history] = await Promise.all([
     fetchLastRecord(name),
@@ -2612,6 +2652,7 @@ async function loadLastPerfPage() {
   const inlineTrend = $id('lastPerfTrendInline');
   if (inlineTrend) renderTrendSection(inlineTrend, history || []);
   await renderStudentCoachReplyCard(name, rec, box);
+  if (window.renderStudentTraitCard) window.renderStudentTraitCard(name, box, { replace: false });
   renderCoachPerformanceReplyAssistant(name, rec, history || [rec], 7);
 }
 

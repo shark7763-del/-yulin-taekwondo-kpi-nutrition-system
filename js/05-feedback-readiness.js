@@ -448,12 +448,31 @@ function fbBlock(title, icon, text, tone) {
     `<div class="cfb-block-text">${escapeHtml(text).replace(/\n/g, '<br>')}</div></div>`;
 }
 
+async function augmentTraitContextForAi(record) {
+  const ctx = Object.assign({}, record || {});
+  const name = String(ctx.name || ctx.studentName || '').trim();
+  if (!name) return ctx;
+  try {
+    const trait = (window.TraitRadar && typeof window.TraitRadar.recordFor === 'function' && window.TraitRadar.recordFor(name)) ||
+      (window.loadStudentTrait ? await window.loadStudentTrait(name) : null);
+    if (trait) {
+      ctx.traitType = trait.traitType || trait.typeKey || '';
+      ctx.traitLabel = trait.traitLabel || trait.label || '';
+      ctx.traitScore = trait.traitScore || trait.rawScore || {};
+      ctx.traitSummary = trait.traitSummary || trait.description || '';
+      ctx.communicationTips = trait.communicationTips || trait.communication || '';
+      ctx.trainingTips = trait.trainingTips || trait.correction || '';
+    }
+  } catch (e) {}
+  return ctx;
+}
+
 /* ===================== AI 教練回饋（OpenAI / GPT）===================== */
 // 送出後背景呼叫；成功就把三版回饋換成 AI 生成，失敗靜默沿用內建模板
 async function maybeEnhanceWithAiFeedback(rec, feedback) {
   if (!getWebAppUrl() || !rec) return;
   try {
-    const record = Object.assign({}, rec, { _statusLabel: (feedback && feedback.scenarioLabel) || '' });
+    const record = await augmentTraitContextForAi(Object.assign({}, rec, { _statusLabel: (feedback && feedback.scenarioLabel) || '' }));
     const res = await postToWebApp({ action: 'aiCoachFeedback', record: record });
     if (!res || !res.ok || !res.versions || !_currentFeedback) return;
     _currentFeedback.versions = res.versions;
@@ -518,7 +537,7 @@ function setupAiHandlers() {
       moodIndex: '2', reflection: '今天有點累，旋踢一直抓不到距離', tomorrowGoal: '把旋踢做穩'
     };
     try {
-      const res = await postToWebApp({ action: 'aiCoachFeedback', record: sample });
+      const res = await postToWebApp({ action: 'aiCoachFeedback', record: await augmentTraitContextForAi(sample) });
       if (res && res.ok && res.versions) {
         const v = res.versions.student || {};
         if (box) {

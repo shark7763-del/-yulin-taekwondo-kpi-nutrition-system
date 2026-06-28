@@ -8,6 +8,9 @@ async function loadProfile() {
   if (!box) return;
   if (!name) { toast('請選擇選手'); return; }
   toast('讀取個人檔案中...');
+  if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') {
+    await window.TraitRadar.loadCache();
+  }
   const history = await fetchRecentRecords(name, 180);
   const recs = dedupeLatestByDate(history || []); // 新→舊
   renderProfile(name, recs);
@@ -26,6 +29,7 @@ function renderProfile(name, recs) {
   if (!recs.length) {
     html += `<div class="hint-box">尚無紀錄，開始每天填寫就會累積個人檔案。</div>`;
     box.innerHTML = html;
+    if (window.renderStudentTraitCard) window.renderStudentTraitCard(name, box, { replace: false });
     setupProfileGoals(name, null, coachView, parentView);
     return;
   }
@@ -73,6 +77,7 @@ function renderProfile(name, recs) {
   html += `<div id="parentWeeklyBox"></div>`;
 
   box.innerHTML = html;
+  if (window.renderStudentTraitCard) window.renderStudentTraitCard(name, box, { replace: false });
 
   // 趨勢圖
   const t7 = $id('profileTrend7'); if (t7) renderTrendSection(t7, recs, 7, { picker: false });

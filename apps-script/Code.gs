@@ -40,6 +40,7 @@ var AI_SCORES_SHEET = 'ai_scores';
 var TRAINING_TASKS_SHEET = 'training_tasks';
 var RISK_FLAGS_SHEET = 'risk_flags';
 var COACH_REPLIES_SHEET = 'coach_replies';
+var STUDENT_TRAITS_SHEET = 'student_traits';
 var KPI_SESSION_HEADERS = [
   'sessionId', 'sessionName', 'sessionType', 'weekId', 'openMode', 'targetGroup',
   'targetStudentIds', 'openAt', 'closeAt', 'status', 'includeInWeeklyReport',
@@ -95,6 +96,10 @@ var RISK_FLAG_HEADERS = [
 var COACH_REPLY_HEADERS = [
   'timestamp', 'studentName', 'recordDate', 'rangeDays', 'sourceRecordId',
   'replyText', 'summaryText', 'generatedByAI', 'confirmedByCoach', 'createdBy'
+];
+var STUDENT_TRAIT_HEADERS = [
+  'timestamp', 'studentName', 'traitType', 'traitLabel', 'traitScore',
+  'traitSummary', 'communicationTips', 'trainingTips', 'updatedAt'
 ];
 
 // Sheet 欄位順序（必須與前端 record 物件對應）
@@ -233,6 +238,12 @@ function handleAction(action, data) {
       return jsonOut(saveCoachReply(data));
     case 'getCoachReplies':
       return jsonOut(getCoachReplies(data));
+    case 'saveStudentTrait':
+      return jsonOut(saveStudentTrait(data));
+    case 'getStudentTrait':
+      return jsonOut(getStudentTrait(data));
+    case 'getAllStudentTraits':
+      return jsonOut(authCoachOnly(data, function () { return getAllStudentTraits(data); }));
     case 'updateRecord':
       return jsonOut(updateRecordAuthorized(data));
     // ---- 新制角色驗證與帳號管理 ----
@@ -415,8 +426,9 @@ function setupSheet() {
   getTrainingTasksSheet();
   getRiskFlagsSheet();
   getCoachRepliesSheet();
+  getStudentTraitsSheet();
   syncStudentAccountsFromRoster();
-  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings、kpi_sessions、weekly_kpi_reports、coach_scores、ai_scores、training_tasks、risk_flags、coach_replies 工作表。';
+  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings、kpi_sessions、weekly_kpi_reports、coach_scores、ai_scores、training_tasks、risk_flags、coach_replies、student_traits 工作表。';
 }
 
 // 今天日期字串 yyyy-MM-dd
@@ -495,6 +507,7 @@ function getAiScoresSheet() { return getSheetWithHeaders(AI_SCORES_SHEET, AI_SCO
 function getTrainingTasksSheet() { return getSheetWithHeaders(TRAINING_TASKS_SHEET, TRAINING_TASK_HEADERS); }
 function getRiskFlagsSheet() { return getSheetWithHeaders(RISK_FLAGS_SHEET, RISK_FLAG_HEADERS); }
 function getCoachRepliesSheet() { return getSheetWithHeaders(COACH_REPLIES_SHEET, COACH_REPLY_HEADERS); }
+function getStudentTraitsSheet() { return getSheetWithHeaders(STUDENT_TRAITS_SHEET, STUDENT_TRAIT_HEADERS); }
 
 function findObjectRow(sh, headers, key, value) {
   if (!sh) throw new Error('工作表不存在，無法查找資料。');
@@ -1026,6 +1039,102 @@ function getCoachReplies(data) {
     })
   };
 }
+
+function normalizeStudentTraitRow(row) {
+  var traitScore = row && row.traitScore;
+  if (typeof traitScore === 'string' && traitScore) {
+    try { traitScore = JSON.parse(traitScore); } catch (e) {}
+  }
+  return {
+    timestamp: row.timestamp || row.updatedAt || nowIso(),
+    studentName: normalizeName(row.studentName || ''),
+    traitType: String(row.traitType || row.typeKey || '').trim(),
+    traitLabel: String(row.traitLabel || row.label || '').trim(),
+    traitScore: traitScore && typeof traitScore === 'object' ? traitScore : (traitScore || {}),
+    traitSummary: String(row.traitSummary || row.description || '').trim(),
+    communicationTips: String(row.communicationTips || row.communication || '').trim(),
+    trainingTips: String(row.trainingTips || row.correction || '').trim(),
+    updatedAt: row.updatedAt || row.timestamp || nowIso()
+  };
+}
+
+function saveStudentTrait(data) {
+  var identity = authorizedStudentName(data, true);
+  if (!identity.ok) return identity;
+  var p = data.payload || data || {};
+  var name = normalizeName(p.studentName || identity.name);
+  if (!name) return { ok: false, error: '缺少 studentName' };
+  if (identity.session && identity.session.role === 'student' && normalizeName(identity.name) !== name) {
+    return { ok: false, error: '你沒有權限儲存其他選手的特質。', forbidden: true };
+  }
+
+  var sh = getStudentTraitsSheet();
+  var existing = findObjectRow(sh, STUDENT_TRAIT_HEADERS, 'studentName', name);
+  var current = existing ? normalizeStudentTraitRow(existing.object) : null;
+  var traitScore = p.traitScore;
+  if (typeof traitScore === 'string' && traitScore) {
+    try { traitScore = JSON.parse(traitScore); } catch (e) {}
+  }
+  var row = {
+    timestamp: current && current.timestamp ? current.timestamp : nowIso(),
+    studentName: name,
+    traitType: String(p.traitType || p.typeKey || current && current.traitType || '').trim(),
+    traitLabel: String(p.traitLabel || p.label || current && current.traitLabel || '').trim(),
+    traitScore: JSON.stringify(traitScore && typeof traitScore === 'object' ? traitScore : (current && current.traitScore) || {}),
+    traitSummary: String(p.traitSummary || p.description || current && current.traitSummary || '').trim(),
+    communicationTips: String(p.communicationTips || p.communication || current && current.communicationTips || '').trim(),
+    trainingTips: String(p.trainingTips || p.correction || current && current.trainingTips || '').trim(),
+    updatedAt: nowIso()
+  };
+  var values = STUDENT_TRAIT_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; });
+  if (existing && existing.row) sh.getRange(existing.row, 1, 1, STUDENT_TRAIT_HEADERS.length).setValues([values]);
+  else sh.appendRow(values);
+
+  // 舊 appdata 也同步一份，維持舊前端與快取相容
+  try {
+    writeAppData('trait:' + name, {
+      studentName: name,
+      label: row.traitLabel,
+      typeKey: row.traitType,
+      description: row.traitSummary,
+      traitScore: traitScore && typeof traitScore === 'object' ? traitScore : {},
+      communicationTips: row.communicationTips,
+      trainingTips: row.trainingTips,
+      updatedAt: row.updatedAt,
+      completedAt: row.timestamp
+    });
+  } catch (e) {}
+
+  return { ok: true, trait: normalizeStudentTraitRow(row) };
+}
+
+function getStudentTrait(data) {
+  var identity = authorizedStudentName(data, true);
+  if (!identity.ok) return identity;
+  var requested = normalizeName(data.studentName || data.name);
+  var name = requested || identity.name;
+  var isCoach = identity.session && identity.session.role === 'coach';
+  if (!isCoach) name = identity.name;
+  if (!name) return { ok: false, error: '缺少 studentName' };
+  var sh = getStudentTraitsSheet();
+  var found = findObjectRow(sh, STUDENT_TRAIT_HEADERS, 'studentName', name);
+  var trait = found ? normalizeStudentTraitRow(found.object) : null;
+  if (!trait) {
+    var appTrait = getAppData('trait:' + name);
+    if (appTrait) trait = normalizeStudentTraitRow(appTrait);
+  }
+  return { ok: true, trait: trait };
+}
+
+function getAllStudentTraits(data) {
+  var identity = authorizedStudentName(data, true);
+  if (!identity.ok) return identity;
+  if (!(identity.session && identity.session.role === 'coach')) return { ok: false, error: '只有教練可讀取全部特質資料。', forbidden: true };
+  var rows = readSheetObjects(getStudentTraitsSheet(), STUDENT_TRAIT_HEADERS).map(normalizeStudentTraitRow);
+  rows.sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
+  return { ok: true, traits: rows };
+}
+
 function appendAiScoreFromPayload(payload) {
   if (!payload || payload.finalReadinessScore === undefined || payload.finalReadinessScore === '') return;
   var sh = getAiScoresSheet();

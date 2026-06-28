@@ -271,25 +271,21 @@
     const roleKey = r && r.role ? r.role : '';
     if (state.loaded && !force && state.cacheRole === roleKey) return state.map;
     try {
+      state.map = {};
       if (r && r.role === 'student') {
         const name = studentName();
-        const raw = name && typeof appGet === 'function'
-          ? await appGetAsync(traitKey(name))
-          : null;
-        state.map = {};
-        if (raw) state.map[name] = mergeRecord(raw, name);
+        if (name) {
+          const raw = await loadStudentTrait(name);
+          if (raw) state.map[name] = normalizeTraitRecord(raw, name);
+        }
       } else if (r && r.role === 'coach') {
-        let out = {};
-        if (typeof appGetAll === 'function') out = await appGetAll('trait:');
-        state.map = {};
-        Object.keys(out || {}).forEach(key => {
-          const raw = out[key];
-          const n = nameKey((raw && raw.studentName) || key.slice(6));
-          if (!n) return;
-          state.map[n] = mergeRecord(raw, n);
-        });
-      } else {
-        state.map = {};
+        const list = await loadAllStudentTraits();
+        if (list && list.length) {
+          list.forEach(item => {
+            const key = nameKey(item.studentName || '');
+            if (key) state.map[key] = normalizeTraitRecord(item, key);
+          });
+        }
       }
       state.cacheRole = roleKey;
     } catch (e) {}
@@ -303,11 +299,126 @@
       const raw = JSON.parse(localStorage.getItem('yulin_trait_cache') || '{}');
       if (raw && typeof raw === 'object') {
         state.map = {};
-        Object.keys(raw).forEach(k => { state.map[nameKey(k)] = mergeRecord(raw[k], nameKey(k)); });
+        Object.keys(raw).forEach(k => { state.map[nameKey(k)] = normalizeTraitRecord(raw[k], nameKey(k)); });
         state.loaded = true;
         state.cacheRole = role() && role().role ? role().role : '';
       }
     } catch (e) {}
+  }
+
+  function normalizeTraitRecord(raw, name) {
+    const record = mergeRecord(raw || {}, nameKey(name));
+    const rawScore = record.traitScore || record.rawScore || {};
+    const typeKey = nameKey(record.traitType || record.typeKey || pickType(rawScore));
+    const type = TRAITS[typeKey] || TRAITS.growth;
+    const label = nameKey(record.traitLabel || record.label || type.label);
+    record.studentName = nameKey(record.studentName || name);
+    record.traitType = typeKey;
+    record.typeKey = typeKey;
+    record.traitLabel = label;
+    record.label = label;
+    record.traitScore = rawScore && typeof rawScore === 'object' ? rawScore : {};
+    record.rawScore = record.traitScore;
+    record.traitSummary = String(record.traitSummary || record.description || '').trim() || `${type.label}：${type.keywords.join('／')}`;
+    record.description = record.traitSummary;
+    record.communicationTips = String(record.communicationTips || record.communication || type.communication).trim();
+    record.communication = record.communicationTips;
+    record.trainingTips = String(record.trainingTips || record.correction || type.correction).trim();
+    record.correction = record.trainingTips;
+    record.keywords = Array.isArray(record.keywords) && record.keywords.length ? record.keywords.slice(0, 3) : type.keywords.slice(0, 3);
+    record.encouragement = String(record.encouragement || type.encouragement).trim();
+    record.competitionReminder = String(record.competitionReminder || type.competitionReminder).trim();
+    record.setbackResponse = String(record.setbackResponse || type.setbackResponse).trim();
+    record.parentAdvice = String(record.parentAdvice || type.parentAdvice).trim();
+    record.avoid = String(record.avoid || type.avoid).trim();
+    record.completedAt = record.completedAt || record.updatedAt || '';
+    record.updatedAt = record.updatedAt || record.completedAt || '';
+    return record;
+  }
+
+  function cacheTraitRecord(raw, name) {
+    const record = normalizeTraitRecord(raw, name);
+    const key = nameKey(record.studentName || name);
+    if (!key) return null;
+    state.map[key] = record;
+    try { localStorage.setItem('yulin_trait_cache', JSON.stringify(state.map)); } catch (e) {}
+    state.loaded = true;
+    state.cacheRole = role() && role().role ? role().role : state.cacheRole;
+    return record;
+  }
+
+  function overlayTraitRecord(base, overlay) {
+    if (!base) return normalizeTraitRecord(overlay || {}, (overlay && overlay.studentName) || '');
+    if (!overlay) return normalizeTraitRecord(base, base.studentName || '');
+    const merged = Object.assign({}, base);
+    ['coachLabelOverride', 'coachLabelOverrideKey', 'coachChecks', 'coachNotes', 'completedAt', 'updatedAt', 'updatedBy'].forEach(k => {
+      if (overlay[k] !== undefined && overlay[k] !== null && overlay[k] !== '') merged[k] = overlay[k];
+    });
+    if (overlay.label) merged.traitLabel = overlay.label;
+    if (overlay.typeKey) merged.traitType = overlay.typeKey;
+    if (overlay.description) merged.traitSummary = overlay.description;
+    if (overlay.keywords) merged.keywords = overlay.keywords;
+    if (overlay.communicationTips) merged.communicationTips = overlay.communicationTips;
+    if (overlay.trainingTips) merged.trainingTips = overlay.trainingTips;
+    if (overlay.communication) merged.communication = overlay.communication;
+    if (overlay.correction) merged.correction = overlay.correction;
+    if (overlay.encouragement) merged.encouragement = overlay.encouragement;
+    if (overlay.avoid) merged.avoid = overlay.avoid;
+    if (overlay.competitionReminder) merged.competitionReminder = overlay.competitionReminder;
+    if (overlay.setbackResponse) merged.setbackResponse = overlay.setbackResponse;
+    if (overlay.parentAdvice) merged.parentAdvice = overlay.parentAdvice;
+    if (overlay.rawScore) merged.traitScore = overlay.rawScore;
+    if (overlay.answers) merged.surveyAnswers = overlay.answers;
+    return normalizeTraitRecord(merged, merged.studentName || base.studentName || '');
+  }
+
+  async function traitApi(action, payload) {
+    if (!getWebAppUrl()) return null;
+    try {
+      const res = await postToWebApp(Object.assign({ action: action }, payload || {}));
+      return res && res.ok ? res : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function loadStudentTrait(name) {
+    const student = nameKey(name || studentName());
+    if (!student) return null;
+    const cached = currentRecord(student);
+    if (cached && cached.studentName) return cached;
+    const res = await traitApi('getStudentTrait', { studentName: student });
+    let rec = res && res.trait ? res.trait : null;
+    const overlay = typeof appGetAsync === 'function' ? await appGetAsync(traitKey(student)) : null;
+    if (rec && overlay) rec = overlayTraitRecord(rec, overlay);
+    if (rec) return cacheTraitRecord(rec, student);
+    if (overlay) return cacheTraitRecord(overlay, student);
+    const local = currentRecord(student);
+    return local && local.studentName ? local : null;
+  }
+
+  async function loadAllStudentTraits() {
+    const res = await traitApi('getAllStudentTraits', {});
+    let overlays = {};
+    try {
+      if (typeof appGetAll === 'function') overlays = await appGetAll('trait:');
+    } catch (e) { overlays = {}; }
+    const list = [];
+    if (res && Array.isArray(res.traits)) {
+      res.traits.forEach(item => {
+        const name = item.studentName || '';
+        const overlay = overlays[traitKey(name)] || overlays['trait:' + nameKey(name)] || overlays['trait:' + String(name || '').trim()];
+        const rec = cacheTraitRecord(overlay ? overlayTraitRecord(item, overlay) : item, name);
+        if (rec) list.push(rec);
+      });
+    }
+    Object.keys(overlays || {}).forEach(key => {
+      const name = nameKey(String(key).replace(/^trait:/, ''));
+      if (!name || state.map[name]) return;
+      const rec = cacheTraitRecord(overlays[key], name);
+      if (rec) list.push(rec);
+    });
+    return list;
   }
 
   function scoreResult(answers) {
@@ -331,12 +442,19 @@
     const score = scoreResult(answers);
     const typeKey = pickType(score);
     const type = TRAITS[typeKey] || TRAITS.growth;
+    const summary = `${type.label}：${type.keywords.join('／')}。${type.communication}`;
     return {
       studentName: name,
       version: 1,
       completedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       updatedBy: 'student',
+      traitType: typeKey,
+      traitLabel: type.label,
+      traitScore: score,
+      traitSummary: summary,
+      communicationTips: type.communication,
+      trainingTips: type.correction,
       typeKey: typeKey,
       label: type.label,
       keywords: type.keywords.slice(0, 3),
@@ -366,26 +484,81 @@
   }
 
   function resultHtml(record, name) {
-    const display = record ? (record.coachLabelOverride || record.label || labelForKey(record.typeKey)) : '未測驗';
-    const catalog = record ? (TRAITS[record.typeKey] || TRAITS.growth) : TRAITS.growth;
+    const normalized = record ? normalizeTraitRecord(record, name) : null;
+    const display = normalized ? (normalized.coachLabelOverride || normalized.traitLabel || normalized.label || labelForKey(normalized.typeKey)) : '未測驗';
+    const catalog = normalized ? (TRAITS[normalized.typeKey] || TRAITS.growth) : TRAITS.growth;
     return `
       <div class="trait-hero">
         <div class="trait-hero-title">你的目前特質</div>
         <div class="trait-hero-label">${esc(display)}</div>
         <div class="trait-hero-note">這不是固定標籤，只是幫助教練更了解你的學習與溝通方式。</div>
       </div>
+      <div class="trait-summary-strip">
+        <div class="trait-summary-chip ${catalog.tone}">${esc(display)}</div>
+        <div class="trait-summary-chip none">${esc((normalized && normalized.traitSummary) || (catalog.keywords.join('／')))}</div>
+      </div>
       <div class="trait-detail-grid">
-        <div class="trait-detail-card"><h4>三個關鍵字</h4><p>${esc((record && record.keywords && record.keywords.join('／')) || catalog.keywords.join('／'))}</p></div>
-        <div class="trait-detail-card"><h4>適合的溝通方式</h4><p>${esc(record ? record.communication : catalog.communication)}</p></div>
-        <div class="trait-detail-card"><h4>適合的鼓勵方式</h4><p>${esc(record ? record.encouragement : catalog.encouragement)}</p></div>
-        <div class="trait-detail-card"><h4>修正動作建議</h4><p>${esc(record ? record.correction : catalog.correction)}</p></div>
-        <div class="trait-detail-card"><h4>比賽前提醒</h4><p>${esc(record ? record.competitionReminder : catalog.competitionReminder)}</p></div>
-        <div class="trait-detail-card"><h4>遇到挫折時</h4><p>${esc(record ? record.setbackResponse : catalog.setbackResponse)}</p></div>
-        <div class="trait-detail-card"><h4>家長溝通建議</h4><p>${esc(record ? record.parentAdvice : catalog.parentAdvice)}</p></div>
-        <div class="trait-detail-card"><h4>不建議的帶法</h4><p>${esc(record ? record.avoid : catalog.avoid)}</p></div>
+        <div class="trait-detail-card"><h4>三個關鍵字</h4><p>${esc((normalized && normalized.keywords && normalized.keywords.join('／')) || catalog.keywords.join('／'))}</p></div>
+        <div class="trait-detail-card"><h4>特質摘要</h4><p>${esc((normalized && normalized.traitSummary) || `${display}：${catalog.keywords.join('／')}`)}</p></div>
+        <div class="trait-detail-card"><h4>適合的溝通方式</h4><p>${esc((normalized && normalized.communicationTips) || (normalized ? normalized.communication : catalog.communication))}</p></div>
+        <div class="trait-detail-card"><h4>訓練安排建議</h4><p>${esc((normalized && normalized.trainingTips) || (normalized ? normalized.correction : catalog.correction))}</p></div>
+        <div class="trait-detail-card"><h4>適合的鼓勵方式</h4><p>${esc((normalized && normalized.encouragement) || catalog.encouragement)}</p></div>
+        <div class="trait-detail-card"><h4>修正動作建議</h4><p>${esc((normalized && normalized.correction) || catalog.correction)}</p></div>
+        <div class="trait-detail-card"><h4>比賽前提醒</h4><p>${esc((normalized && normalized.competitionReminder) || catalog.competitionReminder)}</p></div>
+        <div class="trait-detail-card"><h4>遇到挫折時</h4><p>${esc((normalized && normalized.setbackResponse) || catalog.setbackResponse)}</p></div>
+        <div class="trait-detail-card"><h4>家長溝通建議</h4><p>${esc((normalized && normalized.parentAdvice) || catalog.parentAdvice)}</p></div>
+        <div class="trait-detail-card"><h4>不建議的帶法</h4><p>${esc((normalized && normalized.avoid) || catalog.avoid)}</p></div>
       </div>
       <div class="trait-disclaimer">本測驗僅作為教練教學與溝通參考，不作為心理診斷、醫療判斷或升學篩選依據。學生特質會隨著年齡、訓練經驗與環境改變，結果僅代表目前傾向。</div>
     `;
+  }
+
+  async function renderStudentTraitCard(studentNameValue, container, opts) {
+    const mount = typeof container === 'string' ? el(container) : container;
+    if (!mount) return null;
+    const name = nameKey(studentNameValue || studentName());
+    const options = opts || {};
+    let rec = currentRecord(name);
+    if (!rec || !rec.studentName) {
+      const roleName = role() && role().role;
+      if (roleName === 'coach') {
+        await loadAllStudentTraits();
+        rec = currentRecord(name);
+      } else {
+        rec = await loadStudentTrait(name);
+      }
+    }
+    const html = rec ? `
+      <div class="student-trait-card">
+        <div class="student-trait-title">選手特質卡</div>
+        <div class="student-trait-label">${esc(name)}｜${esc(effectiveLabel(rec))}</div>
+        <div class="student-trait-section">${escapeHtml((rec.traitSummary || rec.description || '')).replace(/\n/g, '<br>')}</div>
+        <div class="student-trait-section"><b>教練溝通建議：</b>${escapeHtml(rec.communicationTips || rec.communication || '')}</div>
+        <div class="student-trait-section"><b>訓練安排建議：</b>${escapeHtml(rec.trainingTips || rec.correction || '')}</div>
+      </div>` : `
+      <div class="student-trait-card">
+        <div class="student-trait-title">選手特質卡</div>
+        <div class="student-trait-empty">尚未完成特質卡測驗</div>
+      </div>`;
+    if (options.replace === false) mount.insertAdjacentHTML('beforeend', html);
+    else mount.innerHTML = html;
+    return rec;
+  }
+
+  async function attachTraitToCoachContext(playerContext) {
+    const ctx = playerContext || {};
+    const name = nameKey(ctx.name || ctx.studentName || '');
+    if (!name) return ctx;
+    const rec = await loadStudentTrait(name);
+    if (rec) {
+      ctx.traitType = rec.traitType || rec.typeKey || '';
+      ctx.traitLabel = rec.traitLabel || rec.label || '';
+      ctx.traitScore = rec.traitScore || rec.rawScore || {};
+      ctx.traitSummary = rec.traitSummary || rec.description || '';
+      ctx.communicationTips = rec.communicationTips || rec.communication || '';
+      ctx.trainingTips = rec.trainingTips || rec.correction || '';
+    }
+    return ctx;
   }
 
   function renderStudentIntro() {
@@ -486,15 +659,38 @@
     renderStudentQuiz();
   }
 
+  async function saveStudentTraitResult(result) {
+    const payload = result || {};
+    const name = nameKey(payload.studentName || studentName());
+    if (!name) return false;
+    const record = normalizeTraitRecord(Object.assign({}, payload, {
+      studentName: name,
+      traitType: payload.traitType || payload.typeKey || '',
+      traitLabel: payload.traitLabel || payload.label || '',
+      traitScore: payload.traitScore || payload.rawScore || {},
+      traitSummary: payload.traitSummary || payload.description || '',
+      communicationTips: payload.communicationTips || payload.communication || '',
+      trainingTips: payload.trainingTips || payload.correction || '',
+      completedAt: payload.completedAt || new Date().toISOString(),
+      updatedAt: payload.updatedAt || new Date().toISOString(),
+      updatedBy: payload.updatedBy || 'student'
+    }), name);
+    const res = await traitApi('saveStudentTrait', record);
+    if (!res || !res.trait) {
+      cacheTraitRecord(record, name);
+      return false;
+    }
+    cacheTraitRecord(res.trait, name);
+    return true;
+  }
+
   async function saveStudentResult() {
     if (!state.quiz || !state.quiz.name) return false;
     const record = buildRecord(state.quiz.name, state.quiz.answers);
-    await appSet(traitKey(state.quiz.name), record);
-    state.map[state.quiz.name] = mergeRecord(record, state.quiz.name);
-    try { localStorage.setItem('yulin_trait_cache', JSON.stringify(state.map)); } catch (e) {}
+    const ok = await saveStudentTraitResult(record);
     state.quiz = null;
     await loadCache(true);
-    return true;
+    return ok;
   }
 
   function renderCoachList() {
@@ -538,39 +734,49 @@
   }
 
   function renderCoachDetail(record) {
-    const type = TRAITS[record.typeKey] || TRAITS.growth;
-    const display = effectiveLabel(record);
+    const normalized = normalizeTraitRecord(record, record.studentName || '');
+    const type = TRAITS[normalized.typeKey] || TRAITS.growth;
+    const display = effectiveLabel(normalized);
     const checks = record.coachChecks || {};
     return `
       <div class="trait-coach-detail">
         <div class="trait-hero">
           <div class="trait-hero-title">目前主要特質</div>
-          <div class="trait-hero-label">${esc(record.studentName)}｜${esc(display)}</div>
+          <div class="trait-hero-label">${esc(normalized.studentName)}｜${esc(display)}</div>
           <div class="trait-hero-note">點開標籤可回到完整特質頁，下面可做教練修正。</div>
         </div>
+        <div class="student-trait-card">
+          <div class="student-trait-title">選手特質卡</div>
+          <div class="student-trait-label">${esc(normalized.studentName)}｜${esc(display)}</div>
+          <div class="student-trait-section">${esc(normalized.traitSummary || `${display}：${type.keywords.join('／')}`)}</div>
+          <div class="student-trait-section"><b>教練溝通建議：</b>${esc(normalized.communicationTips || type.communication)}</div>
+          <div class="student-trait-section"><b>訓練安排建議：</b>${esc(normalized.trainingTips || type.correction)}</div>
+        </div>
         <div class="trait-detail-grid">
-          <div class="trait-detail-card"><h4>三個關鍵字</h4><p>${esc((record.keywords || type.keywords).join('／'))}</p></div>
-          <div class="trait-detail-card"><h4>適合的溝通方式</h4><p>${esc(record.communication || type.communication)}</p></div>
-          <div class="trait-detail-card"><h4>適合的鼓勵方式</h4><p>${esc(record.encouragement || type.encouragement)}</p></div>
-          <div class="trait-detail-card"><h4>修正動作時的建議</h4><p>${esc(record.correction || type.correction)}</p></div>
-          <div class="trait-detail-card"><h4>比賽前提醒方式</h4><p>${esc(record.competitionReminder || type.competitionReminder)}</p></div>
-          <div class="trait-detail-card"><h4>遇到挫折時的處理方式</h4><p>${esc(record.setbackResponse || type.setbackResponse)}</p></div>
-          <div class="trait-detail-card"><h4>家長溝通建議</h4><p>${esc(record.parentAdvice || type.parentAdvice)}</p></div>
-          <div class="trait-detail-card"><h4>不建議的帶法</h4><p>${esc(record.avoid || type.avoid)}</p></div>
+          <div class="trait-detail-card"><h4>三個關鍵字</h4><p>${esc((normalized.keywords || type.keywords).join('／'))}</p></div>
+          <div class="trait-detail-card"><h4>特質摘要</h4><p>${esc(normalized.traitSummary || `${display}：${type.keywords.join('／')}`)}</p></div>
+          <div class="trait-detail-card"><h4>適合的溝通方式</h4><p>${esc(normalized.communicationTips || normalized.communication || type.communication)}</p></div>
+          <div class="trait-detail-card"><h4>訓練安排建議</h4><p>${esc(normalized.trainingTips || normalized.correction || type.correction)}</p></div>
+          <div class="trait-detail-card"><h4>適合的鼓勵方式</h4><p>${esc(normalized.encouragement || type.encouragement)}</p></div>
+          <div class="trait-detail-card"><h4>修正動作時的建議</h4><p>${esc(normalized.correction || type.correction)}</p></div>
+          <div class="trait-detail-card"><h4>比賽前提醒方式</h4><p>${esc(normalized.competitionReminder || type.competitionReminder)}</p></div>
+          <div class="trait-detail-card"><h4>遇到挫折時的處理方式</h4><p>${esc(normalized.setbackResponse || type.setbackResponse)}</p></div>
+          <div class="trait-detail-card"><h4>家長溝通建議</h4><p>${esc(normalized.parentAdvice || type.parentAdvice)}</p></div>
+          <div class="trait-detail-card"><h4>不建議的帶法</h4><p>${esc(normalized.avoid || type.avoid)}</p></div>
         </div>
         <div class="trait-coach-editor">
           <label class="field-label">教練修正後的主要特質</label>
           <select class="text-input" data-trait-coach-label>
-            ${Object.keys(TRAITS).map(k => `<option value="${esc(k)}"${(record.coachLabelOverrideKey || record.typeKey) === k ? ' selected' : ''}>${esc(TRAITS[k].label)}</option>`).join('')}
+            ${Object.keys(TRAITS).map(k => `<option value="${esc(k)}"${(normalized.coachLabelOverrideKey || normalized.typeKey) === k ? ' selected' : ''}>${esc(TRAITS[k].label)}</option>`).join('')}
           </select>
           <label class="field-label">教練觀察修正</label>
           <div class="trait-check-grid">
             ${CHECKS.map(ch => `<label class="trait-check"><input type="checkbox" data-trait-check="${esc(ch)}"${checks[ch] ? ' checked' : ''}><span>${esc(ch)}</span></label>`).join('')}
           </div>
           <label class="field-label">教練補充</label>
-          <textarea class="text-input" rows="3" data-trait-notes placeholder="每月或每學期更新，可補充觀察與帶法">${esc(record.coachNotes || '')}</textarea>
+          <textarea class="text-input" rows="3" data-trait-notes placeholder="每月或每學期更新，可補充觀察與帶法">${esc(normalized.coachNotes || '')}</textarea>
           <div class="btn-group">
-            <button type="button" class="btn btn-primary" data-trait-save="${esc(record.studentName)}">✅ 儲存教練觀察修正</button>
+            <button type="button" class="btn btn-primary" data-trait-save="${esc(normalized.studentName)}">✅ 儲存教練觀察修正</button>
           </div>
           <div class="trait-disclaimer">本測驗僅作為教練教學與溝通參考，不作為心理診斷、醫療判斷或升學篩選依據。學生特質會隨著年齡、訓練經驗與環境改變，結果僅代表目前傾向。</div>
         </div>
@@ -597,7 +803,7 @@
       updatedBy: 'coach'
     });
     await appSet(traitKey(name), merged);
-    state.map[nameKey(name)] = mergeRecord(merged, name);
+    state.map[nameKey(name)] = normalizeTraitRecord(merged, name);
     try { localStorage.setItem('yulin_trait_cache', JSON.stringify(state.map)); } catch (e) {}
     notify('✅ 已儲存學生特質修正');
     await loadCache(true);
@@ -720,8 +926,8 @@
         renderStudentQuiz();
       } else {
         try {
-          await saveStudentResult();
-          notify('✅ 已完成成長風格測驗');
+          const ok = await saveStudentResult();
+          notify(ok ? '✅ 已完成成長風格測驗' : '儲存失敗，請稍後再試。');
           renderStudentResult();
           if (typeof switchTab === 'function') switchTab('trait');
         } catch (err) {
@@ -753,16 +959,21 @@
 
   window.TraitRadar = {
     loadCache: loadCache,
+    loadStudentTrait: loadStudentTrait,
+    loadAllStudentTraits: loadAllStudentTraits,
     refresh: refresh,
     refreshCoach: async function () { await loadCache(true); renderCoachList(); },
     refreshStudent: async function () { await loadCache(true); const r = role(); if (r && r.role === 'student') render(); },
     onRoleApplied: onRoleApplied,
+    saveStudentTraitResult: saveStudentTraitResult,
     badgeHtml: traitBadgeHtml,
     badgeSpanHtml: traitBadgeSpan,
     nameHtml: traitNameHtml,
     nameInlineHtml: traitNameInlineHtml,
     labelFor: effectiveLabel,
     recordFor: currentRecord,
+    renderStudentTraitCard: renderStudentTraitCard,
+    attachTraitToCoachContext: attachTraitToCoachContext,
     open: openFromBadge,
     selectCoachStudent: selectCoachStudent,
     maybeShowStudentIntro: maybeShowStudentIntro
@@ -770,6 +981,11 @@
   window.traitBadgeHtml = traitBadgeHtml;
   window.traitNameHtml = traitNameHtml;
   window.traitLabelFor = effectiveLabel;
+  window.saveStudentTraitResult = saveStudentTraitResult;
+  window.loadStudentTrait = loadStudentTrait;
+  window.loadAllStudentTraits = loadAllStudentTraits;
+  window.renderStudentTraitCard = renderStudentTraitCard;
+  window.attachTraitToCoachContext = attachTraitToCoachContext;
 
   boot().catch(() => {});
 })();
