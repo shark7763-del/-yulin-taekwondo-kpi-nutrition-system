@@ -310,7 +310,9 @@
     const roleKey = r && r.role ? r.role : '';
     if (state.loaded && !force && state.cacheRole === roleKey) return state.map;
     try {
-      state.map = {};
+      const baseMap = {};
+      Object.keys(state.map || {}).forEach(k => { baseMap[k] = state.map[k]; });
+      state.map = baseMap;
       if (r && r.role === 'student') {
         const name = studentName();
         if (name) {
@@ -325,6 +327,9 @@
             if (key) state.map[key] = normalizeTraitRecord(item, key);
           });
         }
+      }
+      if (!Object.keys(state.map || {}).length) {
+        loadLocalCache();
       }
       state.cacheRole = roleKey;
     } catch (e) {}
@@ -517,8 +522,9 @@
       const rec = cacheTraitRecord(overlays[key], name);
       if (rec) list.push(rec);
     });
-    state.map = buildStudentTraitMap(list.concat(Object.keys(overlays || {}).map(key => overlays[key]).filter(Boolean)));
-    return Object.values(state.map);
+    const merged = buildStudentTraitMap(list.concat(Object.keys(overlays || {}).map(key => overlays[key]).filter(Boolean)).concat(Object.values(state.map || {})));
+    if (Object.keys(merged).length) state.map = merged;
+    return Object.values(state.map || merged);
   }
 
   function scoreResult(answers) {

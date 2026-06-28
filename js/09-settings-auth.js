@@ -358,8 +358,12 @@ function switchTab(tabName) {
       if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
     }, 0);
   }
-  if (tabName === 'trait' && window.TraitRadar && typeof window.TraitRadar.refresh === 'function') {
-    setTimeout(() => window.TraitRadar.refresh(), 0);
+  if (tabName === 'trait' && window.TraitRadar) {
+    setTimeout(() => {
+      const r = getRole();
+      if (r && r.role === 'coach' && typeof window.TraitRadar.refreshCoach === 'function') window.TraitRadar.refreshCoach();
+      else if (typeof window.TraitRadar.refresh === 'function') window.TraitRadar.refresh();
+    }, 0);
   }
 }
 
