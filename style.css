@@ -1991,6 +1991,7 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 .trait-summary-chip.cheetah { color: #fde68a; border-color: rgba(251, 191, 36, .28); }
 .trait-summary-chip.growth { color: #bfdbfe; border-color: rgba(96, 165, 250, .28); }
 .trait-summary-chip.none { color: #cbd5e1; }
+.trait-share-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 10px; }
 .trait-coach-list-grid { display: grid; gap: 10px; margin-top: 12px; }
 .trait-coach-student {
   width: 100%;

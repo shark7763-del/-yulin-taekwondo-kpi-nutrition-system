@@ -595,6 +595,9 @@
         <div class="trait-summary-chip ${catalog.tone}">${esc(display)}</div>
         <div class="trait-summary-chip none">${esc((normalized && normalized.traitSummary) || (catalog.keywords.join('／')))}</div>
       </div>
+      <div class="trait-share-row">
+        <button type="button" class="btn btn-line-share" data-trait-share-result="${esc(name)}">💬 分享我的特質結果到 LINE</button>
+      </div>
       <div class="trait-detail-grid">
         <div class="trait-detail-card"><h4>三個關鍵字</h4><p>${esc((normalized && normalized.keywords && normalized.keywords.join('／')) || catalog.keywords.join('／'))}</p></div>
         <div class="trait-detail-card"><h4>特質摘要</h4><p>${esc((normalized && normalized.traitSummary) || `${display}：${catalog.keywords.join('／')}`)}</p></div>
@@ -697,6 +700,9 @@
             <div>完成後會顯示你目前偏向的特質類型。</div>
             <div>教練可以在後台看到標籤與建議。</div>
           </div>
+          <div class="trait-share-row">
+            <button type="button" class="btn btn-line-share" data-trait-share-invite="${esc(name)}">💬 分享測驗邀請到 LINE</button>
+          </div>
         </div>
         <div class="trait-panel">
           ${record && record.completedAt ? resultHtml(record, name) : '<div class="hint-box">完成測驗後，這裡會顯示你的特質雷達結果。</div>'}
@@ -759,9 +765,25 @@
           <div class="trait-start-row">
             <button type="button" class="btn btn-primary" data-trait-start="1">重新測驗</button>
           </div>
+          <div class="trait-share-row">
+            <button type="button" class="btn btn-line-share" data-trait-share-result="${esc(name)}">💬 分享我的特質結果到 LINE</button>
+          </div>
         </div>
         <div class="trait-panel">${resultHtml(record, name)}</div>
       </div>`;
+  }
+
+  function buildTraitInviteLine(name) {
+    const n = nameKey(name || studentName());
+    return `TeamPro 學生特質雷達\n${n ? `選手：${n}\n` : ''}我剛完成了一次性 5 分鐘的成長風格測驗。\n這不是固定標籤，只是幫助教練更了解我的學習與溝通方式。`;
+  }
+
+  function buildTraitResultLine(name) {
+    const n = nameKey(name || studentName());
+    const rec = currentRecord(n) ? normalizeTraitRecord(currentRecord(n), n) : null;
+    const label = rec ? effectiveLabel(rec) : '未測驗';
+    const summary = rec ? (rec.traitSummary || rec.description || '') : '';
+    return `TeamPro 學生特質雷達\n選手：${n}\n特質：${label}${summary ? `\n摘要：${summary}` : ''}\n這不是固定標籤，只是幫助教練更了解我的學習與溝通方式。`;
   }
 
   function quizStateReset() {
@@ -1067,6 +1089,18 @@
       await syncQueuedStudentTraits(true).catch(() => {});
       await loadCache(true);
       render();
+      return;
+    }
+    const invite = e.target.closest('[data-trait-share-invite]');
+    if (invite) {
+      e.preventDefault();
+      if (typeof shareToLine === 'function') shareToLine(buildTraitInviteLine(invite.getAttribute('data-trait-share-invite')));
+      return;
+    }
+    const shareResult = e.target.closest('[data-trait-share-result]');
+    if (shareResult) {
+      e.preventDefault();
+      if (typeof shareToLine === 'function') shareToLine(buildTraitResultLine(shareResult.getAttribute('data-trait-share-result')));
       return;
     }
   });
