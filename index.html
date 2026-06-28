@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-title" content="TeamPro" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=20260628d" />
+  <link rel="stylesheet" href="style.css?v=20260628e" />
   <link rel="stylesheet" href="monthly-report.css?v=20260627f" />
 </head>
 <body>
@@ -484,10 +484,38 @@
     <section class="tab-panel" id="tab-lastperf">
       <div class="card" id="lastPerfQueryCard">
         <h3 class="card-title">📌 上次表現查詢</h3>
+        <div id="lastPerfTodayPanel" class="lastperf-today-panel" style="display:none;">
+          <div class="lastperf-summary-row" id="lastPerfSummaryRow">
+            <div class="lastperf-summary-card reported"><b>0</b><span>已回報</span></div>
+            <div class="lastperf-summary-card pending"><b>0</b><span>待回覆</span></div>
+            <div class="lastperf-summary-card priority"><b>0</b><span>❗ 高優先</span></div>
+          </div>
+          <div class="today-reported-section">
+            <div class="section-mini-head">
+              <h4>今日已回報名單</h4>
+            </div>
+            <div class="today-reported-grid" id="todayReportedList">
+              <div class="hint-box">讀取今日回報名單中...</div>
+            </div>
+          </div>
+          <div class="lastperf-filter-row">
+            <div class="lastperf-filter-left">
+              <span class="lastperf-filter-label">快速篩選：</span>
+              <button type="button" class="lastperf-filter-btn active" data-lastperf-filter="all">全部</button>
+              <button type="button" class="lastperf-filter-btn" data-lastperf-filter="pending">待回覆</button>
+              <button type="button" class="lastperf-filter-btn" data-lastperf-filter="priority">高優先</button>
+            </div>
+            <button type="button" class="btn btn-ghost" id="btnRefreshTodayReported">🔄 更新名單</button>
+          </div>
+        </div>
         <label class="field-label">選擇選手</label>
-        <select id="lastPerfName" class="text-input"></select>
-        <button type="button" id="btnLoadLastPerf" class="btn btn-primary">🔍 查詢上次表現</button>
-        <button type="button" id="btnWeeklyReport" class="btn btn-secondary">📊 產生本週報告</button>
+        <input id="lastPerfName" class="text-input" list="lastPerfNameOptions" placeholder="請輸入或點選上方選手..." autocomplete="off" />
+        <datalist id="lastPerfNameOptions"></datalist>
+        <div class="lastperf-helper-text">點選已回報選手可直接帶入，方便查詢與回覆</div>
+        <div class="lastperf-action-row">
+          <button type="button" id="btnLoadLastPerf" class="btn btn-primary">🔍 查詢上次表現</button>
+          <button type="button" id="btnWeeklyReport" class="btn btn-secondary">📊 產生本週報告</button>
+        </div>
       </div>
       <!-- 七天成長趨勢（折線圖） -->
       <div class="card" id="trendCard" style="display:none;">
@@ -1013,15 +1041,15 @@
 
   <!-- app.js 已模組化拆檔，依序載入（同享全域作用域，語意與單檔等價）-->
   <script src="js/01-config-data.js?v=20260625f"></script>
-  <script src="js/02-core-utils.js?v=20260625f"></script>
+  <script src="js/02-core-utils.js?v=20260628e"></script>
   <script src="js/03-forms-scoring.js?v=20260625f"></script>
   <script src="js/04-daily-submit.js?v=20260625f"></script>
   <script src="js/05-feedback-readiness.js?v=20260627d"></script>
   <script src="js/06-player-line.js?v=20260625f"></script>
-  <script src="js/07-coach-dashboard.js?v=20260628b"></script>
+  <script src="js/07-coach-dashboard.js?v=20260628e"></script>
   <script src="js/08-profile-journal.js?v=20260627g"></script>
-  <script src="js/09-settings-auth.js?v=20260628b"></script>
-  <script src="js/10-init.js?v=20260628b"></script>
+  <script src="js/09-settings-auth.js?v=20260628e"></script>
+  <script src="js/10-init.js?v=20260628e"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260627f"></script>

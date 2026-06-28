@@ -140,6 +140,20 @@ window.setDailyKpiAvailability = setDailyKpiAvailability;
 
 // 把選項塞進 select
 function fillSelect(el, options, placeholder) {
+  if (el && el.tagName === 'INPUT') {
+    const listId = el.getAttribute('list');
+    const dl = listId ? $id(listId) : null;
+    if (placeholder) el.placeholder = placeholder;
+    if (dl) {
+      dl.innerHTML = '';
+      options.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o;
+        dl.appendChild(opt);
+      });
+    }
+    return;
+  }
   el.innerHTML = '';
   if (placeholder) {
     const opt = document.createElement('option');

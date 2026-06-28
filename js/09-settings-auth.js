@@ -765,6 +765,7 @@ function applyRole() {
     loadRosterFromServer().then(() => refreshAccountAdmin());
     refreshCoach();
     loadAiConfig();
+    if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
   }
   if (window.KpiSession && window.KpiSession.refresh) {
     setTimeout(() => window.KpiSession.refresh(), 0);
@@ -776,7 +777,20 @@ function applyRole() {
 
 function setSelectOnlyName(id, name) {
   const el = $id(id);
-  if (!el || el.tagName !== 'SELECT') return;
+  if (!el) return;
+  if (el.tagName === 'INPUT') {
+    el.value = name;
+    const listId = el.getAttribute('list');
+    const dl = listId ? $id(listId) : null;
+    if (dl) {
+      dl.innerHTML = '';
+      const option = document.createElement('option');
+      option.value = name;
+      dl.appendChild(option);
+    }
+    return;
+  }
+  if (el.tagName !== 'SELECT') return;
   el.innerHTML = '';
   const option = document.createElement('option');
   option.value = name; option.textContent = name;

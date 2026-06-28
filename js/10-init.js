@@ -4,7 +4,10 @@
 function init() {
   // 分頁
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    btn.addEventListener('click', () => {
+      switchTab(btn.dataset.tab);
+      if (btn.dataset.tab === 'lastperf' && typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
+    });
   });
 
   // 解憂信箱分頁鈕：開新分頁到外站，不切換內部分頁
@@ -125,6 +128,14 @@ function init() {
   // 上次表現分頁
   $id('btnLoadLastPerf').addEventListener('click', loadLastPerfPage);
   { const b = $id('btnWeeklyReport'); if (b) b.addEventListener('click', loadWeeklyReport); }
+  document.querySelectorAll('.lastperf-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (typeof applyTodayReportFilter === 'function') applyTodayReportFilter(btn.dataset.lastperfFilter || 'all');
+    });
+  });
+  { const b = $id('btnRefreshTodayReported'); if (b) b.addEventListener('click', () => {
+    if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
+  }); }
 
   // 教練後台
   $id('btnRefreshCoach').addEventListener('click', refreshCoach);

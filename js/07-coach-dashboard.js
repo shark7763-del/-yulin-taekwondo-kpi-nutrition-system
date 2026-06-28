@@ -1410,6 +1410,7 @@ ${text}
       saveReplyBtn.disabled = false; saveReplyBtn.textContent = '✅ 儲存教練回覆';
       toast(ok ? '✅ 已儲存教練回覆，選手可在上次表現查看。' : '儲存失敗，請稍後再試。');
       if (ok) renderRedLightCoaching(todays);
+      if (ok) refreshTodayReportedList();
     });
     const shareBtn = box.querySelector(`[data-redshare="${r.recordId}"]`);
     if (shareBtn) shareBtn.addEventListener('click', () => {
@@ -2038,6 +2039,193 @@ function normalizeCoachReplyRow(row) {
     confirmedByCoach: row.confirmedByCoach !== false && String(row.confirmedByCoach).toLowerCase() !== 'false'
   };
 }
+
+const LASTPERF_TODAY_STATE = {
+  items: [],
+  summary: { reported: 0, pending: 0, priority: 0 },
+  filter: 'all',
+  selected: ''
+};
+
+function lastPerfRecordName(rec) {
+  return String((rec && (rec.studentName || rec.name)) || '').trim();
+}
+function lastPerfNum(v) {
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
+function lastPerfScoreValue(rec) {
+  return lastPerfNum(rec && (rec.totalScore || rec.score || rec.averageScore || rec.finalReadinessScore));
+}
+function lastPerfHasCoachReply(rec, replies) {
+  if (String((rec && (rec.coachReply || rec.coachReplyText || rec.replyText || rec.coachComment || rec.coachPublicNote)) || '').trim()) return true;
+  const name = lastPerfRecordName(rec);
+  const date = normDate((rec && rec.date) || todayStr());
+  return (replies || []).some(r => {
+    const row = normalizeCoachReplyRow(r);
+    return row.confirmedByCoach && row.replyText &&
+      String(row.studentName || '').trim() === name &&
+      (!row.recordDate || normDate(row.recordDate) === date || isCoachReplyWithinDays(row, date, 1));
+  });
+}
+function lastPerfHasPriority(rec, history) {
+  const pain = painScoreValue(rec);
+  const rpe = lastPerfNum(rec && (rec.rpe || rec.RPE || rec.trainingRpe));
+  const sleepHours = lastPerfNum(rec && (rec.sleepHours || rec.sleep));
+  const sleepText = String((rec && (rec.sleepQuality || rec.sleepStatus || rec.sleep)) || '');
+  const mood = lastPerfNum(rec && (rec.moodIndex || rec.moodScore || rec.mood));
+  const moodText = String((rec && (rec.moodText || rec.moodStatus || rec.moodReason || rec.emotion)) || '');
+  const tags = String((rec && rec.aiTags) || '');
+  const parentFlag = String((rec && (rec.needParentNotice || rec.parentNotice || rec.parentNotify)) || '').toLowerCase();
+  const reflection = String((rec && (rec.reflection || rec.note || rec.todayReflection || rec.trainingReflection || rec.absenceReflection)) || '');
+  const riskWords = /壓力|害怕|不舒服|想放棄|放棄|焦慮|緊張|恐懼|崩潰|撐不住|不想練|受傷|痛/;
+  const todayScore = lastPerfScoreValue(rec);
+  const today = normDate((rec && rec.date) || todayStr());
+  const name = lastPerfRecordName(rec);
+  const prevScores = (history || []).filter(r => {
+    if (lastPerfRecordName(r) !== name) return false;
+    const d = normDate(r.date);
+    return d && d < today;
+  }).slice(0, 7).map(lastPerfScoreValue).filter(v => v !== null);
+  const prevAvg = prevScores.length ? prevScores.reduce((a, b) => a + b, 0) / prevScores.length : null;
+  const obviousDrop = todayScore !== null && prevAvg !== null && todayScore <= prevAvg - 10;
+  return pain >= 4 || pain >= 7 || (rpe !== null && rpe >= 8) ||
+    /差|不足|沒睡|睡不好/.test(sleepText) || (sleepHours !== null && sleepHours < 6) ||
+    (mood !== null && mood <= 2) || /低落|不好|難過|焦慮|害怕/.test(moodText) ||
+    ['true', '1', 'yes', '是', '需', '需要'].indexOf(parentFlag) !== -1 ||
+    /需家長|家長通知|高風險|受傷風險|需要關心/.test(tags) ||
+    riskWords.test(reflection) || obviousDrop;
+}
+
+async function loadTodayReportedStudents() {
+  const today = todayStr();
+  const records = await fetchAllRecords();
+  const todays = {};
+  (records || []).forEach(rec => {
+    const name = lastPerfRecordName(rec);
+    if (!name || normDate(rec.date || rec.timestamp || rec.createdAt) !== today) return;
+    const prev = todays[name];
+    const t = String(rec.timestamp || rec.createdAt || rec.updatedAt || '');
+    if (!prev || t >= String(prev.timestamp || prev.createdAt || prev.updatedAt || '')) todays[name] = rec;
+  });
+  let remoteReplies = [];
+  const names = Object.keys(todays);
+  if (names.length && getWebAppUrl()) {
+    const packs = await Promise.all(names.map(name => fetchCoachRepliesForStudent(name, today, 5).catch(() => [])));
+    remoteReplies = packs.flat();
+  }
+  const replies = getCoachReplyStore().concat(remoteReplies);
+  return buildTodayReportStatus(Object.values(todays), replies, records || []);
+}
+
+function buildTodayReportStatus(records, replies, allRecords) {
+  const items = (records || []).map(rec => {
+    const name = lastPerfRecordName(rec);
+    const hasReply = lastPerfHasCoachReply(rec, replies);
+    const priority = lastPerfHasPriority(rec, allRecords);
+    return {
+      studentName: name,
+      record: rec,
+      hasReply: hasReply,
+      pending: !hasReply,
+      priority: priority,
+      status: priority ? '高優先' : (!hasReply ? '待回覆' : '已回報')
+    };
+  }).filter(x => x.studentName).sort((a, b) => {
+    const aw = a.priority ? 0 : (a.pending ? 1 : 2);
+    const bw = b.priority ? 0 : (b.pending ? 1 : 2);
+    if (aw !== bw) return aw - bw;
+    return a.studentName.localeCompare(b.studentName, 'zh-Hant');
+  });
+  const summary = {
+    reported: items.length,
+    pending: items.filter(x => x.pending).length,
+    priority: items.filter(x => x.priority).length
+  };
+  LASTPERF_TODAY_STATE.items = items;
+  LASTPERF_TODAY_STATE.summary = summary;
+  return { items, summary };
+}
+
+function renderTodayReportSummary(summary) {
+  const box = $id('lastPerfSummaryRow');
+  if (!box) return;
+  const s = summary || LASTPERF_TODAY_STATE.summary;
+  box.innerHTML = `
+    <div class="lastperf-summary-card reported"><b>${s.reported || 0}</b><span>已回報</span></div>
+    <div class="lastperf-summary-card pending"><b>${s.pending || 0}</b><span>待回覆</span></div>
+    <div class="lastperf-summary-card priority"><b>${s.priority || 0}</b><span>❗ 高優先</span></div>
+  `;
+}
+
+function renderTodayReportedList(items, filter) {
+  const box = $id('todayReportedList');
+  if (!box) return;
+  const key = filter || LASTPERF_TODAY_STATE.filter || 'all';
+  let list = items || LASTPERF_TODAY_STATE.items || [];
+  if (key === 'pending') list = list.filter(x => x.pending);
+  if (key === 'priority') list = list.filter(x => x.priority);
+  if (!list.length) {
+    box.innerHTML = `<div class="hint-box">${key === 'all' ? '今天還沒有選手回報。' : '目前沒有符合此篩選的選手。'}</div>`;
+    return;
+  }
+  box.innerHTML = list.map(item => {
+    const cls = item.priority ? 'priority' : (item.pending ? 'pending' : 'reported');
+    const active = LASTPERF_TODAY_STATE.selected === item.studentName ? ' active' : '';
+    return `<button type="button" class="today-reported-card ${cls}${active}" data-lastperf-student="${escapeHtml(item.studentName)}">
+      <span class="today-reported-name">${escapeHtml(item.studentName)}</span>
+      <span class="today-reported-status">${escapeHtml(item.status)}</span>
+      <span class="today-reported-arrow">›</span>
+    </button>`;
+  }).join('');
+  box.querySelectorAll('[data-lastperf-student]').forEach(btn => {
+    btn.addEventListener('click', () => selectStudentFromQuickList(btn.dataset.lastperfStudent));
+  });
+}
+
+function applyTodayReportFilter(filterKey) {
+  LASTPERF_TODAY_STATE.filter = filterKey || 'all';
+  document.querySelectorAll('.lastperf-filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lastperfFilter === LASTPERF_TODAY_STATE.filter);
+  });
+  renderTodayReportedList(LASTPERF_TODAY_STATE.items, LASTPERF_TODAY_STATE.filter);
+}
+
+function selectStudentFromQuickList(studentName) {
+  const name = String(studentName || '').trim();
+  if (!name) return;
+  LASTPERF_TODAY_STATE.selected = name;
+  const input = $id('lastPerfName');
+  if (input) input.value = name;
+  renderTodayReportedList(LASTPERF_TODAY_STATE.items, LASTPERF_TODAY_STATE.filter);
+  if (typeof loadLastPerfPage === 'function') {
+    loadLastPerfPage().then(() => {
+      const card = $id('lastPerfResultCard');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }).catch(() => {});
+  }
+}
+
+async function refreshTodayReportedList() {
+  const panel = $id('lastPerfTodayPanel');
+  if (!panel) return;
+  const role = (getRole() || {}).role;
+  panel.style.display = role === 'coach' ? '' : 'none';
+  if (role !== 'coach') return;
+  const list = $id('todayReportedList');
+  if (list) list.innerHTML = '<div class="hint-box">讀取今日回報名單中...</div>';
+  try {
+    const data = await loadTodayReportedStudents();
+    renderTodayReportSummary(data.summary);
+    renderTodayReportedList(data.items, LASTPERF_TODAY_STATE.filter);
+  } catch (e) {
+    if (list) list.innerHTML = `<div class="hint-box warn">今日名單讀取失敗，請稍後再試。</div>`;
+  }
+}
+
+window.refreshTodayReportedList = refreshTodayReportedList;
+window.selectStudentFromQuickList = selectStudentFromQuickList;
+
 async function fetchCoachRepliesForStudent(name, recordDate, limit) {
   let rows = [];
   if (getWebAppUrl()) {
@@ -2368,6 +2556,7 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
     const ok = await saveCoachReplyRemote(row, rec);
     saveBtn.disabled = false; saveBtn.textContent = '✅ 儲存教練回覆';
     toast(ok ? '✅ 已儲存教練回覆，選手可在上次表現查看。' : '儲存失敗，請稍後再試。');
+    if (ok) refreshTodayReportedList();
   });
 }
 
