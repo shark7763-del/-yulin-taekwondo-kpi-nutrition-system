@@ -1059,23 +1059,48 @@ function normalizeStudentTraitRow(row) {
   };
 }
 
+function studentTraitTimeValue(row) {
+  var text = row && (row.updatedAt || row.timestamp || row.completedAt || '');
+  var time = new Date(text).getTime();
+  return isNaN(time) ? 0 : time;
+}
+
+function latestStudentTraitRow(rows, name) {
+  var target = normalizeTraitName(name);
+  var latest = null;
+  for (var i = 0; i < (rows || []).length; i++) {
+    var row = rows[i];
+    if (!row || normalizeTraitName(row.studentName) !== target) continue;
+    if (!latest || studentTraitTimeValue(row) >= studentTraitTimeValue(latest)) latest = row;
+  }
+  return latest;
+}
+
 function saveStudentTrait(data) {
-  var identity = authorizedStudentName(data, true);
-  if (!identity.ok) return identity;
   var p = data.payload || data || {};
-  var name = normalizeName(p.studentName || identity.name);
+  var session = getAuthSession(data);
+  var name = normalizeName(p.studentName || data.studentName || data.name || (session && session.studentName) || '');
   if (!name) return { ok: false, error: '缺少 studentName' };
-  if (identity.session && identity.session.role === 'student' && normalizeTraitName(identity.name) !== normalizeTraitName(name)) {
-    return { ok: false, error: '你沒有權限儲存其他選手的特質。', forbidden: true };
+  if (session) {
+    if (session.role === 'student' && normalizeTraitName(session.studentName) !== normalizeTraitName(name)) {
+      return { ok: false, error: '你沒有權限儲存其他選手的特質。', forbidden: true };
+    }
+    if (session.role === 'parent' && normalizeTraitName(session.studentName) !== normalizeTraitName(name)) {
+      return { ok: false, error: '家長只能儲存自己孩子的特質。', forbidden: true };
+    }
+  } else {
+    if (!legacyLoginEnabled() || data.legacyRole !== 'student' || normalizeTraitName(data.legacyName) !== normalizeTraitName(name)) {
+      return { ok: false, error: '沒有登入權限，無法儲存特質資料。', forbidden: true };
+    }
   }
 
   var sh = getStudentTraitsSheet();
-  var existing = null;
   var rows = readSheetObjects(sh, STUDENT_TRAIT_HEADERS);
-  for (var i = 0; i < rows.length; i++) {
-    if (normalizeTraitName(rows[i].studentName) === normalizeTraitName(name)) {
-      existing = { row: i + 2, object: rows[i] };
-      break;
+  var existingRow = latestStudentTraitRow(rows, name);
+  var existing = null;
+  if (existingRow) {
+    for (var j = 0; j < rows.length; j++) {
+      if (rows[j] === existingRow) { existing = { row: j + 2, object: rows[j] }; break; }
     }
   }
   var current = existing ? normalizeStudentTraitRow(existing.object) : null;
@@ -1128,19 +1153,9 @@ function getStudentTrait(data) {
   if (!isCoach) name = identity.name;
   if (!name) return { ok: false, error: '缺少 studentName' };
   var sh = getStudentTraitsSheet();
-  var found = null;
   var rows = readSheetObjects(sh, STUDENT_TRAIT_HEADERS);
-  for (var i = 0; i < rows.length; i++) {
-    if (normalizeTraitName(rows[i].studentName) === normalizeTraitName(name)) {
-      found = { row: i + 2, object: rows[i] };
-      break;
-    }
-  }
-  var trait = found ? normalizeStudentTraitRow(found.object) : null;
-  if (!trait) {
-    var appTrait = getAppData('trait:' + normalizeTraitName(name)) || getAppData('trait:' + name);
-    if (appTrait) trait = normalizeStudentTraitRow(appTrait);
-  }
+  var found = latestStudentTraitRow(rows, name);
+  var trait = found ? normalizeStudentTraitRow(found) : null;
   return { ok: true, trait: trait };
 }
 
@@ -1151,17 +1166,10 @@ function getAllStudentTraits(data) {
   var rows = readSheetObjects(getStudentTraitsSheet(), STUDENT_TRAIT_HEADERS).map(normalizeStudentTraitRow);
   var map = {};
   rows.forEach(function (row) {
-    map[normalizeTraitName(row.studentName)] = row;
+    var k = normalizeTraitName(row.studentName);
+    if (!k) return;
+    if (!map[k] || studentTraitTimeValue(row) >= studentTraitTimeValue(map[k])) map[k] = row;
   });
-  try {
-    var appData = getAllAppData('trait:');
-    Object.keys(appData || {}).forEach(function (key) {
-      var trait = normalizeStudentTraitRow(appData[key] || {});
-      var k = normalizeTraitName(trait.studentName || String(key || '').replace(/^trait:/, ''));
-      if (!k) return;
-      if (!map[k]) map[k] = trait;
-    });
-  } catch (e) {}
   var out = Object.keys(map).map(function (k) { return map[k]; });
   out.sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
   return { ok: true, traits: out };

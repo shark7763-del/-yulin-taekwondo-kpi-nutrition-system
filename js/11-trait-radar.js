@@ -262,13 +262,18 @@
 
   function effectiveLabel(record) {
     if (!record) return '未測驗';
-    return record.coachLabelOverride || record.label || labelForKey(record.typeKey);
+    return record.traitLabel || record.label || labelForKey(record.typeKey);
+  }
+
+  function coachOverrideLabel(record) {
+    if (!record || !record.coachLabelOverride) return '';
+    return record.coachLabelOverride;
   }
 
   function traitBadgeHtml(name) {
     const record = state.map[nameKey(name)];
     const label = effectiveLabel(record);
-    const tone = record ? toneForKey(record.coachLabelOverride ? record.coachLabelOverrideKey || record.typeKey : record.typeKey) : 'none';
+    const tone = record ? toneForKey(record.typeKey) : 'none';
     const title = record ? '點擊看完整特質卡' : '尚未完成特質測驗';
     return `<button type="button" class="trait-badge trait-badge-${esc(record ? tone : 'none')}" data-trait-open="${esc(nameKey(name))}" title="${esc(title)}">${esc(label)}</button>`;
   }
@@ -276,7 +281,7 @@
   function traitBadgeSpan(name) {
     const record = state.map[nameKey(name)];
     const label = effectiveLabel(record);
-    const tone = record ? toneForKey(record.coachLabelOverride ? record.coachLabelOverrideKey || record.typeKey : record.typeKey) : 'none';
+    const tone = record ? toneForKey(record.typeKey) : 'none';
     const title = record ? '點擊看完整特質卡' : '尚未完成特質測驗';
     return `<span class="trait-badge trait-badge-${esc(record ? tone : 'none')} trait-badge-inline" data-trait-open="${esc(nameKey(name))}" title="${esc(title)}">${esc(label)}</span>`;
   }
@@ -321,15 +326,9 @@
           if (raw) state.map[name] = normalizeTraitRecord(raw, name);
         }
       } else if (r && r.role === 'coach') {
-        const list = await loadAllStudentTraits();
-        if (list && list.length) {
-          list.forEach(item => {
-            const key = nameKey(item.studentName || '');
-            if (key) state.map[key] = normalizeTraitRecord(item, key);
-          });
-        }
+        await loadAllStudentTraits();
       }
-      if (!Object.keys(state.map || {}).length) {
+      if (!Object.keys(state.map || {}).length && r && r.role !== 'coach') {
         loadLocalCache();
       }
       state.cacheRole = roleKey;
@@ -423,7 +422,15 @@
   async function traitApi(action, payload) {
     if (!getWebAppUrl()) return null;
     try {
-      const res = await postToWebApp(Object.assign({ action: action }, payload || {}));
+      const r = role() || {};
+      const body = Object.assign({
+        action: action,
+        payload: payload || {},
+        authToken: r.authToken || '',
+        legacyRole: r.authToken ? '' : (r.role || ''),
+        legacyName: r.authToken ? '' : (r.name || '')
+      }, payload || {});
+      const res = await postToWebApp(body);
       return res && res.ok ? res : null;
     } catch (e) {
       return null;
@@ -484,21 +491,13 @@
   async function loadStudentTrait(name) {
     const student = nameKey(name || studentName());
     if (!student) return null;
-    const cached = currentRecord(student);
-    if (cached && cached.studentName) return cached;
     const res = await traitApi('getStudentTrait', { studentName: student });
     let rec = res && res.trait ? res.trait : null;
     if (rec) {
       return cacheTraitRecord(rec, student);
     }
-    let overlay = null;
-    if (typeof appGetAsync === 'function') {
-      for (const key of traitAliasKeys(student)) {
-        overlay = await appGetAsync(key);
-        if (overlay) break;
-      }
-    }
-    if (overlay) return cacheTraitRecord(overlay, student);
+    const cached = currentRecord(student);
+    if (cached && cached.studentName) return cached;
     const local = currentRecord(student);
     return local && local.studentName ? local : null;
   }
@@ -508,14 +507,16 @@
     const list = [];
     if (res && Array.isArray(res.traits)) {
       res.traits.forEach(item => {
-        const name = item.studentName || '';
-        const rec = cacheTraitRecord(item, name);
-        if (rec) list.push(rec);
+        const rec = normalizeTraitRecord(item, item && item.studentName ? item.studentName : '');
+        if (rec && rec.studentName) list.push(rec);
       });
     }
-    const merged = buildStudentTraitMap(Object.values(state.map || {}).concat(list));
-    if (Object.keys(merged).length) state.map = merged;
-    return Object.values(state.map || merged);
+    const merged = buildStudentTraitMap(list);
+    state.map = merged;
+    try { localStorage.setItem('yulin_trait_cache', JSON.stringify(state.map)); } catch (e) {}
+    state.loaded = true;
+    state.cacheRole = role() && role().role ? role().role : state.cacheRole;
+    return Object.values(merged);
   }
 
   function scoreResult(answers) {
@@ -582,7 +583,7 @@
 
   function resultHtml(record, name) {
     const normalized = record ? normalizeTraitRecord(record, name) : null;
-    const display = normalized ? (normalized.coachLabelOverride || normalized.traitLabel || normalized.label || labelForKey(normalized.typeKey)) : '未測驗';
+    const display = normalized ? (normalized.traitLabel || normalized.label || labelForKey(normalized.typeKey)) : '未測驗';
     const catalog = normalized ? (TRAITS[normalized.typeKey] || TRAITS.growth) : TRAITS.growth;
     return `
       <div class="trait-hero">
@@ -817,7 +818,7 @@
     queueStudentTraitSync(record);
     const saved = await syncQueuedStudentTraits(true);
     if (saved) {
-      notify('特質卡已同步，教練可以在後台查看。');
+      notify('已同步到教練後台');
       return true;
     }
     notify('特質卡暫存在本機，稍後會再同步。');
@@ -841,7 +842,7 @@
     const counts = { rocket: 0, volcano: 0, shield: 0, cheetah: 0, growth: 0, none: 0 };
     names.forEach(n => {
       const rec = currentRecord(n);
-      const key = rec && (rec.coachLabelOverrideKey || rec.typeKey || traitLabelToType(rec.traitLabel) || '');
+      const key = rec && (rec.typeKey || traitLabelToType(rec.traitLabel) || '');
       if (rec && key) counts[key] = (counts[key] || 0) + 1;
       else counts.none += 1;
     });
@@ -878,6 +879,7 @@
     const normalized = normalizeTraitRecord(record, record.studentName || '');
     const type = TRAITS[normalized.typeKey] || TRAITS.growth;
     const display = effectiveLabel(normalized);
+    const overrideLabel = coachOverrideLabel(normalized);
     const checks = record.coachChecks || {};
     return `
       <div class="trait-coach-detail">
@@ -891,6 +893,7 @@
           <div class="student-trait-label">${esc(normalized.studentName)}｜${esc(display)}</div>
           <div class="student-trait-meta">最後同步：${esc(normalized.updatedAt || normalized.timestamp || normalized.completedAt || '—')}</div>
           <div class="student-trait-section">${esc(normalized.traitSummary || `${display}：${type.keywords.join('／')}`)}</div>
+          ${overrideLabel ? `<div class="student-trait-section"><b>教練觀察修正：</b>${esc(overrideLabel)}</div>` : ''}
           <div class="student-trait-section"><b>教練溝通建議：</b>${esc(normalized.communicationTips || type.communication)}</div>
           <div class="student-trait-section"><b>訓練安排建議：</b>${esc(normalized.trainingTips || type.correction)}</div>
         </div>
