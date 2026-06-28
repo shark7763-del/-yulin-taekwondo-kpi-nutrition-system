@@ -353,6 +353,11 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tabName));
   if (tabName === 'parent') renderParentDashboard();
+  if (tabName === 'lastperf') {
+    setTimeout(() => {
+      if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
+    }, 0);
+  }
 }
 
 /* ============================================================

@@ -192,6 +192,10 @@ function init() {
     const role = getRole();
     if (role) applyRole();
     else showLoginOverlay();
+    setTimeout(() => {
+      const activeLastPerf = document.querySelector('#tab-lastperf.active');
+      if (activeLastPerf && typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
+    }, 150);
     // 角色套用後再還原草稿（選手姓名鎖定才正確）；有還原才提示
     if (restoreDraft()) toast('📝 已還原上次未送出的草稿');
   });
