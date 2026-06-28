@@ -1123,24 +1123,6 @@ function saveStudentTrait(data) {
   if (existing && existing.row) sh.getRange(existing.row, 1, 1, STUDENT_TRAIT_HEADERS.length).setValues([values]);
   else sh.appendRow(values);
 
-  // 舊 appdata 也同步一份，維持舊前端與快取相容
-  try {
-    var compactName = normalizeTraitName(name);
-    var traitPayload = {
-      studentName: name,
-      label: row.traitLabel,
-      typeKey: row.traitType,
-      description: row.traitSummary,
-      traitScore: traitScore && typeof traitScore === 'object' ? traitScore : {},
-      communicationTips: row.communicationTips,
-      trainingTips: row.trainingTips,
-      updatedAt: row.updatedAt,
-      completedAt: row.timestamp
-    };
-    writeAppData('trait:' + compactName, traitPayload);
-    if (compactName !== name) writeAppData('trait:' + name, traitPayload);
-  } catch (e) {}
-
   return { ok: true, trait: normalizeStudentTraitRow(row) };
 }
 
