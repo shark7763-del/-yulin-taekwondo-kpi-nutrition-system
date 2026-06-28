@@ -300,7 +300,10 @@
       const rec = normalizeTraitRecord(item, item.studentName || '');
       const key = traitMatchKey(rec.studentName || item.studentName || '');
       if (!key) return;
-      map[key] = rec;
+      const prev = map[key];
+      const prevTime = prev ? new Date(prev.updatedAt || prev.timestamp || prev.completedAt || 0).getTime() : -1;
+      const nextTime = new Date(rec.updatedAt || rec.timestamp || rec.completedAt || 0).getTime();
+      if (!prev || nextTime >= prevTime) map[key] = rec;
     });
     return map;
   }
@@ -522,7 +525,7 @@
       const rec = cacheTraitRecord(overlays[key], name);
       if (rec) list.push(rec);
     });
-    const merged = buildStudentTraitMap(list.concat(Object.keys(overlays || {}).map(key => overlays[key]).filter(Boolean)).concat(Object.values(state.map || {})));
+    const merged = buildStudentTraitMap(Object.values(state.map || {}).concat(list).concat(Object.keys(overlays || {}).map(key => overlays[key]).filter(Boolean)));
     if (Object.keys(merged).length) state.map = merged;
     return Object.values(state.map || merged);
   }
