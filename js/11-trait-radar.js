@@ -675,12 +675,23 @@
       updatedAt: payload.updatedAt || new Date().toISOString(),
       updatedBy: payload.updatedBy || 'student'
     }), name);
+    let saved = false;
     const res = await traitApi('saveStudentTrait', record);
-    if (!res || !res.trait) {
+    if (res && res.trait) {
+      cacheTraitRecord(res.trait, name);
+      saved = true;
+    }
+    if (!saved && typeof appSet === 'function') {
+      try {
+        await appSet(traitKey(name), record);
+        cacheTraitRecord(record, name);
+        saved = true;
+      } catch (e) {}
+    }
+    if (!saved) {
       cacheTraitRecord(record, name);
       return false;
     }
-    cacheTraitRecord(res.trait, name);
     return true;
   }
 
