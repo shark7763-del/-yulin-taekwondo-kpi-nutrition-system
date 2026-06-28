@@ -33,11 +33,14 @@
     return '';
   }
   function normalizeTraitType(typeKey, label, rawScore) {
+    if (rawScore && typeof rawScore === 'object') {
+      const fromScore = pickType(rawScore);
+      if (fromScore) return fromScore;
+    }
     const fromType = nameKey(typeKey);
     if (TRAITS[fromType]) return fromType;
     const fromLabel = traitLabelToType(label);
     if (TRAITS[fromLabel]) return fromLabel;
-    if (rawScore && typeof rawScore === 'object') return pickType(rawScore);
     return '';
   }
   function appGetAsync(key) {

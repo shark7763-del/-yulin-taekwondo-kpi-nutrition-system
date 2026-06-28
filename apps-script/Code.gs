@@ -458,6 +458,29 @@ var TEAM_ID_DEFAULT = 'yulin-taekwondo';
 function nowIso() { return new Date().toISOString(); }
 function normalizeName(v) { return String(v || '').trim(); }
 function normalizeTraitName(v) { return String(v || '').trim().replace(/\s+/g, ''); }
+function traitLabelForType(typeKey) {
+  if (typeKey === 'rocket') return '火箭型';
+  if (typeKey === 'volcano') return '火山型';
+  if (typeKey === 'shield') return '盾牌型';
+  if (typeKey === 'cheetah') return '獵豹型';
+  if (typeKey === 'growth') return '成長型';
+  return '';
+}
+function traitTypeFromScore(score) {
+  if (!score || typeof score !== 'object') return '';
+  var keys = ['growth', 'shield', 'rocket', 'cheetah', 'volcano'];
+  var best = '';
+  var bestScore = -1;
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var val = Number(score[key] || 0);
+    if (val > bestScore) {
+      bestScore = val;
+      best = key;
+    }
+  }
+  return best || '';
+}
 // 電話正規化：去掉非數字，並去掉開頭的 0。
 // （Google Sheet 會把 0936... 當數字存成 936...，吃掉開頭 0；統一去 0 後，
 //   家長輸入有沒有加 0 都能比對成功，新舊資料一致。）
@@ -1046,11 +1069,14 @@ function normalizeStudentTraitRow(row) {
   if (typeof traitScore === 'string' && traitScore) {
     try { traitScore = JSON.parse(traitScore); } catch (e) {}
   }
+  var scoreType = traitTypeFromScore(traitScore);
+  var typeKey = scoreType || String(row.traitType || row.typeKey || '').trim();
+  var label = traitLabelForType(typeKey) || String(row.traitLabel || row.label || '').trim();
   return {
     timestamp: row.timestamp || row.updatedAt || nowIso(),
     studentName: normalizeName(row.studentName || ''),
-    traitType: String(row.traitType || row.typeKey || '').trim(),
-    traitLabel: String(row.traitLabel || row.label || '').trim(),
+    traitType: typeKey,
+    traitLabel: label,
     traitScore: traitScore && typeof traitScore === 'object' ? traitScore : (traitScore || {}),
     traitSummary: String(row.traitSummary || row.description || '').trim(),
     communicationTips: String(row.communicationTips || row.communication || '').trim(),
@@ -1138,12 +1164,15 @@ function saveStudentTrait(data) {
   if (typeof traitScore === 'string' && traitScore) {
     try { traitScore = JSON.parse(traitScore); } catch (e) {}
   }
+  var traitScoreObj = traitScore && typeof traitScore === 'object' ? traitScore : (current && current.traitScore) || {};
+  var derivedType = traitTypeFromScore(traitScoreObj);
+  var finalType = derivedType || String(p.traitType || p.typeKey || current && current.traitType || '').trim();
   var row = {
     timestamp: current && current.timestamp ? current.timestamp : nowIso(),
     studentName: name,
-    traitType: String(p.traitType || p.typeKey || current && current.traitType || '').trim(),
-    traitLabel: String(p.traitLabel || p.label || current && current.traitLabel || '').trim(),
-    traitScore: JSON.stringify(traitScore && typeof traitScore === 'object' ? traitScore : (current && current.traitScore) || {}),
+    traitType: finalType,
+    traitLabel: traitLabelForType(finalType) || String(p.traitLabel || p.label || current && current.traitLabel || '').trim(),
+    traitScore: JSON.stringify(traitScoreObj),
     traitSummary: String(p.traitSummary || p.description || current && current.traitSummary || '').trim(),
     communicationTips: String(p.communicationTips || p.communication || current && current.communicationTips || '').trim(),
     trainingTips: String(p.trainingTips || p.correction || current && current.trainingTips || '').trim(),
