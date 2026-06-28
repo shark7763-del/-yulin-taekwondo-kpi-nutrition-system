@@ -39,6 +39,7 @@ var COACH_SCORES_SHEET = 'coach_scores';
 var AI_SCORES_SHEET = 'ai_scores';
 var TRAINING_TASKS_SHEET = 'training_tasks';
 var RISK_FLAGS_SHEET = 'risk_flags';
+var COACH_REPLIES_SHEET = 'coach_replies';
 var KPI_SESSION_HEADERS = [
   'sessionId', 'sessionName', 'sessionType', 'weekId', 'openMode', 'targetGroup',
   'targetStudentIds', 'openAt', 'closeAt', 'status', 'includeInWeeklyReport',
@@ -90,6 +91,10 @@ var TRAINING_TASK_HEADERS = [
 var RISK_FLAG_HEADERS = [
   'timestamp', 'date', 'studentName', 'riskType', 'riskLevel', 'riskReason',
   'suggestedAction', 'isResolved', 'resolvedAt', 'coachNote'
+];
+var COACH_REPLY_HEADERS = [
+  'timestamp', 'studentName', 'recordDate', 'rangeDays', 'sourceRecordId',
+  'replyText', 'summaryText', 'generatedByAI', 'confirmedByCoach', 'createdBy'
 ];
 
 // Sheet 欄位順序（必須與前端 record 物件對應）
@@ -224,6 +229,10 @@ function handleAction(action, data) {
       return jsonOut(authCoachOnly(data, function () { return getCoachScores(data.date); }));
     case 'saveCoachScore':
       return jsonOut(saveCoachScore(data));
+    case 'saveCoachReply':
+      return jsonOut(saveCoachReply(data));
+    case 'getCoachReplies':
+      return jsonOut(getCoachReplies(data));
     case 'updateRecord':
       return jsonOut(updateRecordAuthorized(data));
     // ---- 新制角色驗證與帳號管理 ----
@@ -267,6 +276,8 @@ function handleAction(action, data) {
     /* ===== Phase 2：KPI 回報手動開啟（教練）＋學生 KPI 狀態 ===== */
     case 'createKpiSession':      // 手動開啟 KPI
       return jsonOut(createKpiSession(data));
+    case 'bulkSetKpiSession':     // 批次開放／關閉本週 KPI
+      return jsonOut(bulkSetKpiSession(data));
     case 'closeKpiSession':       // 關閉本次 KPI
       return jsonOut(updateKpiSessionStatus(data, 'closed'));
     case 'extendKpiSession':      // 延長截止時間
@@ -403,8 +414,9 @@ function setupSheet() {
   getAiScoresSheet();
   getTrainingTasksSheet();
   getRiskFlagsSheet();
+  getCoachRepliesSheet();
   syncStudentAccountsFromRoster();
-  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings、kpi_sessions、weekly_kpi_reports、coach_scores、ai_scores、training_tasks、risk_flags 工作表。';
+  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings、kpi_sessions、weekly_kpi_reports、coach_scores、ai_scores、training_tasks、risk_flags、coach_replies 工作表。';
 }
 
 // 今天日期字串 yyyy-MM-dd
@@ -482,6 +494,7 @@ function getCoachScoresSheet() { return getSheetWithHeaders(COACH_SCORES_SHEET, 
 function getAiScoresSheet() { return getSheetWithHeaders(AI_SCORES_SHEET, AI_SCORE_HEADERS); }
 function getTrainingTasksSheet() { return getSheetWithHeaders(TRAINING_TASKS_SHEET, TRAINING_TASK_HEADERS); }
 function getRiskFlagsSheet() { return getSheetWithHeaders(RISK_FLAGS_SHEET, RISK_FLAG_HEADERS); }
+function getCoachRepliesSheet() { return getSheetWithHeaders(COACH_REPLIES_SHEET, COACH_REPLY_HEADERS); }
 
 function findObjectRow(sh, headers, key, value) {
   if (!sh) throw new Error('工作表不存在，無法查找資料。');
@@ -938,6 +951,80 @@ function saveCoachScore(data) {
     });
   }
   return { ok: true, data: fields };
+}
+
+function boolLike(v) {
+  return v === true || String(v).toLowerCase() === 'true' || String(v) === '1' || String(v) === '是';
+}
+
+function saveCoachReply(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var p = data.payload || data || {};
+  var name = normalizeName(p.studentName);
+  var text = String(p.replyText || '').trim();
+  if (!name) return { ok: false, error: '缺少 studentName' };
+  if (!text) return { ok: false, error: '缺少 replyText' };
+
+  var row = {
+    timestamp: nowIso(),
+    studentName: name,
+    recordDate: p.recordDate ? formatDateCell(p.recordDate) : '',
+    rangeDays: p.rangeDays || '',
+    sourceRecordId: p.sourceRecordId || '',
+    replyText: text.slice(0, 4000),
+    summaryText: String(p.summaryText || p.summary || '').slice(0, 4000),
+    generatedByAI: boolLike(p.generatedByAI) ? 'true' : 'false',
+    confirmedByCoach: Object.prototype.hasOwnProperty.call(p, 'confirmedByCoach') ? (boolLike(p.confirmedByCoach) ? 'true' : 'false') : 'true',
+    createdBy: 'coach'
+  };
+  getCoachRepliesSheet().appendRow(COACH_REPLY_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; }));
+
+  if (row.sourceRecordId) {
+    try { updateRecord(row.sourceRecordId, { coachReply: row.replyText }); } catch (e) { /* 不影響獨立回覆表 */ }
+  }
+  return { ok: true };
+}
+
+function getCoachReplies(data) {
+  var identity = authorizedStudentName(data, true);
+  if (!identity.ok) return identity;
+  var requested = normalizeName(data.studentName || data.name);
+  var name = requested || identity.name;
+  var isCoach = identity.session && identity.session.role === 'coach';
+  if (!isCoach) name = identity.name;
+  if (!name) return { ok: false, error: '缺少 studentName' };
+
+  var recordDate = data.recordDate ? formatDateCell(data.recordDate) : '';
+  var limit = Math.max(1, Math.min(20, Number(data.limit || 1)));
+  var rows = readSheetObjects(getCoachRepliesSheet(), COACH_REPLY_HEADERS).filter(function (r) {
+    if (normalizeName(r.studentName) !== normalizeName(name)) return false;
+    if (!boolLike(r.confirmedByCoach)) return false;
+    if (!String(r.replyText || '').trim()) return false;
+    return true;
+  });
+  rows.sort(byTimestampDesc);
+
+  var matched = [];
+  if (recordDate) {
+    matched = rows.filter(function (r) { return formatDateCell(r.recordDate) === recordDate; });
+  }
+  if (!matched.length) matched = rows;
+
+  return {
+    ok: true,
+    replies: matched.slice(0, limit).map(function (r) {
+      return {
+        timestamp: r.timestamp,
+        studentName: r.studentName,
+        recordDate: r.recordDate,
+        replyText: r.replyText,
+        summaryText: r.summaryText,
+        generatedByAI: boolLike(r.generatedByAI),
+        confirmedByCoach: boolLike(r.confirmedByCoach)
+      };
+    })
+  };
 }
 function appendAiScoreFromPayload(payload) {
   if (!payload || payload.finalReadinessScore === undefined || payload.finalReadinessScore === '') return;
@@ -1740,11 +1827,13 @@ function kpiTargetConflict(candidate, excludeSessionId) {
   var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS);
   var groupMap = latestGroupByName();
   var candidateIds = kpiTargetIds(candidate, accounts, groupMap);
+  var candidateWeek = String(candidate.weekId || candidate.weekKey || isoWeekId(new Date()));
   var candidateMap = {};
   candidateIds.forEach(function (id) { candidateMap[id] = true; });
   var conflicts = [];
   listKpiSessions().forEach(function (s) {
     if (String(s.sessionId) === String(excludeSessionId || '')) return;
+    if (String(s.weekId || '') !== candidateWeek) return;
     var status = effectiveSessionStatus(s);
     if (status !== 'open' && status !== 'scheduled') return;
     var overlap = kpiTargetIds(s, accounts, groupMap).some(function (id) { return candidateMap[id]; });
@@ -1799,7 +1888,7 @@ function createKpiSession(data) {
   if (data.lineNotify && targetSnapshot.targets.length !== targetSnapshot.accounts.length) {
     return { ok: false, error: '目前 LINE 通知是全頻道廣播，只有開放全隊時才能使用。' };
   }
-  var conflicts = kpiTargetConflict({ targetStudentIds: targetSnapshot.ids.join(','), targetGroup: data.targetGroup || '全隊' });
+  var conflicts = kpiTargetConflict({ targetStudentIds: targetSnapshot.ids.join(','), targetGroup: data.targetGroup || '全隊', weekId: data.weekId || data.weekKey || isoWeekId(new Date()) });
   if (conflicts.length) return { ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' };
   var now = nowIso();
   var openMode = data.openMode === 'autoReminder' ? 'autoReminder' : 'manual';
@@ -1810,7 +1899,7 @@ function createKpiSession(data) {
     sessionId: 'kpi_' + Date.now() + '_' + Math.floor(Math.random() * 100000),
     sessionName: String(data.sessionName || '本週 KPI 成長回報').trim(),
     sessionType: data.sessionType || 'weekly',
-    weekId: data.weekId || isoWeekId(new Date()),
+    weekId: data.weekId || data.weekKey || isoWeekId(new Date()),
     openMode: openMode,
     targetGroup: data.targetGroup || '全隊',
     targetStudentIds: targetSnapshot.ids.join(','),
@@ -1831,6 +1920,75 @@ function createKpiSession(data) {
     try { pushToLine(kpiReminderText('student', session, null)); } catch (e) {}
   }
   return { ok: true, session: session };
+}
+
+function normalizeBulkStudents_(students) {
+  if (typeof students === 'string') {
+    try { students = JSON.parse(students); } catch (e) { students = []; }
+  }
+  if (!Array.isArray(students)) students = [];
+  var accounts = activeStudentAccounts();
+  var byId = {}, byName = {};
+  accounts.forEach(function (a) {
+    byId[String(a.studentId)] = a;
+    byName[String(a.studentName || '').trim()] = a;
+  });
+  var out = [];
+  students.forEach(function (s) {
+    var acc = byId[String(s.studentId || '')] || byName[String(s.studentName || '').trim()];
+    if (acc && !out.some(function (x) { return String(x.studentId) === String(acc.studentId); })) out.push(acc);
+  });
+  return out;
+}
+
+function bulkSetKpiSession(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var weekKey = String(data.weekKey || data.weekId || isoWeekId(new Date()));
+  var enabled = data.enabled === true || String(data.enabled).toLowerCase() === 'true';
+  var dueAt = data.dueAt || resolveCloseAt('sunday21');
+  var students = normalizeBulkStudents_(data.students);
+  if (!students.length) return { ok: false, results: [], error: '沒有可操作的選手' };
+  var sessions = listKpiSessions();
+  var results = [];
+  students.forEach(function (stu) {
+    try {
+      var mine = sessions.filter(function (s) {
+        if (String(s.weekId || '') !== weekKey) return false;
+        if (effectiveSessionStatus(s) !== 'open' && effectiveSessionStatus(s) !== 'scheduled') return false;
+        return studentInTarget(s, String(stu.studentId), String(stu.studentName || '').trim(), stu.group || '');
+      });
+      if (enabled) {
+        if (!mine.length) {
+          var created = createKpiSession({
+            authToken: data.authToken,
+            sessionName: data.sessionName || '本週 KPI 回報－' + stu.studentName,
+            sessionType: 'weekly',
+            weekId: weekKey,
+            targetGroup: '指定選手',
+            targetStudentIds: [stu.studentId],
+            closeAtPreset: 'custom',
+            closeAtTime: dueAt,
+            includeInWeeklyReport: true,
+            includeInMonthlyReport: true,
+            lineNotify: false
+          });
+          if (!created.ok) throw new Error(created.error || '開放失敗');
+          sessions.push(created.session);
+        }
+      } else {
+        mine.forEach(function (s) {
+          var found = findKpiSession(s.sessionId);
+          if (found && found.sheet) updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, { status: 'closed', updatedAt: nowIso() });
+        });
+      }
+      results.push({ studentName: stu.studentName, studentId: stu.studentId, ok: true });
+    } catch (e) {
+      results.push({ studentName: stu.studentName, studentId: stu.studentId, ok: false, error: String(e.message || e) });
+    }
+  });
+  var allOk = results.every(function (r) { return r.ok; });
+  return { ok: allOk, results: results };
 }
 
 function updateKpiSessionStatus(data, status) {
@@ -1890,15 +2048,17 @@ function getStudentKpiSession(data) {
   var studentName = who.name, studentId = who.studentId || '';
   var myGroup = latestGroupByName()[String(studentName).trim()] || '';
   var sessions = listKpiSessions();
+  var currentWeek = isoWeekId(new Date());
   // 找最新一個「對這位學生有效（open/scheduled）」的 session
   var open = sessions.filter(function (s) {
+    if (String(s.weekId || '') !== currentWeek) return false;
     var es = effectiveSessionStatus(s);
     return (es === 'open' || es === 'scheduled') && studentInTarget(s, studentId, studentName, myGroup);
   }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); })[0];
 
   if (!open) {
     // 是否有最近剛截止的
-    var recentClosed = sessions.filter(function (s) { return effectiveSessionStatus(s) === 'closed' && studentInTarget(s, studentId, studentName, myGroup); })
+    var recentClosed = sessions.filter(function (s) { return String(s.weekId || '') === currentWeek && effectiveSessionStatus(s) === 'closed' && studentInTarget(s, studentId, studentName, myGroup); })
       .sort(function (a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); })[0];
     if (recentClosed) return { ok: true, state: 'closed', session: recentClosed, message: '本次 KPI 已截止。如需補填，請洽教練重新開放。' };
     return { ok: true, state: 'none', message: '本週 KPI 尚未開放，請依照教練通知時間填寫。' };

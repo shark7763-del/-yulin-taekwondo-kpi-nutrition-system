@@ -901,6 +901,8 @@ async function refreshCoach() {
   renderCoachReadinessOverview(todays, all);
   renderCoachQuickScores(todays, coachScores);
   renderOverview(todays);
+  renderCoachSimpleGroups(todays);
+  renderRiskTracking(todays, all);
   renderTeamMood(todays);
   renderSubmitStatus(todays);
   renderCoachAttendanceReports(todays);
@@ -916,23 +918,102 @@ async function refreshCoach() {
 
 function renderOverview(todays) {
   const box = $id('coachOverview');
+  if (!box) return;
+  const roster = getPlayers();
   const count = todays.length;
-  const avg = count ? round2(todays.reduce((s, r) => s + (parseFloat(r.averageScore) || 0), 0) / count) : 0;
-  const red = todays.filter(r => r.status && r.status.indexOf('紅') !== -1).length;
-  const yellow = todays.filter(r => r.status && r.status.indexOf('黃') !== -1).length;
-  const green = todays.filter(r => r.status && r.status.indexOf('綠') !== -1).length;
-  const weights = todays.map(r => parseFloat(r.weightKg)).filter(n => !isNaN(n));
-  const avgWeight = weights.length ? round1(weights.reduce((a, b) => a + b, 0) / weights.length) : '--';
-  const riskCount = todays.filter(r => r.nutritionRisks && r.nutritionRisks !== '無明顯風險').length;
-  const lowWaterCount = todays.filter(r => r.waterIntake === '少於 500ml' || r.waterIntake === '500-1000ml').length;
+  const missing = Math.max(0, roster.length - count);
+  const redYellow = todays.filter(r =>
+    String(r.status || '').indexOf('紅') !== -1 || String(r.status || '').indexOf('黃') !== -1 ||
+    String(r.readinessStatusLight || '').indexOf('紅') !== -1 || String(r.readinessStatusLight || '').indexOf('黃') !== -1 ||
+    String(r.readinessStatusLight || '').indexOf('橘') !== -1
+  ).length;
   const painAlertCount = todays.filter(r => painScoreValue(r) >= 4).length;
-
+  const rpeHigh = todays.filter(r => nval(r.rpe) !== null && nval(r.rpe) >= 8).length;
+  const sleepBad = todays.filter(r => String(r.sleepQuality || '') === '差' || (nval(r.sleepHours) !== null && nval(r.sleepHours) < 6)).length;
+  const moodLow = todays.filter(r => nval(r.moodIndex) !== null && nval(r.moodIndex) <= 2).length;
+  const parentNotify = todays.filter(r => painScoreValue(r) >= 7 || /受傷風險|需要關心|脫水風險|高風險/.test(String(r.aiTags || ''))).length;
   const cells = [
-    ['今日提交', count], ['全隊平均', avg], ['🔴 紅燈', red], ['🟡 黃燈', yellow],
-    ['🟢 綠燈', green], ['平均體重', avgWeight + ' kg'], ['飲食風險', riskCount], ['水量不足', lowWaterCount],
-    ['疼痛警示', painAlertCount]
+    ['已回報', count],
+    ['未回報', missing],
+    ['紅黃燈', redYellow],
+    ['疼痛 4 分以上', painAlertCount],
+    ['RPE 8 以上', rpeHigh],
+    ['睡眠差', sleepBad],
+    ['心情低落', moodLow],
+    ['需家長通知', parentNotify]
   ];
   box.innerHTML = cells.map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
+}
+
+function renderCoachSimpleGroups(todays) {
+  const box = $id('coachTodayGroups');
+  if (!box) return;
+  const buckets = { '強化組': [], '穩定組': [], '調整組': [], '保護組': [], '關懷組': [] };
+  (todays || []).forEach(r => {
+    const light = readinessLight(nval(r.finalReadinessScore) || 0);
+    buckets[light.group].push(r);
+  });
+  box.innerHTML = Object.keys(buckets).map(group => {
+    const list = buckets[group];
+    return `<div class="readiness-group"><h4>${group}（${list.length}）</h4>` +
+      (list.length ? `<div class="name-list">${list.map(r => `<span class="tag">${escapeHtml(r.name || '')}</span>`).join('')}</div>` : '<p class="review-label">無</p>') +
+      `</div>`;
+  }).join('');
+}
+
+function riskItem(text, cls) {
+  return `<span class="tag ${cls || 'tag-orange'}">${escapeHtml(text)}</span>`;
+}
+function renderRiskBlock(title, items, empty) {
+  return `<div class="risk-block"><h4>${title}（${items.length}）</h4><div class="name-list">${items.length ? items.join('') : `<span class="review-label">${empty || '目前無'}</span>`}</div></div>`;
+}
+function renderRiskTracking(todays, all) {
+  const box = $id('coachRiskTracking');
+  if (!box) return;
+  const bodyRisks = [];
+  const mentalRisks = [];
+  const trainingRisks = [];
+  const parentNotify = [];
+
+  (todays || []).forEach(r => {
+    const pain = painScoreValue(r);
+    if (pain >= 4) {
+      const label = `${r.name || ''}｜${painAreaText(r)}｜${pain}分${pain >= 7 ? '｜重度疼痛' : ''}`;
+      bodyRisks.push(riskItem(label, pain >= 7 ? 'tag-red' : 'tag-orange'));
+      if (pain >= 7) parentNotify.push(riskItem(`${label}｜建議通知家長`, 'tag-red'));
+    }
+    const sleep = nval(r.sleepHours);
+    if (String(r.sleepQuality || '') === '差' || (sleep !== null && sleep < 6)) bodyRisks.push(riskItem(`${r.name || ''}｜睡眠差${sleep !== null ? `｜${sleep}小時` : ''}`, 'tag-orange'));
+    const mood = nval(r.moodIndex);
+    if (mood !== null && mood <= 2) mentalRisks.push(riskItem(`${r.name || ''}｜心情低落｜${mood}/5`, 'tag-orange'));
+    const rpe = nval(r.rpe);
+    if (rpe !== null && rpe >= 8) trainingRisks.push(riskItem(`${r.name || ''}｜RPE ${rpe}`, 'tag-orange'));
+    if (/需要關心|高風險硬撐|受傷風險|脫水風險/.test(String(r.aiTags || ''))) trainingRisks.push(riskItem(`${r.name || ''}｜${String(r.aiTags || '').split('、').filter(Boolean).slice(0, 2).join('、')}`, 'tag-red'));
+  });
+
+  const byName = {};
+  (all || []).forEach(r => { if (r && r.name) (byName[r.name] = byName[r.name] || []).push(r); });
+  Object.keys(byName).forEach(name => {
+    const alerts = computeAlerts(dedupeLatestByDate(byName[name]));
+    alerts.forEach(a => {
+      const item = riskItem(`${name}｜${a.text.replace(/^[^\s]+\s*/, '')}`, a.level === 'watch' ? 'tag-green' : 'tag-orange');
+      if (/情緒|心情/.test(a.text)) mentalRisks.push(item);
+      else if (/睡眠|疼痛|宵夜|水量/.test(a.text)) bodyRisks.push(item);
+      else trainingRisks.push(item);
+    });
+  });
+
+  if (!parentNotify.length) {
+    (todays || []).filter(r => /需要關心|受傷風險|高風險/.test(String(r.aiTags || ''))).forEach(r => {
+      parentNotify.push(riskItem(`${r.name || ''}｜${String(r.aiTags || '').split('、')[0] || '需要關心'}`, 'tag-red'));
+    });
+  }
+
+  box.innerHTML =
+    renderRiskBlock('身體風險', bodyRisks, '身體狀況穩定') +
+    renderRiskBlock('心理風險', mentalRisks, '心理狀態穩定') +
+    renderRiskBlock('訓練風險', trainingRisks, '訓練負荷穩定') +
+    renderRiskBlock('家長通知', parentNotify, '目前無需通知');
 }
 
 /* ---- 團隊今日心情：一眼看出全隊氣氛，並抓出需要關心的人 ---- */
@@ -1163,15 +1244,24 @@ function renderRedLightCoaching(todays) {
     const isRed = r.status && r.status.indexOf('紅') !== -1;
     const tagCls = isRed ? 'tag-red' : 'tag-yellow';
     const lampTxt = isRed ? '🔴 紅燈' : '🟡 黃燈';
+    const groupName = readinessLight(nval(r.finalReadinessScore) || 0).group;
+    const issues = [];
+    if (painScoreValue(r) >= 4) issues.push(`疼痛：${painAreaText(r)} ${painScoreValue(r)}分`);
+    if (nval(r.sleepHours) !== null && nval(r.sleepHours) < 6) issues.push(`睡眠：${nval(r.sleepHours)}小時`);
+    else if (String(r.sleepQuality || '') === '差') issues.push('睡眠差');
+    if (nval(r.moodIndex) !== null && nval(r.moodIndex) <= 2) issues.push(`心情低落：${nval(r.moodIndex)}/5`);
+    if (nval(r.rpe) !== null && nval(r.rpe) >= 8) issues.push(`RPE：${nval(r.rpe)}`);
     let low = [];
     try { low = findLowItems(JSON.parse(r.rawScoresJson || '{}')); } catch (e) { /* */ }
     const lowText = low.length ? low.map(l => `${l.item}(${l.score})`).join('、') : '—';
+    if (!issues.length && low.length) issues.push('技術/KPI 偏弱');
     const suggested = (low.length && suggestionMap[low[0].item]) ? suggestionMap[low[0].item].advice : '明天先把基本動作與節奏做穩。';
     const canTarget = !!r.recordId;
 
     html += `<div class="redcare-card ${isRed ? '' : 'is-yellow'}" data-rid="${r.recordId || ''}">`;
-    html += `<div class="redcare-head"><b>${r.name}</b><span class="tag ${tagCls}">${lampTxt}・平均 ${r.averageScore}</span></div>`;
-    html += `<div class="redcare-low">今日偏弱：${lowText}</div>`;
+    html += `<div class="redcare-head"><b>${escapeHtml(r.name || '')}｜${escapeHtml(r.averageScore || r.finalReadinessScore || '--')}｜${lampTxt}｜${escapeHtml(groupName)}</b><span class="tag ${tagCls}">今日回覆</span></div>`;
+    html += `<div class="redcare-low">主要問題：${escapeHtml(issues.join(' / ') || '今日狀態需教練確認')}</div>`;
+    if (low.length) html += `<div class="redcare-low">KPI 提醒：${escapeHtml(lowText)}</div>`;
     html += `<div class="redcare-suggest">💡 建議方向：${suggested}</div>`;
     if (r.coachReply) html += `<div class="hint-box good">✅ 已送出給選手：${escapeHtml(r.coachReply)}</div>`;
 
@@ -1183,6 +1273,7 @@ function renderRedLightCoaching(todays) {
         <button type="button" class="btn btn-ai btn-sm" data-redai="${r.recordId}">✨ AI 代擬</button>
         <button type="button" class="btn btn-ghost btn-sm" data-redtoggle="${r.recordId}">💬 快捷語 ▾</button>
         <button type="button" class="btn btn-primary" data-redsend="${r.recordId}">📨 送出給選手</button>
+        <button type="button" class="btn btn-primary" data-redsavecoachreply="${r.recordId}">✅ 儲存教練回覆</button>
         <button type="button" class="btn btn-line-share" data-redshare="${r.recordId}">💬 分享到 LINE</button>
       </div>`;
 
@@ -1232,10 +1323,11 @@ ${text}
         const v = res.versions.student;
         ta.value = [v.affirm, v.watch, v.oneThing ? ('明天：' + v.oneThing) : '', v.quote ? ('「' + v.quote + '」') : '']
           .filter(Boolean).join('\n');
+        ta.dataset.generatedByAi = 'true';
         return res.cached ? 'cached' : 'ok';
       }
-      if (res && res.capped) { ta.value = suggested; return 'capped'; }
-      if (res && res.disabled) { ta.value = suggested; return 'disabled'; }
+      if (res && res.capped) { ta.value = suggested; ta.dataset.generatedByAi = 'false'; return 'capped'; }
+      if (res && res.disabled) { ta.value = suggested; ta.dataset.generatedByAi = 'false'; return 'disabled'; }
       return 'fail';
     } catch (e) { return 'fail'; }
   }
@@ -1282,10 +1374,42 @@ ${text}
       const text = $id(`redmsg-${r.recordId}`).value.trim();
       if (!text) { toast('請先輸入要給選手的話'); return; }
       btn.disabled = true; btn.textContent = '送出中...';
-      const ok = await updateRecordRemote(r.recordId, { coachReply: text });
+      const ta = $id(`redmsg-${r.recordId}`);
+      const ok = await saveCoachReplyRemote({
+        timestamp: new Date().toISOString(),
+        studentName: r.name,
+        recordDate: r.date,
+        rangeDays: '單筆',
+        sourceRecordId: r.recordId,
+        replyText: text,
+        summaryText: r.status || '',
+        generatedByAI: ta && ta.dataset.generatedByAi === 'true',
+        confirmedByCoach: true
+      }, r);
       btn.disabled = false; btn.textContent = '📨 送出給選手';
       toast(ok ? '✅ 已送出，選手在「上次表現」看得到' : '⚠️ 送出失敗，請檢查連線');
       if (ok) { r.coachReply = text; renderRedLightCoaching(todays); }
+    });
+    const saveReplyBtn = box.querySelector(`[data-redsavecoachreply="${r.recordId}"]`);
+    if (saveReplyBtn) saveReplyBtn.addEventListener('click', async () => {
+      const ta = $id(`redmsg-${r.recordId}`);
+      const text = ta.value.trim();
+      if (!text) { toast('請先輸入教練回覆'); return; }
+      saveReplyBtn.disabled = true; saveReplyBtn.textContent = '儲存中...';
+      const ok = await saveCoachReplyRemote({
+        timestamp: new Date().toISOString(),
+        studentName: r.name,
+        recordDate: r.date,
+        rangeDays: '單筆',
+        sourceRecordId: r.recordId,
+        replyText: text,
+        summaryText: r.status || '',
+        generatedByAI: ta.dataset.generatedByAi === 'true',
+        confirmedByCoach: true
+      }, r);
+      saveReplyBtn.disabled = false; saveReplyBtn.textContent = '✅ 儲存教練回覆';
+      toast(ok ? '✅ 已儲存教練回覆，選手可在上次表現查看。' : '儲存失敗，請稍後再試。');
+      if (ok) renderRedLightCoaching(todays);
     });
     const shareBtn = box.querySelector(`[data-redshare="${r.recordId}"]`);
     if (shareBtn) shareBtn.addEventListener('click', () => {
@@ -1887,6 +2011,125 @@ function saveCoachReplyStore(row) {
   arr.unshift(row);
   localStorage.setItem(COACH_REPLY_LS_KEY, JSON.stringify(arr.slice(0, 300)));
 }
+function coachReplyDateValue(v) {
+  const d = new Date(v || '');
+  return isNaN(d.getTime()) ? null : d;
+}
+function isCoachReplyWithinDays(reply, baseDate, days) {
+  const base = coachReplyDateValue(normDate(baseDate) || todayStr());
+  const date = coachReplyDateValue(normDate(reply.recordDate) || reply.timestamp);
+  if (!base || !date) return false;
+  base.setHours(23, 59, 59, 999);
+  const start = new Date(base);
+  start.setDate(start.getDate() - ((days || 7) - 1));
+  start.setHours(0, 0, 0, 0);
+  return date >= start && date <= base;
+}
+function normalizeCoachReplyRow(row) {
+  return {
+    timestamp: row.timestamp || row.createdAt || '',
+    studentName: row.studentName || row.name || '',
+    recordDate: row.recordDate || row.date || '',
+    rangeDays: row.rangeDays || '',
+    sourceRecordId: row.sourceRecordId || row.recordId || '',
+    replyText: row.replyText || row.coachReplyText || row.coachReply || '',
+    summaryText: row.summaryText || row.summary || '',
+    generatedByAI: row.generatedByAI === true || String(row.generatedByAI).toLowerCase() === 'true',
+    confirmedByCoach: row.confirmedByCoach !== false && String(row.confirmedByCoach).toLowerCase() !== 'false'
+  };
+}
+async function fetchCoachRepliesForStudent(name, recordDate, limit) {
+  let rows = [];
+  if (getWebAppUrl()) {
+    try {
+      const res = await postToWebApp({ action: 'getCoachReplies', studentName: name, recordDate: recordDate || '', limit: limit || 10 });
+      if (res && res.ok && Array.isArray(res.replies)) rows = res.replies;
+    } catch (e) { /* local fallback */ }
+  }
+  if (!rows.length) {
+    rows = getCoachReplyStore().filter(r => String(r.studentName || '').trim() === String(name || '').trim());
+  }
+  return rows.map(normalizeCoachReplyRow)
+    .filter(r => r.replyText && r.confirmedByCoach)
+    .sort((a, b) => String(b.timestamp || b.recordDate).localeCompare(String(a.timestamp || a.recordDate)));
+}
+async function pickStudentCoachReply(name, rec) {
+  if (rec && rec.coachReply) {
+    return normalizeCoachReplyRow({
+      timestamp: rec.reviewUpdatedAt || rec.timestamp || '',
+      studentName: rec.name || name,
+      recordDate: rec.date || '',
+      sourceRecordId: rec.recordId || '',
+      replyText: rec.coachReply,
+      generatedByAI: false,
+      confirmedByCoach: true
+    });
+  }
+  const rows = await fetchCoachRepliesForStudent(name, rec ? rec.date : '', 10);
+  const exact = rec ? rows.find(r =>
+    (r.sourceRecordId && rec.recordId && String(r.sourceRecordId) === String(rec.recordId)) ||
+    (r.recordDate && normDate(r.recordDate) === normDate(rec.date))
+  ) : null;
+  if (exact) return exact;
+  return rows.find(r => isCoachReplyWithinDays(r, rec ? rec.date : todayStr(), 7)) || null;
+}
+function coachReplyTimeText(reply) {
+  const raw = reply && (reply.timestamp || reply.recordDate);
+  if (!raw) return '';
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return dateSlash(raw);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
+}
+function studentCoachReplyHtml(reply) {
+  if (!reply || !reply.replyText) {
+    return `<div class="student-coach-reply-card">
+      <div class="student-coach-reply-empty">教練目前還沒有針對這筆紀錄回覆。你可以先看上次心得與目標，照著方向慢慢修正。</div>
+    </div>`;
+  }
+  const meta = [];
+  const time = coachReplyTimeText(reply);
+  if (time) meta.push(`回覆時間：${escapeHtml(time)}`);
+  if (reply.generatedByAI && reply.confirmedByCoach) meta.push('AI 協助整理，教練已確認');
+  return `<div class="student-coach-reply-card">
+    <div class="student-coach-reply-body">教練看完你最近的紀錄後，給你的方向：<br><br>「${escapeHtml(reply.replyText)}」</div>
+    ${meta.length ? `<div class="student-coach-reply-meta">${meta.join('<br>')}</div>` : ''}
+  </div>`;
+}
+async function renderStudentCoachReplyCard(name, rec, box) {
+  const target = $id('studentCoachReplyMount');
+  const mount = target || box;
+  if (!mount) return;
+  const role = (getRole() || {}).role;
+  if (role === 'coach') return;
+  const reply = await pickStudentCoachReply(name, rec);
+  if (target) target.innerHTML = studentCoachReplyHtml(reply);
+  else mount.insertAdjacentHTML('beforeend', studentCoachReplyHtml(reply));
+}
+async function saveCoachReplyRemote(row, rec) {
+  const payload = Object.assign({
+    recordDate: rec ? rec.date : '',
+    sourceRecordId: rec ? rec.recordId : '',
+    generatedByAI: false,
+    confirmedByCoach: true,
+    createdBy: 'coach'
+  }, row);
+  let ok = false;
+  if (rec && rec.recordId) ok = await updateRecordRemote(rec.recordId, { coachReply: payload.replyText });
+  if (getWebAppUrl()) {
+    try {
+      const res = await postToWebApp({ action: 'saveCoachReply', payload: payload });
+      ok = ok || !!(res && res.ok);
+    } catch (e) { /* local fallback */ }
+  }
+  saveCoachReplyStore(payload);
+  if (rec) rec.coachReply = payload.replyText;
+  return ok;
+}
 function getCoachAiStyleText() {
   const el = $id('aiStyle');
   if (el && el.value) return el.value.trim();
@@ -2081,10 +2324,16 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
       const ta = $id('coachReplyDraft');
       try {
         const result = await generateCoachReplyFromPerformance(ctx, mode);
-        if (ta) ta.value = result.text || generateCoachReplyFallback(ctx, mode);
+        if (ta) {
+          ta.value = result.text || generateCoachReplyFallback(ctx, mode);
+          ta.dataset.generatedByAi = result.source === 'ai' ? 'true' : 'false';
+        }
         toast(result.source === 'ai' ? '✨ AI 已代擬回覆' : 'AI 未啟用或呼叫失敗，已使用內建模板');
       } catch (e) {
-        if (ta) ta.value = generateCoachReplyFallback(ctx, mode);
+        if (ta) {
+          ta.value = generateCoachReplyFallback(ctx, mode);
+          ta.dataset.generatedByAi = 'false';
+        }
         toast('AI 代擬失敗，已使用內建模板');
       }
       btn.disabled = false; btn.textContent = old;
@@ -2103,19 +2352,22 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
     const text = (($id('coachReplyDraft') || {}).value || '').trim();
     if (!text) { toast('請先輸入教練回覆'); return; }
     saveBtn.disabled = true; saveBtn.textContent = '儲存中...';
-    const row = { timestamp: new Date().toISOString(), studentName: ctx.name, rangeDays: ctx.rangeDays, summary: (box.querySelector('.coach-reply-summary') || {}).textContent || '', replyText: text, createdBy: 'coach' };
-    let ok = false;
-    if (rec && rec.recordId) ok = await updateRecordRemote(rec.recordId, { coachReply: text });
-    if (getWebAppUrl()) {
-      try {
-        const res = await postToWebApp({ action: 'saveCoachReply', payload: row });
-        ok = ok || !!(res && res.ok);
-      } catch (e) { /* local fallback */ }
-    }
-    saveCoachReplyStore(row);
-    if (rec) rec.coachReply = text;
+    const ta = $id('coachReplyDraft');
+    const row = {
+      timestamp: new Date().toISOString(),
+      studentName: ctx.name,
+      recordDate: rec ? rec.date : '',
+      rangeDays: ctx.rangeDays ? `近${ctx.rangeDays}天` : '近7天',
+      sourceRecordId: rec ? rec.recordId : '',
+      summaryText: (box.querySelector('.coach-reply-summary') || {}).textContent || '',
+      replyText: text,
+      generatedByAI: ta && ta.dataset.generatedByAi === 'true',
+      confirmedByCoach: true,
+      createdBy: 'coach'
+    };
+    const ok = await saveCoachReplyRemote(row, rec);
     saveBtn.disabled = false; saveBtn.textContent = '✅ 儲存教練回覆';
-    toast(ok ? '✅ 已儲存教練回覆' : '✅ 已先儲存在本機，後端未支援時不影響使用');
+    toast(ok ? '✅ 已儲存教練回覆，選手可在上次表現查看。' : '儲存失敗，請稍後再試。');
   });
 }
 
@@ -2132,11 +2384,17 @@ async function loadLastPerfPage() {
   const box = $id('lastPerfResult');
   const trendCard = $id('trendCard');
   const trendBox = $id('trendBox');
+  const role = (getRole() || {}).role;
 
   // 七天成長趨勢圖
   if (trendCard && trendBox) {
-    renderTrendSection(trendBox, history || []);
-    trendCard.style.display = 'block';
+    if (role === 'coach') {
+      renderTrendSection(trendBox, history || []);
+      trendCard.style.display = 'block';
+    } else {
+      trendCard.style.display = 'none';
+      trendBox.innerHTML = '';
+    }
   }
 
   if (!rec) {
@@ -2148,6 +2406,9 @@ async function loadLastPerfPage() {
   // 重用回顧渲染（但不影響填寫頁的改善區）
   renderLastReviewInto(rec, box);
   card.style.display = 'block';
+  const inlineTrend = $id('lastPerfTrendInline');
+  if (inlineTrend) renderTrendSection(inlineTrend, history || []);
+  await renderStudentCoachReplyCard(name, rec, box);
   renderCoachPerformanceReplyAssistant(name, rec, history || [rec], 7);
 }
 
@@ -2354,7 +2615,22 @@ function buildWeeklyReport(name, history, leaves) {
 function renderLastReviewInto(rec, box) {
   const avg = aspectAvgFromRecord(rec);
   const lowItems = parseLowItems(rec);
-  let html = `<h3 class="card-title">📌 上次表現回顧</h3>`;
+  let html = `<div class="lastperf-sections">
+    <section class="lastperf-section">
+      <h3 class="card-title">🧑‍🏫 教練給我的回覆</h3>
+      <div id="studentCoachReplyMount"></div>
+    </section>
+    <section class="lastperf-section">
+      <h3 class="card-title">🎯 這次我要修正什麼</h3>
+      <div class="hint-box">${escapeHtml(buildRemindText(lowItems))}</div>
+    </section>
+    <section class="lastperf-section">
+      <h3 class="card-title">📈 近 7 天成長趨勢</h3>
+      <div id="lastPerfTrendInline"></div>
+    </section>
+    <details class="lastperf-section lastperf-details" open>
+      <summary>📌 上次紀錄回顧</summary>`;
+  html += `<h3 class="card-title">📌 上次紀錄回顧</h3>`;
   html += `<div class="review-row"><span class="review-label">上次日期</span><span class="review-value">${dateSlash(rec.date)}</span></div>`;
   html += `<div class="review-row"><span class="review-label">總分</span><span class="review-value">${scoreMaxText(rec)}</span></div>`;
   html += `<div class="review-row"><span class="review-label">平均</span><span class="review-value">${rec.averageScore} / 5</span></div>`;
@@ -2401,8 +2677,9 @@ function renderLastReviewInto(rec, box) {
   if (rec.reflection) html += `<div class="hint-box">📝 上次心得：${escapeHtml(rec.reflection)}</div>`;
   if (rec.tomorrowGoal) html += `<div class="hint-box good">🎯 上次明日目標：${escapeHtml(rec.tomorrowGoal)}</div>`;
 
-  // 教練回覆（學生／家長都看得到）
-  if (rec.coachReply) html += `<div class="hint-box good">💬 教練回覆：${escapeHtml(rec.coachReply)}</div>`;
+  html += `</details>
+    <section class="lastperf-section">
+      <h3 class="card-title">💬 我想補充給教練</h3>`;
 
   // 回應區依身分分流：家長用獨立「家長留言」欄，不覆蓋學生的自我回應
   const viewRole = (getRole() || {}).role;
@@ -2414,15 +2691,15 @@ function renderLastReviewInto(rec, box) {
       html += `<button type="button" id="btnSendParentNote" class="btn btn-secondary" style="margin-top:8px">📨 送出給教練</button>`;
       html += `<div style="color:var(--text-soft);font-size:0.82rem;margin-top:6px">這是家長與教練的溝通，不會蓋掉孩子的自我紀錄。</div>`;
     } else {
-      html += `<h4 style="margin:14px 0 6px;color:var(--blue)">💬 我對這筆的看法</h4>`;
       html += `<textarea id="studentResponseBox" class="text-input" rows="2" placeholder="例如：核心穩定我覺得不只 2 分，因為今天…">${escapeHtml(rec.studentResponse || '')}</textarea>`;
-      html += `<button type="button" id="btnSendStudentResponse" class="btn btn-secondary" style="margin-top:8px">📨 送出我的看法</button>`;
+      html += `<button type="button" id="btnSendStudentResponse" class="btn btn-secondary" style="margin-top:8px">📨 送出補充</button>`;
       html += `<div style="color:var(--text-soft);font-size:0.82rem;margin-top:6px">這裡是讓你說明想法，幫助教練了解你，不是用來改分數。</div>`;
       if (rec.parentNote) html += `<div class="hint-box" style="margin-top:10px">👨‍👩‍👧 家長留言：${escapeHtml(rec.parentNote)}</div>`;
     }
   } else {
     html += `<div class="hint-box" style="color:var(--text-soft)">這是較早的紀錄，無法回應（新版紀錄才支援交叉辯論）。</div>`;
   }
+  html += `</section></div>`;
 
   box.innerHTML = html;
 
@@ -2433,7 +2710,7 @@ function renderLastReviewInto(rec, box) {
       const text = $id('studentResponseBox').value.trim();
       btn.disabled = true; btn.textContent = '送出中...';
       const ok = await updateRecordRemote(rec.recordId, { studentResponse: text });
-      btn.disabled = false; btn.textContent = '📨 送出我的看法';
+      btn.disabled = false; btn.textContent = '📨 送出補充';
       toast(ok ? '✅ 已送出你的看法，教練會看到' : '⚠️ 送出失敗，請稍後再試');
     });
   }

@@ -528,7 +528,7 @@ function journalBuildMonthlyCoachFeedback(name, ordered) {
   const lowSleepDays = recs.filter(r => { const s = parseFloat(r.sleepHours); return !isNaN(s) && s < 7; }).length;
   const nutritionDays = recs.filter(r => String(r.nutritionRisks || '').trim() && String(r.nutritionRisks || '').trim() !== '無明顯風險').length;
   const lowMoodDays = recs.filter(r => { const m = parseFloat(r.moodIndex); return !isNaN(m) && m <= 2; }).length;
-  const coachReplies = recs.map(r => String(r.coachReply || r.coachComment || r.feedbackCoachText || r.coachPublicNote || '').trim()).filter(Boolean);
+  const coachReplies = recs.map(r => String(r.coachReply || r.coachReplyText || r.replyText || r.coachComment || r.feedbackCoachText || r.coachPublicNote || '').trim()).filter(Boolean);
   let weakest = '';
   try {
     const aspectVals = ASPECT_ORDER.map(k => {

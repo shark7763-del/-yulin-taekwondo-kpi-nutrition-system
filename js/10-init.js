@@ -13,6 +13,11 @@ function init() {
     window.open(SOLACE_URL, '_blank', 'noopener');
     toast('💌 已開啟解憂信箱');
   });
+  const tabPsychPack = $id('tabPsychPack');
+  if (tabPsychPack) tabPsychPack.addEventListener('click', () => {
+    if (typeof openPsychCardPack === 'function') openPsychCardPack();
+    else toast('我的卡夾尚未載入，請稍後再試');
+  });
 
   // 日期預設今天
   $id('date').value = todayStr();

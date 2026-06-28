@@ -386,7 +386,7 @@ function clearRole() { localStorage.removeItem(ROLE_KEY); }
 const ROLE_TABS = {
   student: { allowed: ['student', 'lastperf', 'profile'], default: 'student' },
   parent: { allowed: ['parent'], default: 'parent' },
-  coach: { allowed: ['student', 'lastperf', 'coach', 'profile', 'settings'], default: 'coach' }
+  coach: { allowed: ['lastperf', 'coach', 'profile', 'settings'], default: 'coach' }
 };
 const ROLE_LABEL = { student: '🥋 選手', parent: '👨‍👩‍👧 家長', coach: '📊 教練' };
 
@@ -702,6 +702,10 @@ function applyRole() {
   document.querySelectorAll('.tab-btn').forEach(b => {
     b.style.display = conf.allowed.indexOf(b.dataset.tab) !== -1 ? '' : 'none';
   });
+  const studentTab = document.querySelector('.tab-btn[data-tab="student"]');
+  const profileTab = document.querySelector('.tab-btn[data-tab="profile"]');
+  if (studentTab) studentTab.textContent = '📝 今日回報';
+  if (profileTab) profileTab.textContent = r.role === 'coach' ? '👤 個人檔案' : '👤 我的檔案';
   // 通用設定：家長後台模組關閉時，隱藏家長分頁
   if (!getBrand().modParent) {
     const pb = document.querySelector('.tab-btn[data-tab="parent"]');

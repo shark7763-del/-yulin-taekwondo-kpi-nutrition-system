@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-title" content="TeamPro" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=20260627d" />
+  <link rel="stylesheet" href="style.css?v=20260628c" />
   <link rel="stylesheet" href="monthly-report.css?v=20260627f" />
 </head>
 <body>
@@ -66,9 +66,9 @@
 
   <!-- ===================== 分頁導覽 ===================== -->
   <nav class="tab-nav" id="tabNav">
-    <button class="tab-btn active" data-tab="student">📝 學生填寫</button>
+    <button class="tab-btn active" data-tab="student">📝 今日回報</button>
     <button class="tab-btn" data-tab="lastperf">📌 上次表現</button>
-    <button class="tab-btn" data-tab="profile">👤 個人檔案</button>
+    <button class="tab-btn" data-tab="profile">👤 我的檔案</button>
     <button type="button" class="tab-link psych-pack-nav-btn" id="tabPsychPack" data-open-psych-pack>🎴 我的卡夾</button>
     <button type="button" class="tab-link" id="tabSolace" style="display:none;">💌 解憂信箱</button>
     <button class="tab-btn" data-tab="parent">👨‍👩‍👧 家長後台</button>
@@ -621,7 +621,7 @@
     <!-- ========================================================= -->
     <section class="tab-panel" id="tab-coach">
 
-      <div class="card">
+      <div class="card coach-control-card">
         <h3 class="card-title">📊 教練後台</h3>
         <div class="coach-controls">
           <label class="field-label">日期篩選</label>
@@ -637,203 +637,181 @@
         </div>
       </div>
 
-      <div class="card coach-guide-card">
-        <h3 class="card-title">🧭 今日該做什麼</h3>
-        <div class="coach-guide-grid">
-          <div><b>1. 重新整理</b><span>先讀取今日回報與出席狀態。</span></div>
-          <div><b>2. 快速簡評</b><span>每位選手點 4 個分數，30 秒內完成。</span></div>
-          <div><b>3. 看分組</b><span>依準備度安排強化、穩定、調整、保護、關懷組。</span></div>
+      <details class="card coach-section-card" open>
+        <summary class="coach-section-summary"><span>📅 今日總覽</span><small>先看核心數字與分組</small></summary>
+        <div class="coach-section-body">
+          <div id="coachOverview" class="overview-grid coach-compact-overview"></div>
+          <div id="coachTodayGroups" class="readiness-groups coach-simple-groups"></div>
+          <details class="coach-subdetails">
+            <summary>填寫狀況與催繳</summary>
+            <h3 class="card-title" id="coachSubmitTitle">📝 填寫狀況</h3>
+            <div id="coachSubmitStatus"></div>
+          </details>
         </div>
-      </div>
+      </details>
 
-      <div class="card" id="coachWarRoomCard">
-        <h3 class="card-title">🎯 今日戰情室</h3>
-        <p class="review-label" style="margin-bottom:10px">一眼掌握今日全隊狀態，點任一張卡片可展開名單。</p>
-        <div id="coachWarRoomGrid" class="warroom-grid"></div>
-        <div id="coachWarRoomList" class="warroom-list" style="display:none;"></div>
-      </div>
-
-      <div class="card" id="coachReadinessCard">
-        <h3 class="card-title">🧭 今日訓練準備度總覽</h3>
-        <div id="coachReadinessOverview" class="overview-grid"></div>
-        <div id="coachReadinessGroups" class="readiness-groups"></div>
-      </div>
-
-      <div class="card" id="coachQuickScoreCard">
-        <h3 class="card-title">📝 教練今日簡評</h3>
-        <p class="review-label">每位選手只要點 4 個 1–5 分，加上公開提醒與私密備註即可。風險判斷分數越低，系統會優先保護選手。</p>
-        <div id="coachQuickScoreList"></div>
-      </div>
-
-      <div class="card" id="accountAdminCard">
-        <h3 class="card-title">🔐 帳號與家長管理</h3>
-        <div class="account-admin-toolbar">
-          <label class="toggle-row"><input type="checkbox" id="legacyLoginEnabled" /> 啟用舊制過渡登入</label>
-          <button type="button" id="btnGeneratePendingCodes" class="btn btn-primary">批次產生待啟用碼</button>
-          <button type="button" id="btnRefreshAccounts" class="btn btn-secondary">重新整理帳號</button>
+      <details class="card coach-section-card" open>
+        <summary class="coach-section-summary"><span>🧑‍🏫 今日回覆</span><small>簡評、AI 代擬、複製與 LINE 分享集中在這裡</small></summary>
+        <div class="coach-section-body">
+          <details class="coach-subdetails" open>
+            <summary>需要回覆的選手</summary>
+            <div class="redcare-toolbar">
+              <h3 class="card-title" style="margin:0">🔴🟡 今日回覆</h3>
+              <button type="button" id="btnRedAllAi" class="btn btn-ai btn-sm" style="display:none;">⚡ 一鍵全隊 AI 代擬</button>
+            </div>
+            <div id="coachRedLight"></div>
+          </details>
+          <details class="coach-subdetails">
+            <summary>教練今日簡評</summary>
+            <p class="review-label">每位選手點 4 個 1–5 分，加上公開提醒與私密備註。風險判斷分數越低，系統會優先保護選手。</p>
+            <div id="coachQuickScoreList"></div>
+          </details>
+          <details class="coach-subdetails">
+            <summary>準備度分組與快速回覆</summary>
+            <div id="coachReadinessOverview" class="overview-grid compact-hidden"></div>
+            <div id="coachReadinessGroups" class="readiness-groups"></div>
+          </details>
         </div>
-        <p class="review-label">所有選手 PIN、啟用碼與教練密碼只在後端以雜湊保存；教練不會看到原始 PIN。</p>
-        <div id="activationBatchResult" class="activation-batch-result" style="display:none;">
-          <label class="field-label" for="activationBatchText">本次產生的啟用碼（只顯示這一次）</label>
-          <textarea id="activationBatchText" class="text-input" rows="8" readonly></textarea>
-          <button type="button" id="btnCopyActivationCodes" class="btn btn-secondary">複製啟用碼清單</button>
-        </div>
-        <h4 class="account-admin-title">選手帳號</h4>
-        <div id="studentAccountAdmin" class="table-wrap"><div class="hint-box">讀取中...</div></div>
-        <h4 class="account-admin-title">新增／更新家長手機</h4>
-        <div class="account-parent-form">
-          <select id="accountParentStudent" class="text-input"><option value="">選擇孩子</option></select>
-          <input id="accountParentName" class="text-input" placeholder="家長姓名" />
-          <input id="accountParentPhone" class="text-input" type="tel" inputmode="tel" placeholder="完整手機號碼" />
-          <button type="button" id="btnSaveParentAccount" class="btn btn-primary">儲存家長資料</button>
-        </div>
-        <h4 class="account-admin-title">家長帳號</h4>
-        <div id="parentAccountAdmin" class="table-wrap"><div class="hint-box">讀取中...</div></div>
-      </div>
+      </details>
 
-      <!-- ========================================================= -->
-      <!-- KPI 回報管理（教練手動開啟）                              -->
-      <!-- ========================================================= -->
-      <div class="card" id="coachKpiManageCard">
-        <h3 class="card-title">📋 KPI 回報管理</h3>
-        <p class="review-label" style="margin-bottom:12px">每日基本回報維持開放；30 項 KPI 評分只有教練指定的選手看得到。可對全隊、組別或個別選手開啟。</p>
-        <div id="coachKpiManage"><div class="hint-box">讀取中...</div></div>
-      </div>
-
-      <!-- ========================================================= -->
-      <!-- 每月訪視專用報表                                          -->
-      <!-- ========================================================= -->
-      <div class="card mr-control-card">
-        <h3 class="card-title">📄 每月訪視報表</h3>
-        <p class="review-label" style="margin-bottom:12px">給主任、校長、長官訪視使用的正式月報。資料來源為選手每日回報，可預覽、下載 PDF、列印。</p>
-        <div class="mr-control-row">
-          <div class="mr-control-field">
-            <label for="monthlyReportMonth">月份</label>
-            <input type="month" id="monthlyReportMonth" class="text-input" />
-          </div>
-          <div class="mr-control-field">
-            <label for="monthlyReportType">報表類型</label>
-            <select id="monthlyReportType" class="text-input">
-              <option value="official">長官訪視版</option>
-              <option value="coach">教練內部版</option>
-              <option value="parent">家長摘要版</option>
-            </select>
-          </div>
-          <div class="mr-control-field" id="monthlyReportChildWrap" style="display:none;">
-            <label for="monthlyReportChild">選手（家長版）</label>
-            <select id="monthlyReportChild" class="text-input"></select>
-          </div>
+      <details class="card coach-section-card" open>
+        <summary class="coach-section-summary"><span>⚠️ 風險追蹤</span><small>身體、心理、訓練與家長通知</small></summary>
+        <div class="coach-section-body">
+          <div id="coachRiskTracking"></div>
         </div>
-        <label class="field-label" for="monthlyCoachFeedbackInput" style="margin-top:10px">教練本月回饋補充</label>
-        <textarea id="monthlyCoachFeedbackInput" class="text-input" rows="4" placeholder="可以輸入想放進本月報告的教練回饋；若留空，系統會自動依資料產生草稿。"></textarea>
-        <div class="mr-btn-row">
-          <button type="button" id="generateMonthlyReportBtn" class="btn btn-primary">📄 產生本月訪視報表</button>
-          <button type="button" id="downloadMonthlyPdfBtn" class="btn btn-secondary" disabled>⬇️ 下載 PDF</button>
-          <button type="button" id="printMonthlyReportBtn" class="btn btn-ghost" disabled>🖨 列印報表</button>
+      </details>
+
+      <details class="card coach-section-card">
+        <summary class="coach-section-summary"><span>📂 報表與管理</span><small>帳號、KPI、月報、任務、個人查詢</small></summary>
+        <div class="coach-section-body coach-management-grid">
+          <details class="coach-subdetails">
+            <summary>帳號與家長管理</summary>
+            <div id="accountAdminCard">
+              <div class="account-admin-toolbar">
+                <label class="toggle-row"><input type="checkbox" id="legacyLoginEnabled" /> 啟用舊制過渡登入</label>
+                <button type="button" id="btnGeneratePendingCodes" class="btn btn-primary">批次產生待啟用碼</button>
+                <button type="button" id="btnRefreshAccounts" class="btn btn-secondary">重新整理帳號</button>
+              </div>
+              <p class="review-label">所有選手 PIN、啟用碼與教練密碼只在後端以雜湊保存；教練不會看到原始 PIN。</p>
+              <div id="activationBatchResult" class="activation-batch-result" style="display:none;">
+                <label class="field-label" for="activationBatchText">本次產生的啟用碼（只顯示這一次）</label>
+                <textarea id="activationBatchText" class="text-input" rows="8" readonly></textarea>
+                <button type="button" id="btnCopyActivationCodes" class="btn btn-secondary">複製啟用碼清單</button>
+              </div>
+              <h4 class="account-admin-title">選手帳號</h4>
+              <div id="studentAccountAdmin" class="table-wrap"><div class="hint-box">讀取中...</div></div>
+              <h4 class="account-admin-title">新增／更新家長手機</h4>
+              <div class="account-parent-form">
+                <select id="accountParentStudent" class="text-input"><option value="">選擇孩子</option></select>
+                <input id="accountParentName" class="text-input" placeholder="家長姓名" />
+                <input id="accountParentPhone" class="text-input" type="tel" inputmode="tel" placeholder="完整手機號碼" />
+                <button type="button" id="btnSaveParentAccount" class="btn btn-primary">儲存家長資料</button>
+              </div>
+              <h4 class="account-admin-title">家長帳號</h4>
+              <div id="parentAccountAdmin" class="table-wrap"><div class="hint-box">讀取中...</div></div>
+            </div>
+          </details>
+
+          <details class="coach-subdetails">
+            <summary>KPI 回報管理</summary>
+            <p class="review-label" style="margin-bottom:12px">每日基本回報每天開放；30 項完整 KPI 建議每週填一次，或由教練依訓練週期、比賽前後、狀態異常時手動開放。</p>
+            <div id="coachKpiManage"><div class="hint-box">讀取中...</div></div>
+          </details>
+
+          <details class="coach-subdetails">
+            <summary>每月訪視報表</summary>
+            <div class="mr-control-card">
+              <p class="review-label" style="margin-bottom:12px">給主任、校長、長官訪視使用的正式月報。資料來源為選手每日回報，可預覽、下載 PDF、列印。</p>
+              <div class="mr-control-row">
+                <div class="mr-control-field">
+                  <label for="monthlyReportMonth">月份</label>
+                  <input type="month" id="monthlyReportMonth" class="text-input" />
+                </div>
+                <div class="mr-control-field">
+                  <label for="monthlyReportType">報表類型</label>
+                  <select id="monthlyReportType" class="text-input">
+                    <option value="official">長官訪視版</option>
+                    <option value="coach">教練內部版</option>
+                    <option value="parent">家長摘要版</option>
+                  </select>
+                </div>
+                <div class="mr-control-field" id="monthlyReportChildWrap" style="display:none;">
+                  <label for="monthlyReportChild">選手（家長版）</label>
+                  <select id="monthlyReportChild" class="text-input"></select>
+                </div>
+              </div>
+              <label class="field-label" for="monthlyCoachFeedbackInput" style="margin-top:10px">教練本月回饋補充</label>
+              <textarea id="monthlyCoachFeedbackInput" class="text-input" rows="4" placeholder="可以輸入想放進本月報告的教練回饋；若留空，系統會自動依資料產生草稿。"></textarea>
+              <div class="mr-btn-row">
+                <button type="button" id="generateMonthlyReportBtn" class="btn btn-primary">📄 產生本月訪視報表</button>
+                <button type="button" id="downloadMonthlyPdfBtn" class="btn btn-secondary" disabled>⬇️ 下載 PDF</button>
+                <button type="button" id="printMonthlyReportBtn" class="btn btn-ghost" disabled>🖨 列印報表</button>
+              </div>
+              <p class="mr-hint">提示：長官版只列重點選手；教練版含全隊完整成長樹；家長版僅顯示所選孩子。心理與解憂內容不會放入報表。</p>
+              <div id="monthlyReportPreview" style="display:none;"></div>
+            </div>
+          </details>
+
+          <details class="coach-subdetails">
+            <summary>今日任務指派</summary>
+            <div class="coach-controls">
+              <label class="field-label">日期</label>
+              <input type="date" id="taskDate" class="text-input" />
+              <label class="field-label">選手</label>
+              <select id="taskAssignName" class="text-input"></select>
+            </div>
+            <label class="field-label">今日任務</label>
+            <textarea id="taskAssignText" class="text-input" rows="2" placeholder="例如：把旋踢距離控制做到位，每組 10 次"></textarea>
+            <div class="btn-group">
+              <button type="button" id="btnAssignTask" class="btn btn-primary">🎯 指派任務</button>
+              <button type="button" id="btnRefreshTasks" class="btn btn-ghost">🔄 重新整理</button>
+            </div>
+            <h4 class="card-title" style="margin-top:12px">今日任務完成狀況</h4>
+            <div id="coachTaskList"></div>
+          </details>
+
+          <details class="coach-subdetails" id="preCompCard">
+            <summary>賽前狀態分析</summary>
+            <label class="field-label">選擇選手</label>
+            <select id="preCompName" class="text-input"></select>
+            <button type="button" id="btnPreComp" class="btn btn-primary">🥇 產生賽前分析</button>
+            <div id="preCompResult"></div>
+          </details>
+
+          <details class="coach-subdetails">
+            <summary>個人查詢（最近 7 筆）</summary>
+            <label class="field-label">選擇選手</label>
+            <select id="coachPersonName" class="text-input"></select>
+            <button type="button" id="btnLoadPerson" class="btn btn-primary">🔍 查詢</button>
+            <div id="coachPersonResult"></div>
+          </details>
+
+          <details class="coach-subdetails" id="coachNutritionCard">
+            <summary>飲食管理詳細版</summary>
+            <div id="coachNutrition"></div>
+          </details>
+
+          <details class="coach-subdetails">
+            <summary>出席報表與家長確認</summary>
+            <div id="coachAttendanceReports"></div>
+          </details>
+
+          <details class="coach-subdetails">
+            <summary>系統設定相關入口</summary>
+            <p class="review-label">Google Sheet、OpenAI、LINE 推播、PWA 與通用設定仍集中在系統設定頁。</p>
+            <button type="button" class="btn btn-secondary" onclick="switchTab('settings')">⚙️ 前往系統設定</button>
+          </details>
         </div>
-        <p class="mr-hint">提示：長官版只列重點選手；教練版含全隊完整成長樹；家長版僅顯示所選孩子。心理與解憂內容不會放入報表。</p>
-        <div id="monthlyReportPreview" style="display:none;"></div>
-      </div>
+      </details>
 
-      <!-- 今日總覽 -->
-      <div class="card">
-        <h3 class="card-title">📅 今日總覽</h3>
-        <div id="coachOverview" class="overview-grid"></div>
-      </div>
-
-      <!-- 團隊心情 -->
-      <div class="card">
-        <h3 class="card-title">🙂 團隊今日心情</h3>
+      <div class="coach-legacy-bins" hidden>
+        <div id="coachWarRoomGrid"></div>
+        <div id="coachWarRoomList"></div>
         <div id="coachMood"></div>
-      </div>
-
-      <!-- 今日任務指派 -->
-      <div class="card">
-        <h3 class="card-title">🎯 今日任務指派</h3>
-        <div class="coach-controls">
-          <label class="field-label">日期</label>
-          <input type="date" id="taskDate" class="text-input" />
-          <label class="field-label">選手</label>
-          <select id="taskAssignName" class="text-input"></select>
-        </div>
-        <label class="field-label">今日任務</label>
-        <textarea id="taskAssignText" class="text-input" rows="2" placeholder="例如：把旋踢距離控制做到位，每組 10 次"></textarea>
-        <div class="btn-group">
-          <button type="button" id="btnAssignTask" class="btn btn-primary">🎯 指派任務</button>
-          <button type="button" id="btnRefreshTasks" class="btn btn-ghost">🔄 重新整理</button>
-        </div>
-        <h4 class="card-title" style="margin-top:12px">今日任務完成狀況</h4>
-        <div id="coachTaskList"></div>
-      </div>
-
-      <!-- 連續警示 -->
-      <div class="card">
-        <h3 class="card-title">🚨 連續警示</h3>
-        <div id="coachAlerts"></div>
-      </div>
-
-      <!-- 填寫狀況 -->
-      <div class="card">
-        <h3 class="card-title" id="coachSubmitTitle">📝 填寫狀況</h3>
-        <div id="coachSubmitStatus"></div>
-      </div>
-
-      <!-- 出席報表 / 補訓追蹤 -->
-      <div class="card">
-        <h3 class="card-title">👨‍👩‍👧 出席報表與家長確認</h3>
-        <div id="coachAttendanceReports"></div>
-      </div>
-
-      <!-- 狀態名單 -->
-      <div class="card">
-        <h3 class="card-title">🚦 狀態名單</h3>
         <div id="coachStatusLists"></div>
-      </div>
-
-      <!-- 紅黃燈關懷：教練給方向與鼓勵 -->
-      <div class="card">
-        <div class="redcare-toolbar">
-          <h3 class="card-title" style="margin:0">🔴🟡 狀態關懷｜給方向與鼓勵</h3>
-          <button type="button" id="btnRedAllAi" class="btn btn-ai btn-sm" style="display:none;">⚡ 一鍵全隊 AI 代擬</button>
-        </div>
-        <div id="coachRedLight"></div>
-      </div>
-
-      <!-- 訓練分析 -->
-      <div class="card">
-        <h3 class="card-title">🔍 訓練分析</h3>
         <div id="coachAnalysis"></div>
-      </div>
-
-      <!-- 飲食管理 -->
-      <div class="card" id="coachNutritionCard">
-        <h3 class="card-title">🍱 飲食管理</h3>
-        <div id="coachNutrition"></div>
-      </div>
-
-
-      <!-- 賽前狀態分析 -->
-      <div class="card" id="preCompCard">
-        <h3 class="card-title">🥇 賽前狀態分析</h3>
-        <label class="field-label">選擇選手</label>
-        <select id="preCompName" class="text-input"></select>
-        <button type="button" id="btnPreComp" class="btn btn-primary">🥇 產生賽前分析</button>
-        <div id="preCompResult"></div>
-      </div>
-
-      <!-- 建議晤談名單 -->
-      <div class="card">
-        <h3 class="card-title">💬 建議晤談名單</h3>
+        <div id="coachAlerts"></div>
         <div id="coachInterview"></div>
-      </div>
-
-      <!-- 個人查詢 -->
-      <div class="card">
-        <h3 class="card-title">👤 個人查詢（最近 7 筆）</h3>
-        <label class="field-label">選擇選手</label>
-        <select id="coachPersonName" class="text-input"></select>
-        <button type="button" id="btnLoadPerson" class="btn btn-primary">🔍 查詢</button>
-        <div id="coachPersonResult"></div>
       </div>
 
     </section>
@@ -1040,15 +1018,15 @@
   <script src="js/04-daily-submit.js?v=20260625f"></script>
   <script src="js/05-feedback-readiness.js?v=20260627d"></script>
   <script src="js/06-player-line.js?v=20260625f"></script>
-  <script src="js/07-coach-dashboard.js?v=20260627d"></script>
+  <script src="js/07-coach-dashboard.js?v=20260628b"></script>
   <script src="js/08-profile-journal.js?v=20260627g"></script>
-  <script src="js/09-settings-auth.js?v=20260627e"></script>
-  <script src="js/10-init.js?v=20260625f"></script>
+  <script src="js/09-settings-auth.js?v=20260628b"></script>
+  <script src="js/10-init.js?v=20260628b"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260627f"></script>
   <!-- KPI 回報手動開啟（教練後台控制學生每日 30 項 KPI）-->
-  <script src="kpi-session.js?v=20260624a"></script>
+  <script src="kpi-session.js?v=20260628c"></script>
   <!-- TeamPro 心理成長能量卡（回報完成後抽卡＋集卡）-->
   <script src="psych-cards.js?v=20260626f"></script>
   <!-- PWA：註冊 Service Worker（離線快取＋可安裝）。失敗不影響任何功能 -->
