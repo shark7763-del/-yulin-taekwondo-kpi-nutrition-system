@@ -243,7 +243,7 @@ function handleAction(action, data) {
     case 'getStudentTrait':
       return jsonOut(getStudentTrait(data));
     case 'getAllStudentTraits':
-      return jsonOut(authCoachOnly(data, function () { return getAllStudentTraits(data); }));
+      return jsonOut(getAllStudentTraits(data));
     case 'updateRecord':
       return jsonOut(updateRecordAuthorized(data));
     // ---- 新制角色驗證與帳號管理 ----

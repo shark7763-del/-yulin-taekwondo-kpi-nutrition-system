@@ -504,9 +504,10 @@
 
   async function loadAllStudentTraits() {
     const res = await traitApi('getAllStudentTraits', {});
+    const source = (res && Array.isArray(res.traits)) ? res.traits : (res && res.data && Array.isArray(res.data.traits) ? res.data.traits : []);
     const list = [];
-    if (res && Array.isArray(res.traits)) {
-      res.traits.forEach(item => {
+    if (source.length) {
+      source.forEach(item => {
         const rec = normalizeTraitRecord(item, item && item.studentName ? item.studentName : '');
         if (rec && rec.studentName) list.push(rec);
       });
