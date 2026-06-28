@@ -1,7 +1,7 @@
 /* ============================================================
    本週 KPI 任務制
    - 每日基本回報每天開放
-   - 30 項完整 KPI 依本週 weekKey 開放
+   - 30 項完整 KPI 每週五自動開放，也可依比賽日手動加開
    - 教練端採 optimistic UI，背景同步，不鎖整區
    ============================================================ */
 (function () {
@@ -59,6 +59,7 @@
     if (!d) return '週日 23:59';
     return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
+  function defaultDueLabel() { return fmtTime(dueSunday2359()); }
   function currentWeekSessions() {
     var wk = weekKey();
     return (state.sessions || []).filter(function (s) { return String(s.weekId || s.weekKey || '') === wk; });
@@ -163,15 +164,16 @@
     var done = doneNameSet();
     var doneCount = enabled.filter(function (s) { return done[String(s.studentName).trim()]; }).length;
     var pending = pendingStudents();
-    var due = currentWeekSessions().map(function (s) { return s.closeAt; }).filter(Boolean).sort()[0] || dueSunday2359();
+    var activeSessions = currentWeekSessions().filter(effectiveOpen);
+    var due = activeSessions.map(function (s) { return s.closeAt; }).filter(Boolean).sort()[0] || dueSunday2359();
 
     box.innerHTML =
       '<div class="kpi-task-card">' +
         '<h3 class="card-title">📋 KPI 回報管理</h3>' +
-        '<p class="review-label">每日基本回報每天開放；30 項完整 KPI 建議每週填一次，或由教練依訓練週期、比賽前後、狀態異常時手動開放。</p>' +
+        '<p class="review-label">每日基本回報每天開放；30 項完整 KPI 每週五自動開放，截止時間為週日 23:59；比賽日、訓練週期調整或狀態異常時，教練也可以手動加開。</p>' +
         '<div class="kpi-task-status"><b>本週 KPI 任務</b><span class="' + (enabled.length ? 'is-open' : 'is-closed') + '">' + taskStatusText() + '</span></div>' +
         '<div class="kpi-task-meta">' +
-          '<span>週次：' + esc(wk) + '</span><span>開放對象：' + esc(targetText()) + '</span><span>截止時間：' + esc(fmtTime(due)) + '</span>' +
+          '<span>週次：' + esc(wk) + '</span><span>開放對象：' + esc(targetText()) + '</span><span>截止時間：' + esc(enabled.length ? fmtTime(due) : defaultDueLabel()) + '</span>' +
         '</div>' +
         '<div class="kpi-progress-grid">' +
           '<div><b>' + doneCount + '</b><span>已完成</span></div>' +
@@ -245,7 +247,7 @@
     box.querySelector('[data-kpi-toggle-students]')?.addEventListener('click', function () { state.studentPanel = !state.studentPanel; renderCoachKpiManage(); });
     box.querySelector('[data-kpi-close-week]')?.addEventListener('click', function () {
       if (!confirm('確定要關閉本週 KPI？已完成的資料不會刪除，但未完成選手將無法再填。')) return;
-      optimisticBulk(enabledStudents(), false);
+      closeCurrentWeek();
     });
     box.querySelectorAll('[data-kpi-open-group]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -299,6 +301,45 @@
       return loadCoachData();
     }).catch(function () {
       students.forEach(function (s) { state.sync[s.studentId] = 'error'; state.enabled[s.studentId] = !enabled; });
+      renderCoachKpiManage();
+      notify('同步失敗，請稍後重試。');
+    });
+  }
+
+  function closeCurrentWeek() {
+    var targets = state.students.slice();
+    if (!targets.length) return;
+    var previous = {};
+    targets.forEach(function (s) {
+      previous[s.studentId] = !!state.enabled[s.studentId];
+      state.enabled[s.studentId] = false;
+      state.sync[s.studentId] = 'syncing';
+    });
+    renderCoachKpiManage();
+    api({
+      action: 'bulkSetKpiSession',
+      weekKey: weekKey(),
+      enabled: false,
+      closeAll: true,
+      students: targets.map(function (s) {
+        return { studentId: s.studentId, studentName: s.studentName, group: s.group || '' };
+      })
+    }).then(function (res) {
+      if (!res || !res.ok) {
+        targets.forEach(function (s) {
+          state.sync[s.studentId] = 'error';
+          state.enabled[s.studentId] = previous[s.studentId];
+        });
+        notify('部分 KPI 任務同步失敗，可在逐人開關重試。');
+      } else {
+        targets.forEach(function (s) { state.sync[s.studentId] = 'synced'; });
+      }
+      return loadCoachData();
+    }).catch(function () {
+      targets.forEach(function (s) {
+        state.sync[s.studentId] = 'error';
+        state.enabled[s.studentId] = previous[s.studentId];
+      });
       renderCoachKpiManage();
       notify('同步失敗，請稍後重試。');
     });

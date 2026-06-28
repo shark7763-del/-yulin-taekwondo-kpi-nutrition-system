@@ -1731,6 +1731,69 @@ function resolveCloseAt(preset, custom) {
   return d.toISOString();
 }
 
+function thisWeekSunday2359Iso_() {
+  var d = new Date();
+  var add = (7 - d.getDay()) % 7;
+  d.setDate(d.getDate() + add);
+  d.setHours(23, 59, 0, 0);
+  return d.toISOString();
+}
+
+function isWeeklyAutoKpiWindow_() {
+  var day = new Date().getDay();
+  return day === 5 || day === 6 || day === 0; // Friday through Sunday.
+}
+
+function appendKpiSession_(session) {
+  var now = nowIso();
+  session.sessionId = session.sessionId || ('kpi_' + Date.now() + '_' + Math.floor(Math.random() * 100000));
+  session.sessionType = session.sessionType || 'weekly';
+  session.weekId = session.weekId || isoWeekId(new Date());
+  session.openMode = session.openMode || 'manual';
+  session.targetGroup = session.targetGroup || '全隊';
+  session.targetStudentIds = session.targetStudentIds || '';
+  session.openAt = session.openAt || now;
+  session.closeAt = session.closeAt || thisWeekSunday2359Iso_();
+  session.status = session.status || 'open';
+  session.includeInWeeklyReport = session.includeInWeeklyReport === false ? false : true;
+  session.includeInMonthlyReport = session.includeInMonthlyReport === false ? false : true;
+  session.lineNotify = !!session.lineNotify;
+  session.createdBy = session.createdBy || 'coach';
+  session.createdAt = session.createdAt || now;
+  session.updatedAt = session.updatedAt || now;
+  var sh = getKpiSessionsSheet();
+  sh.appendRow(KPI_SESSION_HEADERS.map(function (h) { return session[h] == null ? '' : session[h]; }));
+  return session;
+}
+
+function ensureFridayWeeklyKpiSession_() {
+  var currentWeek = isoWeekId(new Date());
+  var sessions = listKpiSessions().filter(function (s) { return String(s.weekId || '') === currentWeek; });
+  if (!isWeeklyAutoKpiWindow_()) return null;
+  var hasActive = sessions.some(function (s) {
+    var es = effectiveSessionStatus(s);
+    return es === 'open' || es === 'scheduled';
+  });
+  if (hasActive) return null;
+  var autoWasClosed = sessions.some(function (s) {
+    return String(s.openMode || '') === 'autoReminder' && effectiveSessionStatus(s) === 'closed';
+  });
+  if (autoWasClosed) return null;
+  var accounts = activeStudentAccounts();
+  if (!accounts.length) return null;
+  return appendKpiSession_({
+    sessionName: '本週 KPI 回報',
+    sessionType: 'weekly',
+    weekId: currentWeek,
+    openMode: 'autoReminder',
+    targetGroup: '全隊',
+    targetStudentIds: accounts.map(function (a) { return a.studentId; }).join(','),
+    closeAt: thisWeekSunday2359Iso_(),
+    status: 'open',
+    createdBy: 'system'
+  });
+}
+
 // 取目前「實際」狀態：考慮 closeAt 過期 → closed
 function effectiveSessionStatus(s) {
   if (s.status === 'closed') return 'closed';
@@ -1913,8 +1976,7 @@ function createKpiSession(data) {
     createdAt: now,
     updatedAt: now
   };
-  var sh = getKpiSessionsSheet();
-  sh.appendRow(KPI_SESSION_HEADERS.map(function (h) { return session[h] == null ? '' : session[h]; }));
+  appendKpiSession_(session);
   // 可選：開啟即發 LINE 學生版提醒
   if (session.lineNotify && status === 'open') {
     try { pushToLine(kpiReminderText('student', session, null)); } catch (e) {}
@@ -1946,10 +2008,29 @@ function bulkSetKpiSession(data) {
   if (!auth.ok) return auth;
   var weekKey = String(data.weekKey || data.weekId || isoWeekId(new Date()));
   var enabled = data.enabled === true || String(data.enabled).toLowerCase() === 'true';
-  var dueAt = data.dueAt || resolveCloseAt('sunday21');
+  var dueAt = data.dueAt || thisWeekSunday2359Iso_();
   var students = normalizeBulkStudents_(data.students);
-  if (!students.length) return { ok: false, results: [], error: '沒有可操作的選手' };
   var sessions = listKpiSessions();
+  if (!enabled && (data.closeAll === true || String(data.closeAll).toLowerCase() === 'true')) {
+    var closeTargets = sessions.filter(function (s) {
+      if (String(s.weekId || '') !== weekKey) return false;
+      var es = effectiveSessionStatus(s);
+      return es === 'open' || es === 'scheduled';
+    });
+    closeTargets.forEach(function (s) {
+      var found = findKpiSession(s.sessionId);
+      if (found && found.sheet) updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, { status: 'closed', updatedAt: nowIso() });
+    });
+    var closeStudents = students.length ? students : activeStudentAccounts();
+    return {
+      ok: true,
+      closedCount: closeTargets.length,
+      results: closeStudents.map(function (stu) {
+        return { studentName: stu.studentName, studentId: stu.studentId, ok: true };
+      })
+    };
+  }
+  if (!students.length) return { ok: false, results: [], error: '沒有可操作的選手' };
   var results = [];
   students.forEach(function (stu) {
     try {
@@ -2023,6 +2104,7 @@ function extendKpiSession(data) {
 function getKpiSessions(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
+  ensureFridayWeeklyKpiSession_();
   var sessions = listKpiSessions().map(function (s) {
     s.effectiveStatus = effectiveSessionStatus(s);
     s.stats = kpiSessionStats(s);
@@ -2045,6 +2127,7 @@ function getKpiSessionDetail(data) {
 function getStudentKpiSession(data) {
   var who = authorizedStudentName(data, false);
   if (!who.ok) return who;
+  ensureFridayWeeklyKpiSession_();
   var studentName = who.name, studentId = who.studentId || '';
   var myGroup = latestGroupByName()[String(studentName).trim()] || '';
   var sessions = listKpiSessions();
