@@ -1076,6 +1076,36 @@ function latestStudentTraitRow(rows, name) {
   return latest;
 }
 
+function compactStudentTraitsSheet(sh) {
+  if (!sh || sh.getLastRow() < 3) return 0;
+  var rows = readSheetObjects(sh, STUDENT_TRAIT_HEADERS);
+  var groups = {};
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var key = normalizeTraitName(row.studentName);
+    if (!key) continue;
+    (groups[key] = groups[key] || []).push({
+      rowNum: i + 2,
+      time: studentTraitTimeValue(row)
+    });
+  }
+  var toDelete = [];
+  Object.keys(groups).forEach(function (key) {
+    var list = groups[key];
+    if (list.length < 2) return;
+    list.sort(function (a, b) {
+      if (b.time !== a.time) return b.time - a.time;
+      return b.rowNum - a.rowNum;
+    });
+    for (var i = 1; i < list.length; i++) toDelete.push(list[i].rowNum);
+  });
+  toDelete.sort(function (a, b) { return b - a; });
+  toDelete.forEach(function (rowNum) {
+    sh.deleteRow(rowNum);
+  });
+  return toDelete.length;
+}
+
 function saveStudentTrait(data) {
   var p = data.payload || data || {};
   var session = getAuthSession(data);
@@ -1122,6 +1152,7 @@ function saveStudentTrait(data) {
   var values = STUDENT_TRAIT_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; });
   if (existing && existing.row) sh.getRange(existing.row, 1, 1, STUDENT_TRAIT_HEADERS.length).setValues([values]);
   else sh.appendRow(values);
+  compactStudentTraitsSheet(sh);
 
   return { ok: true, trait: normalizeStudentTraitRow(row) };
 }
@@ -1145,7 +1176,9 @@ function getAllStudentTraits(data) {
   var identity = authorizedStudentName(data, true);
   if (!identity.ok) return identity;
   if (!(identity.session && identity.session.role === 'coach')) return { ok: false, error: '只有教練可讀取全部特質資料。', forbidden: true };
-  var rows = readSheetObjects(getStudentTraitsSheet(), STUDENT_TRAIT_HEADERS).map(normalizeStudentTraitRow);
+  var sh = getStudentTraitsSheet();
+  compactStudentTraitsSheet(sh);
+  var rows = readSheetObjects(sh, STUDENT_TRAIT_HEADERS).map(normalizeStudentTraitRow);
   var map = {};
   rows.forEach(function (row) {
     var k = normalizeTraitName(row.studentName);
