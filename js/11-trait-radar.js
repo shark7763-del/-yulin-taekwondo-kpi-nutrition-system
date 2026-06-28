@@ -14,6 +14,7 @@
   function nameKey(name) { return String(name || '').trim(); }
   function traitMatchKey(name) { return String(name || '').trim().replace(/\s+/g, ''); }
   function traitKey(name) { return 'trait:' + traitMatchKey(name); }
+  const TRAIT_CACHE_VERSION = '20260628-trait-fix-01';
   function traitAliasKeys(name) {
     const raw = nameKey(name);
     const compact = traitMatchKey(name);
@@ -32,15 +33,31 @@
     if (v.indexOf('成長') !== -1) return 'growth';
     return '';
   }
-  function normalizeTraitType(typeKey, label, rawScore) {
-    if (rawScore && typeof rawScore === 'object') {
-      const fromScore = pickType(rawScore);
-      if (fromScore) return fromScore;
+  function parseTraitScore(score) {
+    if (!score) return {};
+    if (typeof score === 'string') {
+      try {
+        score = JSON.parse(score);
+      } catch (e) {
+        return {};
+      }
     }
+    if (!score || typeof score !== 'object') return {};
+    const out = {};
+    ['rocket', 'volcano', 'shield', 'cheetah', 'growth'].forEach(k => {
+      const n = Number(score[k]);
+      out[k] = Number.isFinite(n) ? n : 0;
+    });
+    return out;
+  }
+  function normalizeTraitType(typeKey, label, rawScore) {
     const fromType = nameKey(typeKey);
     if (TRAITS[fromType]) return fromType;
     const fromLabel = traitLabelToType(label);
     if (TRAITS[fromLabel]) return fromLabel;
+    const score = parseTraitScore(rawScore);
+    const hasScore = Object.keys(score).some(k => Number(score[k]) > 0);
+    if (hasScore) return pickType(score);
     return '';
   }
   function appGetAsync(key) {
@@ -220,11 +237,18 @@
     return {
       studentName: name,
       version: 1,
+      timestamp: '',
       completedAt: '',
       updatedAt: '',
       updatedBy: '',
       typeKey: '',
       label: '',
+      traitType: '',
+      traitLabel: '',
+      traitScore: {},
+      traitSummary: '',
+      communicationTips: '',
+      trainingTips: '',
       keywords: [],
       communication: '',
       encouragement: '',
@@ -244,14 +268,13 @@
   function mergeRecord(raw, name) {
     const record = blankRecord(name);
     if (!raw) return record;
-    Object.keys(record).forEach(k => {
-      if (raw[k] !== undefined && raw[k] !== null) record[k] = raw[k];
-    });
+    Object.assign(record, raw);
     if (!record.studentName) record.studentName = name;
     if (!record.keywords || !Array.isArray(record.keywords)) record.keywords = [];
     if (!record.coachChecks || typeof record.coachChecks !== 'object') record.coachChecks = {};
     if (!record.surveyAnswers || typeof record.surveyAnswers !== 'object') record.surveyAnswers = {};
-    if (!record.rawScore || typeof record.rawScore !== 'object') record.rawScore = {};
+    record.traitScore = parseTraitScore(record.traitScore || record.rawScore || {});
+    record.rawScore = record.traitScore;
     return record;
   }
 
@@ -274,7 +297,7 @@
   }
 
   function traitBadgeHtml(name) {
-    const record = state.map[nameKey(name)];
+    const record = currentRecord(name);
     const label = effectiveLabel(record);
     const tone = record ? toneForKey(record.typeKey) : 'none';
     const title = record ? '點擊看完整特質卡' : '尚未完成特質測驗';
@@ -282,7 +305,7 @@
   }
 
   function traitBadgeSpan(name) {
-    const record = state.map[nameKey(name)];
+    const record = currentRecord(name);
     const label = effectiveLabel(record);
     const tone = record ? toneForKey(record.typeKey) : 'none';
     const title = record ? '點擊看完整特質卡' : '尚未完成特質測驗';
@@ -343,6 +366,7 @@
 
   function loadLocalCache() {
     try {
+      ensureTraitCacheVersion();
       const raw = JSON.parse(localStorage.getItem('yulin_trait_cache') || '{}');
       if (raw && typeof raw === 'object') {
         state.map = {};
@@ -356,10 +380,24 @@
     } catch (e) {}
   }
 
+  function ensureTraitCacheVersion() {
+    try {
+      const current = localStorage.getItem('yulin_trait_cache_version');
+      if (current !== TRAIT_CACHE_VERSION) {
+        localStorage.removeItem('yulin_trait_cache');
+        localStorage.setItem('yulin_trait_cache_version', TRAIT_CACHE_VERSION);
+      }
+    } catch (e) {}
+  }
+
   function normalizeTraitRecord(raw, name) {
     const record = mergeRecord(raw || {}, nameKey(name));
-    const rawScore = record.traitScore || record.rawScore || {};
-    const typeKey = normalizeTraitType(record.traitType || record.typeKey, record.traitLabel || record.label, rawScore);
+    const rawScore = parseTraitScore(record.traitScore || record.rawScore || {});
+    const typeKey = normalizeTraitType(
+      record.traitType || record.typeKey,
+      record.traitLabel || record.label,
+      rawScore
+    );
     const type = typeKey ? (TRAITS[typeKey] || null) : null;
     const label = nameKey(record.traitLabel || record.label || (type && type.label) || '');
     record.studentName = nameKey(record.studentName || name);
@@ -384,6 +422,24 @@
     record.completedAt = record.completedAt || record.updatedAt || '';
     record.updatedAt = record.updatedAt || record.completedAt || '';
     return record;
+  }
+
+  function uniqueTraitNames(roster, traitMap) {
+    const map = new Map();
+
+    (roster || []).forEach(name => {
+      const raw = String(name || '').trim();
+      const key = traitMatchKey(raw);
+      if (key && !map.has(key)) map.set(key, raw);
+    });
+
+    Object.values(traitMap || {}).forEach(rec => {
+      const raw = String(rec.studentName || '').trim();
+      const key = traitMatchKey(raw);
+      if (key && !map.has(key)) map.set(key, raw);
+    });
+
+    return Array.from(map.values());
   }
 
   function cacheTraitRecord(raw, name) {
@@ -507,7 +563,11 @@
 
   async function loadAllStudentTraits() {
     const res = await traitApi('getAllStudentTraits', {});
-    const source = (res && Array.isArray(res.traits)) ? res.traits : (res && res.data && Array.isArray(res.data.traits) ? res.data.traits : []);
+    const source =
+      Array.isArray(res && res.traits) ? res.traits :
+      Array.isArray(res && res.data) ? res.data :
+      Array.isArray(res && res.data && res.data.traits) ? res.data.traits :
+      [];
     const list = [];
     if (source.length) {
       source.forEach(item => {
@@ -842,7 +902,7 @@
     const root = el('traitRadarRoot');
     if (!root) return;
     const roster = (typeof getPlayers === 'function' ? getPlayers() : []);
-    const names = roster.length ? roster.slice() : Object.keys(state.map);
+    const names = uniqueTraitNames(roster, state.map);
     const counts = { rocket: 0, volcano: 0, shield: 0, cheetah: 0, growth: 0, none: 0 };
     names.forEach(n => {
       const rec = currentRecord(n);
@@ -1113,6 +1173,7 @@
   });
 
   async function boot() {
+    ensureTraitCacheVersion();
     loadLocalCache();
     await loadCache();
     await syncQueuedStudentTraits(false).catch(() => {});
