@@ -313,9 +313,7 @@
     const roleKey = r && r.role ? r.role : '';
     if (state.loaded && !force && state.cacheRole === roleKey) return state.map;
     try {
-      const baseMap = {};
-      Object.keys(state.map || {}).forEach(k => { baseMap[k] = state.map[k]; });
-      state.map = baseMap;
+      state.map = {};
       if (r && r.role === 'student') {
         const name = studentName();
         if (name) {
@@ -490,6 +488,9 @@
     if (cached && cached.studentName) return cached;
     const res = await traitApi('getStudentTrait', { studentName: student });
     let rec = res && res.trait ? res.trait : null;
+    if (rec) {
+      return cacheTraitRecord(rec, student);
+    }
     let overlay = null;
     if (typeof appGetAsync === 'function') {
       for (const key of traitAliasKeys(student)) {
@@ -497,8 +498,6 @@
         if (overlay) break;
       }
     }
-    if (rec && overlay) rec = overlayTraitRecord(rec, overlay);
-    if (rec) return cacheTraitRecord(rec, student);
     if (overlay) return cacheTraitRecord(overlay, student);
     const local = currentRecord(student);
     return local && local.studentName ? local : null;
@@ -506,26 +505,15 @@
 
   async function loadAllStudentTraits() {
     const res = await traitApi('getAllStudentTraits', {});
-    let overlays = {};
-    try {
-      if (typeof appGetAll === 'function') overlays = await appGetAll('trait:');
-    } catch (e) { overlays = {}; }
     const list = [];
     if (res && Array.isArray(res.traits)) {
       res.traits.forEach(item => {
         const name = item.studentName || '';
-        const overlay = overlays[traitKey(name)] || overlays['trait:' + traitMatchKey(name)] || overlays['trait:' + nameKey(name)] || overlays['trait:' + String(name || '').trim()];
-        const rec = cacheTraitRecord(overlay ? overlayTraitRecord(item, overlay) : item, name);
+        const rec = cacheTraitRecord(item, name);
         if (rec) list.push(rec);
       });
     }
-    Object.keys(overlays || {}).forEach(key => {
-      const name = nameKey(String(key).replace(/^trait:/, ''));
-      if (!name || state.map[traitMatchKey(name)]) return;
-      const rec = cacheTraitRecord(overlays[key], name);
-      if (rec) list.push(rec);
-    });
-    const merged = buildStudentTraitMap(Object.values(state.map || {}).concat(list).concat(Object.keys(overlays || {}).map(key => overlays[key]).filter(Boolean)));
+    const merged = buildStudentTraitMap(Object.values(state.map || {}).concat(list));
     if (Object.keys(merged).length) state.map = merged;
     return Object.values(state.map || merged);
   }

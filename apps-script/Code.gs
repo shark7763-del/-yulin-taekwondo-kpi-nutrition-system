@@ -1160,9 +1160,6 @@ function getAllStudentTraits(data) {
       var k = normalizeTraitName(trait.studentName || String(key || '').replace(/^trait:/, ''));
       if (!k) return;
       if (!map[k]) map[k] = trait;
-      else {
-        map[k] = Object.assign({}, map[k], trait);
-      }
     });
   } catch (e) {}
   var out = Object.keys(map).map(function (k) { return map[k]; });
