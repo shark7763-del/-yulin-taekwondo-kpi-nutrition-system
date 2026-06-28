@@ -1819,3 +1819,193 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 
 /* 狀態關懷卡標題列：標題 + 一鍵全隊代擬鈕 */
 .redcare-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+
+/* ===================== 學生特質雷達 ===================== */
+.trait-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+  gap: 14px;
+}
+.trait-panel {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, .78);
+  border: 1px solid rgba(56, 189, 248, .16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+.trait-page-kicker {
+  color: #7dd3fc;
+  font-size: .9rem;
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+.trait-hero {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(2, 6, 23, .52);
+  border: 1px solid rgba(148, 163, 184, .18);
+}
+.trait-hero-title { color: #cbd5e1; font-size: .9rem; font-weight: 900; }
+.trait-hero-label { color: #f8fafc; font-size: 1.35rem; font-weight: 950; line-height: 1.2; }
+.trait-hero-note, .trait-disclaimer, .trait-coach-note, .trait-quiz-hint { color: var(--text-soft); line-height: 1.7; font-size: .92rem; }
+.trait-disclaimer {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, .66);
+  border: 1px solid rgba(148, 163, 184, .18);
+}
+.trait-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.trait-detail-card {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(2, 6, 23, .58);
+  border: 1px solid rgba(148, 163, 184, .16);
+}
+.trait-detail-card h4 { margin: 0 0 8px; color: #e0f2fe; font-size: .95rem; font-weight: 900; }
+.trait-detail-card p { margin: 0; color: #f8fafc; line-height: 1.75; }
+.trait-start-row, .trait-quiz-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.trait-start-row .btn, .trait-quiz-actions .btn { min-height: 42px; }
+.trait-intro-list { display: grid; gap: 8px; margin-top: 12px; color: #cbd5e1; line-height: 1.7; }
+.trait-progress {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, .9);
+  border: 1px solid rgba(148, 163, 184, .16);
+  overflow: hidden;
+  margin: 10px 0 6px;
+}
+.trait-progress span { display: block; height: 100%; background: linear-gradient(90deg, #38bdf8, #f59e0b); }
+.trait-progress-text { color: var(--text-soft); font-size: .9rem; font-weight: 800; }
+.trait-question {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(2, 6, 23, .68);
+  border: 1px solid rgba(56, 189, 248, .16);
+  color: #f8fafc;
+  font-size: 1.08rem;
+  line-height: 1.7;
+  font-weight: 800;
+}
+.trait-options { display: grid; gap: 10px; margin-top: 12px; }
+.trait-option {
+  width: 100%;
+  min-height: 54px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, .2);
+  background: rgba(15, 23, 42, .88);
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.trait-option:hover { border-color: rgba(56, 189, 248, .46); background: rgba(30, 41, 59, .96); }
+.trait-option.active { border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, .14); }
+.trait-option-text { min-width: 0; line-height: 1.6; font-weight: 850; }
+.trait-option-arrow { color: #94a3b8; font-size: 1.4rem; }
+.trait-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, .22);
+  background: rgba(30, 41, 59, .9);
+  color: #e2e8f0;
+  font-size: .8rem;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.trait-badge:hover { border-color: rgba(56, 189, 248, .42); transform: translateY(-1px); }
+.trait-badge-inline { margin-left: 8px; }
+.trait-badge-rocket { border-color: rgba(56, 189, 248, .38); color: #7dd3fc; background: rgba(8, 47, 73, .72); }
+.trait-badge-volcano { border-color: rgba(248, 113, 113, .38); color: #fecaca; background: rgba(88, 28, 28, .72); }
+.trait-badge-shield { border-color: rgba(45, 212, 191, .32); color: #a7f3d0; background: rgba(6, 78, 59, .68); }
+.trait-badge-cheetah { border-color: rgba(251, 191, 36, .38); color: #fde68a; background: rgba(120, 53, 15, .7); }
+.trait-badge-growth { border-color: rgba(96, 165, 250, .38); color: #bfdbfe; background: rgba(30, 58, 138, .68); }
+.trait-badge-none { border-color: rgba(148, 163, 184, .24); color: #cbd5e1; background: rgba(30, 41, 59, .72); }
+.trait-name-wrap { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0; min-width: 0; }
+.trait-name-text { min-width: 0; }
+.trait-summary-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.trait-summary-chip {
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, .22);
+  background: rgba(15, 23, 42, .78);
+  color: #e2e8f0;
+  font-size: .86rem;
+  font-weight: 900;
+}
+.trait-summary-chip.rocket { color: #7dd3fc; border-color: rgba(56, 189, 248, .28); }
+.trait-summary-chip.volcano { color: #fecaca; border-color: rgba(248, 113, 113, .28); }
+.trait-summary-chip.shield { color: #a7f3d0; border-color: rgba(45, 212, 191, .28); }
+.trait-summary-chip.cheetah { color: #fde68a; border-color: rgba(251, 191, 36, .28); }
+.trait-summary-chip.growth { color: #bfdbfe; border-color: rgba(96, 165, 250, .28); }
+.trait-summary-chip.none { color: #cbd5e1; }
+.trait-coach-list-grid { display: grid; gap: 10px; margin-top: 12px; }
+.trait-coach-student {
+  width: 100%;
+  min-height: 58px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  background: rgba(2, 6, 23, .64);
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.trait-coach-student:hover { border-color: rgba(56, 189, 248, .42); }
+.trait-coach-student.active { border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, .14); }
+.trait-coach-student-name { min-width: 0; font-weight: 900; font-size: 1.02rem; }
+.trait-coach-student-badge { flex-shrink: 0; }
+.trait-coach-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, .16);
+}
+.trait-check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.trait-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  background: rgba(30, 41, 59, .7);
+  color: #e2e8f0;
+  line-height: 1.5;
+}
+.trait-check input { accent-color: #38bdf8; }
+.trait-result-name { font-size: 1.2rem; font-weight: 950; color: #f8fafc; margin-top: 8px; }
+
+@media (max-width: 900px) {
+  .trait-page-grid { grid-template-columns: 1fr; }
+  .trait-detail-grid { grid-template-columns: 1fr; }
+  .trait-check-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .trait-coach-student { flex-direction: column; align-items: flex-start; }
+  .trait-badge-inline { margin-left: 0; margin-top: 6px; }
+  .trait-option { align-items: flex-start; }
+}

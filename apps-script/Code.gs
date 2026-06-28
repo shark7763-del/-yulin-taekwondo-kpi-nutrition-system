@@ -2355,7 +2355,7 @@ function appDataKeyAllowedForSession(key, session) {
   key = String(key || '');
   if (session.role === 'coach') return true;
   var name = normalizeName(session.studentName);
-  return key === 'profile:' + name || key === 'motto:' + name || key.indexOf('task:' + name + ':') === 0;
+  return key === 'profile:' + name || key === 'motto:' + name || key.indexOf('task:' + name + ':') === 0 || key === 'trait:' + name;
 }
 
 function getAppDataAuthorized(data) {
@@ -2409,6 +2409,29 @@ function setAppDataAuthorized(data) {
         current.studentNote = String((data.value && data.value.studentNote) || '').slice(0, 1000);
         return writeAppData(key, current);
       }
+      if (key.indexOf('trait:') === 0) {
+        var trait = getAppData(key) || {};
+        var incoming = data.value || {};
+        if (incoming.studentName) trait.studentName = normalizeName(incoming.studentName);
+        if (incoming.label) trait.label = String(incoming.label).slice(0, 40);
+        if (incoming.typeKey) trait.typeKey = String(incoming.typeKey).slice(0, 40);
+        if (incoming.description) trait.description = String(incoming.description).slice(0, 600);
+        if (incoming.keywords) trait.keywords = incoming.keywords;
+        if (incoming.communication) trait.communication = String(incoming.communication).slice(0, 400);
+        if (incoming.encouragement) trait.encouragement = String(incoming.encouragement).slice(0, 400);
+        if (incoming.correction) trait.correction = String(incoming.correction).slice(0, 400);
+        if (incoming.competitionReminder) trait.competitionReminder = String(incoming.competitionReminder).slice(0, 400);
+        if (incoming.setbackResponse) trait.setbackResponse = String(incoming.setbackResponse).slice(0, 400);
+        if (incoming.parentAdvice) trait.parentAdvice = String(incoming.parentAdvice).slice(0, 400);
+        if (incoming.avoid) trait.avoid = String(incoming.avoid).slice(0, 400);
+        if (incoming.rawScore) trait.rawScore = incoming.rawScore;
+        if (incoming.answers) trait.answers = incoming.answers;
+        trait.completedAt = incoming.completedAt || trait.completedAt || nowIso();
+        trait.updatedAt = nowIso();
+        trait.updatedBy = 'student';
+        trait.version = incoming.version || trait.version || 1;
+        return writeAppData(key, trait);
+      }
       return { ok: false, error: '選手不可修改此資料。', forbidden: true };
     }
     return writeAppData(data.key, data.value);
@@ -2423,6 +2446,29 @@ function setAppDataAuthorized(data) {
         current.completion = String((data.value && data.value.completion) || '').slice(0, 20);
         current.studentNote = String((data.value && data.value.studentNote) || '').slice(0, 1000);
         return writeAppData(key, current);
+      }
+      if (key.indexOf('trait:') === 0) {
+        var trait = getAppData(key) || {};
+        var incoming = data.value || {};
+        if (incoming.studentName) trait.studentName = normalizeName(incoming.studentName);
+        if (incoming.label) trait.label = String(incoming.label).slice(0, 40);
+        if (incoming.typeKey) trait.typeKey = String(incoming.typeKey).slice(0, 40);
+        if (incoming.description) trait.description = String(incoming.description).slice(0, 600);
+        if (incoming.keywords) trait.keywords = incoming.keywords;
+        if (incoming.communication) trait.communication = String(incoming.communication).slice(0, 400);
+        if (incoming.encouragement) trait.encouragement = String(incoming.encouragement).slice(0, 400);
+        if (incoming.correction) trait.correction = String(incoming.correction).slice(0, 400);
+        if (incoming.competitionReminder) trait.competitionReminder = String(incoming.competitionReminder).slice(0, 400);
+        if (incoming.setbackResponse) trait.setbackResponse = String(incoming.setbackResponse).slice(0, 400);
+        if (incoming.parentAdvice) trait.parentAdvice = String(incoming.parentAdvice).slice(0, 400);
+        if (incoming.avoid) trait.avoid = String(incoming.avoid).slice(0, 400);
+        if (incoming.rawScore) trait.rawScore = incoming.rawScore;
+        if (incoming.answers) trait.answers = incoming.answers;
+        trait.completedAt = incoming.completedAt || trait.completedAt || nowIso();
+        trait.updatedAt = nowIso();
+        trait.updatedBy = 'student';
+        trait.version = incoming.version || trait.version || 1;
+        return writeAppData(key, trait);
       }
     }
   }

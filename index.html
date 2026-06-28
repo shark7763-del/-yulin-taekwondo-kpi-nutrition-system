@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-title" content="TeamPro" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=20260628e" />
+  <link rel="stylesheet" href="style.css?v=20260628h" />
   <link rel="stylesheet" href="monthly-report.css?v=20260627f" />
 </head>
 <body>
@@ -69,6 +69,7 @@
     <button class="tab-btn active" data-tab="student">📝 今日回報</button>
     <button class="tab-btn" data-tab="lastperf">📌 上次表現</button>
     <button class="tab-btn" data-tab="profile">👤 我的檔案</button>
+    <button class="tab-btn" data-tab="trait">🎭 學生特質雷達</button>
     <button type="button" class="tab-link psych-pack-nav-btn" id="tabPsychPack" data-open-psych-pack>🎴 我的卡夾</button>
     <button type="button" class="tab-link" id="tabSolace" style="display:none;">💌 解憂信箱</button>
     <button class="tab-btn" data-tab="parent">👨‍👩‍👧 家長後台</button>
@@ -590,6 +591,15 @@
     </section>
 
     <!-- ========================================================= -->
+    <!-- 分頁：學生特質雷達                                        -->
+    <!-- ========================================================= -->
+    <section class="tab-panel" id="tab-trait">
+      <div class="card" id="traitRadarCard">
+        <div id="traitRadarRoot"><div class="hint-box">讀取學生特質雷達中...</div></div>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
     <!-- 分頁：家長後台                                            -->
     <!-- ========================================================= -->
     <section class="tab-panel" id="tab-parent">
@@ -1041,20 +1051,21 @@
 
   <!-- app.js 已模組化拆檔，依序載入（同享全域作用域，語意與單檔等價）-->
   <script src="js/01-config-data.js?v=20260625f"></script>
-  <script src="js/02-core-utils.js?v=20260628e"></script>
+  <script src="js/02-core-utils.js?v=20260628h"></script>
   <script src="js/03-forms-scoring.js?v=20260625f"></script>
   <script src="js/04-daily-submit.js?v=20260625f"></script>
-  <script src="js/05-feedback-readiness.js?v=20260627d"></script>
+  <script src="js/05-feedback-readiness.js?v=20260628h"></script>
   <script src="js/06-player-line.js?v=20260625f"></script>
-  <script src="js/07-coach-dashboard.js?v=20260628e"></script>
-  <script src="js/08-profile-journal.js?v=20260627g"></script>
-  <script src="js/09-settings-auth.js?v=20260628f"></script>
-  <script src="js/10-init.js?v=20260628f"></script>
+  <script src="js/07-coach-dashboard.js?v=20260628h"></script>
+  <script src="js/08-profile-journal.js?v=20260628h"></script>
+  <script src="js/09-settings-auth.js?v=20260628h"></script>
+  <script src="js/11-trait-radar.js?v=20260628b"></script>
+  <script src="js/10-init.js?v=20260628h"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260627f"></script>
   <!-- KPI 回報手動開啟（教練後台控制學生每日 30 項 KPI）-->
-  <script src="kpi-session.js?v=20260628d"></script>
+  <script src="kpi-session.js?v=20260628e"></script>
   <!-- TeamPro 心理成長能量卡（回報完成後抽卡＋集卡）-->
   <script src="psych-cards.js?v=20260626f"></script>
   <!-- PWA：註冊 Service Worker（離線快取＋可安裝）。失敗不影響任何功能 -->

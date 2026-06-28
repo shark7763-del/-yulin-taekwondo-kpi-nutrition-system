@@ -358,6 +358,9 @@ function switchTab(tabName) {
       if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
     }, 0);
   }
+  if (tabName === 'trait' && window.TraitRadar && typeof window.TraitRadar.refresh === 'function') {
+    setTimeout(() => window.TraitRadar.refresh(), 0);
+  }
 }
 
 /* ============================================================
@@ -389,9 +392,9 @@ function clearRole() { localStorage.removeItem(ROLE_KEY); }
 
 // 各角色可看的分頁與預設分頁
 const ROLE_TABS = {
-  student: { allowed: ['student', 'lastperf', 'profile'], default: 'student' },
+  student: { allowed: ['student', 'lastperf', 'profile', 'trait'], default: 'student' },
   parent: { allowed: ['parent'], default: 'parent' },
-  coach: { allowed: ['lastperf', 'coach', 'profile', 'settings'], default: 'coach' }
+  coach: { allowed: ['lastperf', 'coach', 'profile', 'trait', 'settings'], default: 'coach' }
 };
 const ROLE_LABEL = { student: '🥋 選手', parent: '👨‍👩‍👧 家長', coach: '📊 教練' };
 
@@ -709,8 +712,10 @@ function applyRole() {
   });
   const studentTab = document.querySelector('.tab-btn[data-tab="student"]');
   const profileTab = document.querySelector('.tab-btn[data-tab="profile"]');
+  const traitTab = document.querySelector('.tab-btn[data-tab="trait"]');
   if (studentTab) studentTab.textContent = '📝 今日回報';
   if (profileTab) profileTab.textContent = r.role === 'coach' ? '👤 個人檔案' : '👤 我的檔案';
+  if (traitTab) traitTab.textContent = r.role === 'coach' ? '🎭 學生特質雷達' : '🎭 成長風格';
   // 通用設定：家長後台模組關閉時，隱藏家長分頁
   if (!getBrand().modParent) {
     const pb = document.querySelector('.tab-btn[data-tab="parent"]');
@@ -771,6 +776,11 @@ function applyRole() {
     refreshCoach();
     loadAiConfig();
     if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
+  }
+  if (window.TraitRadar && typeof window.TraitRadar.onRoleApplied === 'function') {
+    Promise.resolve(window.TraitRadar.onRoleApplied(r)).catch(() => {});
+  } else if (r.role === 'student' && traitTab) {
+    switchTab('trait');
   }
   if (window.KpiSession && window.KpiSession.refresh) {
     setTimeout(() => window.KpiSession.refresh(), 0);
@@ -836,6 +846,7 @@ async function refreshAccountAdmin() {
   const parentBox = $id('parentAccountAdmin');
   if (!studentBox || !parentBox || !isCoachView()) return;
   try {
+    if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
     const res = await postToWebApp({ action: 'getAccountAdminData' });
     if (!res || !res.ok) throw new Error((res && res.error) || '讀取失敗');
     const data = res.data || { students: [], parents: [] };
@@ -843,7 +854,7 @@ async function refreshAccountAdmin() {
     $id('legacyLoginEnabled').checked = !!data.legacyLoginEnabled;
 
     studentBox.innerHTML = `<table><thead><tr><th>選手</th><th>狀態</th><th>最近登入</th><th>PIN</th><th>操作</th></tr></thead><tbody>${
-      data.students.map(s => `<tr><td>${escapeHtml(s.studentName)}</td><td>${escapeHtml(s.accountStatus || 'pending')}${s.lockedUntil ? '<br><span class="tag tag-red">鎖定</span>' : ''}</td><td>${accountDate(s.lastLoginAt)}</td><td>${s.pinSet ? '已設定' : '待啟用'}</td><td class="account-actions">
+      data.students.map(s => `<tr><td>${(window.TraitRadar && window.TraitRadar.nameHtml) ? window.TraitRadar.nameHtml(s.studentName) : escapeHtml(s.studentName)}</td><td>${escapeHtml(s.accountStatus || 'pending')}${s.lockedUntil ? '<br><span class="tag tag-red">鎖定</span>' : ''}</td><td>${accountDate(s.lastLoginAt)}</td><td>${s.pinSet ? '已設定' : '待啟用'}</td><td class="account-actions">
         <button type="button" data-student-action="generateActivation" data-student-id="${escapeHtml(s.studentId)}">產生啟用碼</button>
         <button type="button" data-student-action="resetPin" data-student-id="${escapeHtml(s.studentId)}">重設 PIN</button>
         <button type="button" data-student-action="unlock" data-student-id="${escapeHtml(s.studentId)}">解除鎖定</button>
@@ -855,7 +866,7 @@ async function refreshAccountAdmin() {
     studentSelect.innerHTML = '<option value="">選擇孩子</option>' + data.students.map(s => `<option value="${escapeHtml(s.studentId)}">${escapeHtml(s.studentName)}</option>`).join('');
 
     parentBox.innerHTML = `<table><thead><tr><th>孩子</th><th>家長</th><th>手機</th><th>綁定／同意</th><th>最近登入</th><th>操作</th></tr></thead><tbody>${
-      data.parents.map(p => `<tr><td>${escapeHtml(p.studentName)}</td><td>${escapeHtml(p.parentName || '-')}</td><td>${escapeHtml(p.parentPhone || '-')}</td><td>${escapeHtml(p.bindStatus || 'pending')} / ${escapeHtml(p.consentStatus || 'pending')}</td><td>${accountDate(p.lastLoginAt)}</td><td class="account-actions">
+      data.parents.map(p => `<tr><td>${(window.TraitRadar && window.TraitRadar.nameHtml) ? window.TraitRadar.nameHtml(p.studentName) : escapeHtml(p.studentName)}</td><td>${escapeHtml(p.parentName || '-')}</td><td>${escapeHtml(p.parentPhone || '-')}</td><td>${escapeHtml(p.bindStatus || 'pending')} / ${escapeHtml(p.consentStatus || 'pending')}</td><td>${accountDate(p.lastLoginAt)}</td><td class="account-actions">
         <button type="button" data-parent-action="edit" data-parent-id="${escapeHtml(p.parentId)}" data-student-id="${escapeHtml(p.studentId)}" data-parent-name="${escapeHtml(p.parentName || '')}" data-parent-phone="${escapeHtml(p.parentPhone || '')}">更新手機</button>
         <button type="button" data-parent-action="unlock" data-parent-id="${escapeHtml(p.parentId)}">解除鎖定</button>
         <button type="button" data-parent-action="unbind" data-parent-id="${escapeHtml(p.parentId)}">解除綁定</button>

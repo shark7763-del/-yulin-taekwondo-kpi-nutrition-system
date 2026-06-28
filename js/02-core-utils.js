@@ -453,6 +453,7 @@ async function appSet(key, value) {
 
 function appKeyTask(name, date) { return 'task:' + name + ':' + normDate(date); }
 function appKeyProfile(name) { return 'profile:' + name; }
+function appKeyTrait(name) { return 'trait:' + String(name || '').trim(); }
 
 // 取某前綴的所有資料（雲端優先，否則掃本機）。回傳 Promise<{key:value}>
 async function appGetAll(prefix) {

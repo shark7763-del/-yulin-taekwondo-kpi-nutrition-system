@@ -41,6 +41,13 @@ async function saveCoachScoreRow(row) {
   saveLocalCoachScores(arr);
   return payload;
 }
+
+function traitBadge(name) {
+  return (window.TraitRadar && typeof window.TraitRadar.badgeHtml === 'function') ? window.TraitRadar.badgeHtml(name) : '';
+}
+function traitName(name) {
+  return (window.TraitRadar && typeof window.TraitRadar.nameHtml === 'function') ? window.TraitRadar.nameHtml(name) : escapeHtml(name);
+}
 function mergeCoachScores(records, scores) {
   const map = {};
   (scores || []).forEach(s => { map[normDate(s.date) + '|' + String(s.studentName || '').trim()] = s; });
@@ -454,7 +461,7 @@ async function renderCoachAttendanceReports(todays) {
         const reasonCell = r.absenceReason
           ? `${escapeHtml(r.absenceReason)}${r.absenceReflection ? `<div class="reflection-cell">🤔 ${escapeHtml(r.absenceReflection)}</div>` : ''}`
           : '-';
-        return `<tr><td>${dateSlash(r.date)}</td><td>${escapeHtml(name)}</td><td><span class="status-dot ${attendanceColor(st, r)}">${st}</span></td><td>${r.kpiSubmitted || '否'}</td><td>${reasonCell}</td><td>${escapeHtml(r.parentConfirmed || '否')}</td><td>${escapeHtml(r.makeupTask || '-')}</td><td>${escapeHtml(r.makeupStatus || '-')}</td><td>${escapeHtml(r.coachPublicNote || '-')}</td><td>${escapeHtml(r.coachPrivateNote || '-')}</td></tr>`;
+        return `<tr><td>${dateSlash(r.date)}</td><td>${traitName(name)}</td><td><span class="status-dot ${attendanceColor(st, r)}">${st}</span></td><td>${r.kpiSubmitted || '否'}</td><td>${reasonCell}</td><td>${escapeHtml(r.parentConfirmed || '否')}</td><td>${escapeHtml(r.makeupTask || '-')}</td><td>${escapeHtml(r.makeupStatus || '-')}</td><td>${escapeHtml(r.coachPublicNote || '-')}</td><td>${escapeHtml(r.coachPrivateNote || '-')}</td></tr>`;
       }).join('')}</tbody>
     </table></div>`;
   const copyBtn = $id('btnCoachCopyAttendanceNotice');
@@ -689,7 +696,7 @@ function renderCoachReadinessOverview(todays, all) {
         const score = r.finalReadinessScore || '--';
         const lightText = r.readinessStatusLight || `${name}`;
         const reply = replyTemplates[name].replace('{name}', String(r.name || '').trim());
-        return `<div class="readiness-person readiness-player-card${isActive ? ' active' : ''}" data-readiness-player="${playerIndex}" role="button" tabindex="0" aria-expanded="${isActive}"><b>${escapeHtml(r.name)}</b><span>${escapeHtml(score)}｜${escapeHtml(lightText)}</span><small>${escapeHtml(r.trainingDirection || '')}</small>${isActive ? `<div class="quick-reply-panel" data-quick-reply-panel>
+        return `<div class="readiness-person readiness-player-card${isActive ? ' active' : ''}" data-readiness-player="${playerIndex}" role="button" tabindex="0" aria-expanded="${isActive}"><b>${traitName(r.name)}</b><span>${escapeHtml(score)}｜${escapeHtml(lightText)}</span><small>${escapeHtml(r.trainingDirection || '')}</small>${isActive ? `<div class="quick-reply-panel" data-quick-reply-panel>
           <div class="quick-reply-title">教練快速回覆區</div><div class="quick-reply-meta">選手：${escapeHtml(r.name)}｜今日分數：${escapeHtml(score)}｜${escapeHtml(lightText)}｜${name}</div>
           <div class="quick-reply-ai-actions"><button type="button" class="quick-reply-ai-btn primary" data-quick-ai="default" data-quick-ai-player="${playerIndex}">⚡ AI代擬</button><button type="button" class="quick-reply-ai-btn" data-quick-ai="rewrite" data-quick-ai-player="${playerIndex}">換一句</button><button type="button" class="quick-reply-ai-btn" data-quick-ai="coachStyle" data-quick-ai-player="${playerIndex}">✏️ 用我的語氣</button></div>
           <textarea class="quick-reply-textarea" aria-label="${escapeHtml(r.name)} 的教練回覆">${escapeHtml(reply)}</textarea>
@@ -803,7 +810,7 @@ function renderCoachQuickScores(todays, coachScores) {
     const scored = !!(s.coachAttitudeScore && s.coachTechniqueScore && s.coachExecutionScore && s.coachRiskScore);
     return `<div class="coach-score-card collapsed${scored ? ' is-scored' : ''}" data-name="${escapeHtml(name)}">
       <div class="coach-score-head">
-        <div class="coach-score-head-main"><b>${escapeHtml(name)}${scored ? ' <span class="coach-score-done">✓ 已評</span>' : ''}</b><span>${r.name ? `${readiness.finalReadinessScore}｜${readiness.statusLight}` : '今日尚未回報，可先建立教練簡評'}</span></div>
+        <div class="coach-score-head-main"><b>${traitName(name)}${scored ? ' <span class="coach-score-done">✓ 已評</span>' : ''}</b><span>${r.name ? `${readiness.finalReadinessScore}｜${readiness.statusLight}` : '今日尚未回報，可先建立教練簡評'}</span></div>
         <span class="coach-score-caret" aria-hidden="true">▾</span>
       </div>
       <div class="coach-score-body">
@@ -884,6 +891,7 @@ function renderCoachQuickScores(todays, coachScores) {
 
 async function refreshCoach() {
   toast('讀取資料中...');
+  if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
   const all = await fetchAllRecords();
   const filterDate = $id('coachDate').value;
   const statusFilter = $id('coachStatusFilter').value;
@@ -956,7 +964,7 @@ function renderCoachSimpleGroups(todays) {
   box.innerHTML = Object.keys(buckets).map(group => {
     const list = buckets[group];
     return `<div class="readiness-group"><h4>${group}（${list.length}）</h4>` +
-      (list.length ? `<div class="name-list">${list.map(r => `<span class="tag">${escapeHtml(r.name || '')}</span>`).join('')}</div>` : '<p class="review-label">無</p>') +
+      (list.length ? `<div class="name-list">${list.map(r => `<span class="tag">${traitName(r.name || '')}</span>`).join('')}</div>` : '<p class="review-label">無</p>') +
       `</div>`;
   }).join('');
 }
@@ -1518,7 +1526,11 @@ function renderCoachNutrition(todays, all) {
 
 function nameListBlock(title, names, cls) {
   let html = `<div class="list-block"><h4>${title}（${names.length}）</h4><div class="name-list">`;
-  if (names.length) names.forEach(n => html += `<span class="tag ${cls}">${n}</span>`);
+  if (names.length) names.forEach(n => {
+    const text = String(n || '');
+    const body = (text.indexOf('｜') === -1 && text.indexOf('（') === -1 && text.indexOf('<') === -1) ? traitName(text) : escapeHtml(text);
+    html += `<span class="tag ${cls}">${body}</span>`;
+  });
   else html += '<span class="review-label">無</span>';
   html += '</div></div>';
   return html;
@@ -1597,7 +1609,7 @@ function renderInterviewList(todays, all) {
       try { low = findLowItems(JSON.parse(todayRec.rawScoresJson || '{}')); } catch (e) { /* */ }
       if (low.length) advice = `明日安排「${low.map(l => l.item).join('、')}」個別修正，並提醒訓練後補水與蛋白質補充。`;
     }
-    html += `<div class="interview-item"><div class="nm">${name}</div>
+    html += `<div class="interview-item"><div class="nm">${traitName(name)}</div>
       <div style="margin:6px 0"><b>原因：</b>${rs.join('；')}</div>
       <div><b>建議：</b>${advice}</div></div>`;
   });
@@ -1920,6 +1932,7 @@ function renderCoachReviewBlock(rec) {
 
   let html = `<div class="review-card" data-rid="${rec.recordId}">`;
   html += `<div class="review-row"><span class="review-label">${dateSlash(rec.date)}</span><span class="review-value">${rec.status}　${scoreMaxText(rec)}</span></div>`;
+  html += `<div class="review-row"><span class="review-label">學生</span><span class="review-value">${traitName(rec.name || rec.studentName || '')}</span></div>`;
 
   // 六大面向雷達圖（自評＋教練評疊圖）
   html += radarFromRecord(rec);
@@ -2173,7 +2186,7 @@ function renderTodayReportedList(items, filter) {
     const cls = item.priority ? 'priority' : (item.pending ? 'pending' : 'reported');
     const active = LASTPERF_TODAY_STATE.selected === item.studentName ? ' active' : '';
     return `<button type="button" class="today-reported-card ${cls}${active}" data-lastperf-student="${escapeHtml(item.studentName)}">
-      <span class="today-reported-name">${escapeHtml(item.studentName)}</span>
+      <span class="today-reported-name">${(window.TraitRadar && typeof window.TraitRadar.nameInlineHtml === 'function') ? window.TraitRadar.nameInlineHtml(item.studentName) : escapeHtml(item.studentName)}</span>
       <span class="today-reported-status">${escapeHtml(item.status)}</span>
       <span class="today-reported-arrow">›</span>
     </button>`;
@@ -2212,6 +2225,7 @@ async function refreshTodayReportedList() {
   const role = (getRole() || {}).role;
   panel.style.display = role === 'coach' ? '' : 'none';
   if (role !== 'coach') return;
+  if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
   const list = $id('todayReportedList');
   if (list) list.innerHTML = '<div class="hint-box">讀取今日回報名單中...</div>';
   try {
@@ -2490,7 +2504,7 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
   const saved = (rec && rec.coachReply) || generateCoachReplyFallback(ctx, 'default');
   box.innerHTML = `
     <h3 class="card-title">🧑‍🏫 教練回覆助手</h3>
-    <div class="review-row"><span class="review-label">選手</span><span class="review-value">${escapeHtml(ctx.name || '-')}</span></div>
+    <div class="review-row"><span class="review-label">選手</span><span class="review-value">${traitName(ctx.name || '-')}</span></div>
     <div class="review-row"><span class="review-label">區間</span><span class="review-value">近${ctx.rangeDays}天</span></div>
     ${coachPerformanceSummaryHtml(ctx)}
     <div class="coach-reply-ai-actions">

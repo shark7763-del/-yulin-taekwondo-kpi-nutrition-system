@@ -394,6 +394,11 @@ function renderCoachFeedbackCard(fb) {
   const badge = $id('cfbStatusBadge');
   badge.textContent = fb.scenarioLabel;
   badge.className = 'cfb-badge cfb-badge-' + fb.scenario;
+  const intro = document.querySelector('#coachFeedbackCard .cfb-intro');
+  if (intro) {
+    const nameHtml = (window.traitNameHtml ? window.traitNameHtml(fb.header.name || '選手') : escapeHtml(fb.header.name || '選手'));
+    intro.innerHTML = `送出完成，這是教練看完 <b>${nameHtml}</b> 今天紀錄後想對你說的話。`;
+  }
 
   $id('cfbStatusGrid').innerHTML = fb.statusGrid.map(g =>
     `<div class="cfb-stat"><span class="cfb-stat-label">${escapeHtml(g.label)}</span><span class="cfb-stat-value cfb-tone-${g.tone || 'none'}">${escapeHtml(g.value)}</span></div>`
