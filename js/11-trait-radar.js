@@ -38,7 +38,7 @@
     const fromLabel = traitLabelToType(label);
     if (TRAITS[fromLabel]) return fromLabel;
     if (rawScore && typeof rawScore === 'object') return pickType(rawScore);
-    return 'growth';
+    return '';
   }
   function appGetAsync(key) {
     return new Promise(resolve => {
@@ -357,8 +357,8 @@
     const record = mergeRecord(raw || {}, nameKey(name));
     const rawScore = record.traitScore || record.rawScore || {};
     const typeKey = normalizeTraitType(record.traitType || record.typeKey, record.traitLabel || record.label, rawScore);
-    const type = TRAITS[typeKey] || TRAITS.growth;
-    const label = nameKey(record.traitLabel || record.label || type.label);
+    const type = typeKey ? (TRAITS[typeKey] || null) : null;
+    const label = nameKey(record.traitLabel || record.label || (type && type.label) || '');
     record.studentName = nameKey(record.studentName || name);
     record.traitType = typeKey;
     record.typeKey = typeKey;
@@ -366,18 +366,18 @@
     record.label = label;
     record.traitScore = rawScore && typeof rawScore === 'object' ? rawScore : {};
     record.rawScore = record.traitScore;
-    record.traitSummary = String(record.traitSummary || record.description || '').trim() || `${type.label}：${type.keywords.join('／')}`;
+    record.traitSummary = String(record.traitSummary || record.description || '').trim() || (type ? `${type.label}：${type.keywords.join('／')}` : '');
     record.description = record.traitSummary;
-    record.communicationTips = String(record.communicationTips || record.communication || type.communication).trim();
+    record.communicationTips = String(record.communicationTips || record.communication || (type ? type.communication : '')).trim();
     record.communication = record.communicationTips;
-    record.trainingTips = String(record.trainingTips || record.correction || type.correction).trim();
+    record.trainingTips = String(record.trainingTips || record.correction || (type ? type.correction : '')).trim();
     record.correction = record.trainingTips;
-    record.keywords = Array.isArray(record.keywords) && record.keywords.length ? record.keywords.slice(0, 3) : type.keywords.slice(0, 3);
-    record.encouragement = String(record.encouragement || type.encouragement).trim();
-    record.competitionReminder = String(record.competitionReminder || type.competitionReminder).trim();
-    record.setbackResponse = String(record.setbackResponse || type.setbackResponse).trim();
-    record.parentAdvice = String(record.parentAdvice || type.parentAdvice).trim();
-    record.avoid = String(record.avoid || type.avoid).trim();
+    record.keywords = Array.isArray(record.keywords) && record.keywords.length ? record.keywords.slice(0, 3) : (type ? type.keywords.slice(0, 3) : []);
+    record.encouragement = String(record.encouragement || (type ? type.encouragement : '')).trim();
+    record.competitionReminder = String(record.competitionReminder || (type ? type.competitionReminder : '')).trim();
+    record.setbackResponse = String(record.setbackResponse || (type ? type.setbackResponse : '')).trim();
+    record.parentAdvice = String(record.parentAdvice || (type ? type.parentAdvice : '')).trim();
+    record.avoid = String(record.avoid || (type ? type.avoid : '')).trim();
     record.completedAt = record.completedAt || record.updatedAt || '';
     record.updatedAt = record.updatedAt || record.completedAt || '';
     return record;
@@ -585,7 +585,7 @@
   function resultHtml(record, name) {
     const normalized = record ? normalizeTraitRecord(record, name) : null;
     const display = normalized ? (normalized.traitLabel || normalized.label || labelForKey(normalized.typeKey)) : '未測驗';
-    const catalog = normalized ? (TRAITS[normalized.typeKey] || TRAITS.growth) : TRAITS.growth;
+    const catalog = normalized && normalized.typeKey ? (TRAITS[normalized.typeKey] || null) : null;
     return `
       <div class="trait-hero">
         <div class="trait-hero-title">你的目前特質</div>
@@ -594,23 +594,23 @@
       </div>
       ${syncStatusHtml(name)}
       <div class="trait-summary-strip">
-        <div class="trait-summary-chip ${catalog.tone}">${esc(display)}</div>
-        <div class="trait-summary-chip none">${esc((normalized && normalized.traitSummary) || (catalog.keywords.join('／')))}</div>
+        <div class="trait-summary-chip ${catalog ? catalog.tone : 'none'}">${esc(display)}</div>
+        <div class="trait-summary-chip none">${esc((normalized && normalized.traitSummary) || (catalog ? catalog.keywords.join('／') : '尚未完成特質測驗'))}</div>
       </div>
       <div class="trait-share-row">
         <button type="button" class="btn btn-line-share" data-trait-share-result="${esc(name)}">💬 分享我的特質結果到 LINE</button>
       </div>
       <div class="trait-detail-grid">
-        <div class="trait-detail-card"><h4>三個關鍵字</h4><p>${esc((normalized && normalized.keywords && normalized.keywords.join('／')) || catalog.keywords.join('／'))}</p></div>
-        <div class="trait-detail-card"><h4>特質摘要</h4><p>${esc((normalized && normalized.traitSummary) || `${display}：${catalog.keywords.join('／')}`)}</p></div>
-        <div class="trait-detail-card"><h4>適合的溝通方式</h4><p>${esc((normalized && normalized.communicationTips) || (normalized ? normalized.communication : catalog.communication))}</p></div>
-        <div class="trait-detail-card"><h4>訓練安排建議</h4><p>${esc((normalized && normalized.trainingTips) || (normalized ? normalized.correction : catalog.correction))}</p></div>
-        <div class="trait-detail-card"><h4>適合的鼓勵方式</h4><p>${esc((normalized && normalized.encouragement) || catalog.encouragement)}</p></div>
-        <div class="trait-detail-card"><h4>修正動作建議</h4><p>${esc((normalized && normalized.correction) || catalog.correction)}</p></div>
-        <div class="trait-detail-card"><h4>比賽前提醒</h4><p>${esc((normalized && normalized.competitionReminder) || catalog.competitionReminder)}</p></div>
-        <div class="trait-detail-card"><h4>遇到挫折時</h4><p>${esc((normalized && normalized.setbackResponse) || catalog.setbackResponse)}</p></div>
-        <div class="trait-detail-card"><h4>家長溝通建議</h4><p>${esc((normalized && normalized.parentAdvice) || catalog.parentAdvice)}</p></div>
-        <div class="trait-detail-card"><h4>不建議的帶法</h4><p>${esc((normalized && normalized.avoid) || catalog.avoid)}</p></div>
+        <div class="trait-detail-card"><h4>三個關鍵字</h4><p>${esc((normalized && normalized.keywords && normalized.keywords.join('／')) || (catalog ? catalog.keywords.join('／') : '—'))}</p></div>
+        <div class="trait-detail-card"><h4>特質摘要</h4><p>${esc((normalized && normalized.traitSummary) || (catalog ? `${display}：${catalog.keywords.join('／')}` : '尚未完成特質卡測驗'))}</p></div>
+        <div class="trait-detail-card"><h4>適合的溝通方式</h4><p>${esc((normalized && normalized.communicationTips) || (catalog ? (normalized ? normalized.communication : catalog.communication) : '—'))}</p></div>
+        <div class="trait-detail-card"><h4>訓練安排建議</h4><p>${esc((normalized && normalized.trainingTips) || (catalog ? (normalized ? normalized.correction : catalog.correction) : '—'))}</p></div>
+        <div class="trait-detail-card"><h4>適合的鼓勵方式</h4><p>${esc((normalized && normalized.encouragement) || (catalog ? catalog.encouragement : '—'))}</p></div>
+        <div class="trait-detail-card"><h4>修正動作建議</h4><p>${esc((normalized && normalized.correction) || (catalog ? catalog.correction : '—'))}</p></div>
+        <div class="trait-detail-card"><h4>比賽前提醒</h4><p>${esc((normalized && normalized.competitionReminder) || (catalog ? catalog.competitionReminder : '—'))}</p></div>
+        <div class="trait-detail-card"><h4>遇到挫折時</h4><p>${esc((normalized && normalized.setbackResponse) || (catalog ? catalog.setbackResponse : '—'))}</p></div>
+        <div class="trait-detail-card"><h4>家長溝通建議</h4><p>${esc((normalized && normalized.parentAdvice) || (catalog ? catalog.parentAdvice : '—'))}</p></div>
+        <div class="trait-detail-card"><h4>不建議的帶法</h4><p>${esc((normalized && normalized.avoid) || (catalog ? catalog.avoid : '—'))}</p></div>
       </div>
       <div class="trait-disclaimer">本測驗僅作為教練教學與溝通參考，不作為心理診斷、醫療判斷或升學篩選依據。學生特質會隨著年齡、訓練經驗與環境改變，結果僅代表目前傾向。</div>
     `;
@@ -878,7 +878,7 @@
 
   function renderCoachDetail(record) {
     const normalized = normalizeTraitRecord(record, record.studentName || '');
-    const type = TRAITS[normalized.typeKey] || TRAITS.growth;
+    const type = normalized.typeKey ? (TRAITS[normalized.typeKey] || null) : null;
     const display = effectiveLabel(normalized);
     const overrideLabel = coachOverrideLabel(normalized);
     const checks = record.coachChecks || {};
@@ -893,22 +893,22 @@
           <div class="student-trait-title">選手特質卡</div>
           <div class="student-trait-label">${esc(normalized.studentName)}｜${esc(display)}</div>
           <div class="student-trait-meta">最後同步：${esc(normalized.updatedAt || normalized.timestamp || normalized.completedAt || '—')}</div>
-          <div class="student-trait-section">${esc(normalized.traitSummary || `${display}：${type.keywords.join('／')}`)}</div>
+          <div class="student-trait-section">${esc(normalized.traitSummary || (type ? `${display}：${type.keywords.join('／')}` : '尚未完成特質卡測驗'))}</div>
           ${overrideLabel ? `<div class="student-trait-section"><b>教練觀察修正：</b>${esc(overrideLabel)}</div>` : ''}
-          <div class="student-trait-section"><b>教練溝通建議：</b>${esc(normalized.communicationTips || type.communication)}</div>
-          <div class="student-trait-section"><b>訓練安排建議：</b>${esc(normalized.trainingTips || type.correction)}</div>
+          <div class="student-trait-section"><b>教練溝通建議：</b>${esc(normalized.communicationTips || (type ? type.communication : '—'))}</div>
+          <div class="student-trait-section"><b>訓練安排建議：</b>${esc(normalized.trainingTips || (type ? type.correction : '—'))}</div>
         </div>
         <div class="trait-detail-grid">
-          <div class="trait-detail-card"><h4>三個關鍵字</h4><p>${esc((normalized.keywords || type.keywords).join('／'))}</p></div>
-          <div class="trait-detail-card"><h4>特質摘要</h4><p>${esc(normalized.traitSummary || `${display}：${type.keywords.join('／')}`)}</p></div>
-          <div class="trait-detail-card"><h4>適合的溝通方式</h4><p>${esc(normalized.communicationTips || normalized.communication || type.communication)}</p></div>
-          <div class="trait-detail-card"><h4>訓練安排建議</h4><p>${esc(normalized.trainingTips || normalized.correction || type.correction)}</p></div>
-          <div class="trait-detail-card"><h4>適合的鼓勵方式</h4><p>${esc(normalized.encouragement || type.encouragement)}</p></div>
-          <div class="trait-detail-card"><h4>修正動作時的建議</h4><p>${esc(normalized.correction || type.correction)}</p></div>
-          <div class="trait-detail-card"><h4>比賽前提醒方式</h4><p>${esc(normalized.competitionReminder || type.competitionReminder)}</p></div>
-          <div class="trait-detail-card"><h4>遇到挫折時的處理方式</h4><p>${esc(normalized.setbackResponse || type.setbackResponse)}</p></div>
-          <div class="trait-detail-card"><h4>家長溝通建議</h4><p>${esc(normalized.parentAdvice || type.parentAdvice)}</p></div>
-          <div class="trait-detail-card"><h4>不建議的帶法</h4><p>${esc(normalized.avoid || type.avoid)}</p></div>
+          <div class="trait-detail-card"><h4>三個關鍵字</h4><p>${esc((normalized.keywords || (type ? type.keywords : [])).join('／') || '—')}</p></div>
+          <div class="trait-detail-card"><h4>特質摘要</h4><p>${esc(normalized.traitSummary || (type ? `${display}：${type.keywords.join('／')}` : '尚未完成特質卡測驗'))}</p></div>
+          <div class="trait-detail-card"><h4>適合的溝通方式</h4><p>${esc(normalized.communicationTips || normalized.communication || (type ? type.communication : '—'))}</p></div>
+          <div class="trait-detail-card"><h4>訓練安排建議</h4><p>${esc(normalized.trainingTips || normalized.correction || (type ? type.correction : '—'))}</p></div>
+          <div class="trait-detail-card"><h4>適合的鼓勵方式</h4><p>${esc(normalized.encouragement || (type ? type.encouragement : '—'))}</p></div>
+          <div class="trait-detail-card"><h4>修正動作時的建議</h4><p>${esc(normalized.correction || (type ? type.correction : '—'))}</p></div>
+          <div class="trait-detail-card"><h4>比賽前提醒方式</h4><p>${esc(normalized.competitionReminder || (type ? type.competitionReminder : '—'))}</p></div>
+          <div class="trait-detail-card"><h4>遇到挫折時的處理方式</h4><p>${esc(normalized.setbackResponse || (type ? type.setbackResponse : '—'))}</p></div>
+          <div class="trait-detail-card"><h4>家長溝通建議</h4><p>${esc(normalized.parentAdvice || (type ? type.parentAdvice : '—'))}</p></div>
+          <div class="trait-detail-card"><h4>不建議的帶法</h4><p>${esc(normalized.avoid || (type ? type.avoid : '—'))}</p></div>
         </div>
         <div class="trait-coach-editor">
           <label class="field-label">教練修正後的主要特質</label>

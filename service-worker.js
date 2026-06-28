@@ -5,7 +5,7 @@
    - 跨網域(Google Apps Script /exec、html2pdf CDN)與非 GET：完全不攔截，
      直接走網路 → 不影響 Google Sheet 串接、PDF 下載、LINE 分享
    ============================================================ */
-const CACHE = 'teampro-pwa-v22';
+const CACHE = 'teampro-pwa-v23';
 const SHELL = [
   './',
   './index.html',
