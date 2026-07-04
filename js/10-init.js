@@ -7,6 +7,7 @@ function init() {
     btn.addEventListener('click', () => {
       switchTab(btn.dataset.tab);
       if (btn.dataset.tab === 'lastperf' && typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
+      if (btn.dataset.tab === 'research' && typeof renderResearchDashboard === 'function') renderResearchDashboard();
     });
   });
 
@@ -42,8 +43,8 @@ function init() {
   renderGratitudeChips();   // 感謝今天的人事物
   renderMoodPicker();   // 今日心情指數
 
-  // KPI 拉桿（預設對練）
-  renderKpiSliders('跆拳道對練');
+  // KPI 拉桿（預設對打）
+  renderKpiSliders('對打');
 
   // 組別改變 -> 重建 KPI（自由品勢 / 品勢 / 對練分流）
   $id('group').addEventListener('change', e => {
@@ -133,6 +134,12 @@ function init() {
       if (typeof applyTodayReportFilter === 'function') applyTodayReportFilter(btn.dataset.lastperfFilter || 'all');
     });
   });
+
+  ['schoolLevel', 'grade', 'classCode'].forEach(id => {
+    const el = $id(id);
+    if (el) el.addEventListener('change', syncGradeClassFields);
+  });
+  { const pa = $id('painArea'); if (pa) pa.addEventListener('change', syncPainAreaField); }
   { const b = $id('btnRefreshTodayReported'); if (b) b.addEventListener('click', () => {
     if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
   }); }
@@ -207,6 +214,7 @@ function init() {
 
   // AI 教練回饋（OpenAI）設定
   setupAiHandlers();
+  if (typeof setupResearchHandlers === 'function') setupResearchHandlers();
 
   // PWA 安裝按鈕
   setupPwaInstall();
@@ -259,7 +267,7 @@ function fallbackCopy(text) {
 
 // 清空表單
 function clearForm() {
-  ['gradeClass', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'heightCm', 'weightKg', 'targetWeightKg',
+  ['schoolLevel', 'grade', 'classCode', 'gradeClass', 'trainingMinutes', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'heightCm', 'weightKg', 'targetWeightKg',
    'breakfast', 'lunch', 'dinner', 'snacksDrinks',
    'reflection', 'tomorrowGoal', 'gratitude', 'encouragementToTeammate', 'mainGoalToday'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
   if ($id('absenceHonesty')) $id('absenceHonesty').selectedIndex = 0;
@@ -272,7 +280,7 @@ function clearForm() {
   if ($id('encourageTeammate')) $id('encourageTeammate').selectedIndex = 0;
   $id('lateNightSnack').value = '無';
   // 睡眠 / 疼痛 / 尿液：清空並刷新 AI 顯示
-  ['bedTime', 'wakeTime', 'sleepHours', 'injuryArea'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
+  ['bedTime', 'wakeTime', 'sleepHours', 'injuryArea', 'painArea'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
   if ($id('sleepQuality')) $id('sleepQuality').value = '普通';
   if ($id('urineStatus')) $id('urineStatus').value = '';
   if ($id('painScore')) $id('painScore').value = 0;
@@ -309,8 +317,8 @@ function clearForm() {
 
 // 草稿要保存的欄位（簡單欄位，KPI 拉桿另外處理）
 const DRAFT_FIELDS = [
-  'date', 'name', 'gradeClass', 'group', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'absenceHonesty', 'bodyStatus',
-  'bedTime', 'wakeTime', 'sleepQuality', 'soreness', 'rpe', 'injuryArea', 'painScore', 'trainingSession', 'sweatLevel',
+  'date', 'name', 'schoolLevel', 'grade', 'classCode', 'gradeClass', 'group', 'trainingMinutes', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'absenceHonesty', 'bodyStatus',
+  'bedTime', 'wakeTime', 'sleepQuality', 'soreness', 'rpe', 'painArea', 'injuryArea', 'painScore', 'trainingSession', 'sweatLevel',
   'heightCm', 'weightKg', 'targetWeightKg',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'urineStatus', 'lateNightSnack', 'trainingIntensity',
   'reflection', 'tomorrowGoal', 'gratitude', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday'
@@ -322,6 +330,8 @@ function debounce(fn, ms) {
 }
 
 function saveDraft() {
+  syncGradeClassFields();
+  syncPainAreaField();
   const d = { _savedAt: Date.now() };
   DRAFT_FIELDS.forEach(id => { const el = $id(id); if (el) d[id] = el.value; });
   d._kpi = {};
@@ -388,6 +398,20 @@ function autofillFromLast(rec) {
     g.value = rec.group; renderKpiSliders(rec.group); filled = true;
   }
   if (filled) { updateBmiDisplay(); toast('已帶入上次的身高/班級/組別，記得確認 🙂'); }
+}
+
+function syncGradeClassFields() {
+  const schoolLevel = $id('schoolLevel') ? $id('schoolLevel').value : '';
+  const grade = $id('grade') ? $id('grade').value : '';
+  const classCode = $id('classCode') ? $id('classCode').value : '';
+  const gc = $id('gradeClass');
+  if (gc) gc.value = [schoolLevel, grade, classCode].filter(Boolean).join('/');
+}
+
+function syncPainAreaField() {
+  const pa = $id('painArea') ? $id('painArea').value : '';
+  const injury = $id('injuryArea');
+  if (injury) injury.value = pa;
 }
 
 // 啟動

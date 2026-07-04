@@ -2044,3 +2044,44 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
   .trait-badge-inline { margin-left: 0; margin-top: 6px; }
   .trait-option { align-items: flex-start; }
 }
+/* Research data dashboard */
+.research-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.research-chart {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255,255,255,0.03);
+}
+.research-chart h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--text);
+}
+.research-bar-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 26px;
+  margin: 4px 0;
+  overflow: hidden;
+}
+.research-bar-row span,
+.research-bar-row b {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+}
+.research-bar-row i {
+  position: absolute;
+  left: 0;
+  bottom: 2px;
+  height: 8px;
+  border-radius: 8px;
+  background: rgba(245,197,24,0.42);
+}

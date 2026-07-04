@@ -558,12 +558,12 @@ function showParentConsent() {
   $id('loginStep1').style.display = 'none';
   s2.style.display = 'block';
   s2.innerHTML = `<p class="login-hint">家長同意與個資告知</p>
-    <div class="consent-notice">本系統蒐集學生出席、訓練狀態、身體狀態、KPI成長與教練提醒，僅作為訓練管理、身體狀態追蹤、家長溝通與訓練報表使用。家長端僅能查看自己孩子的訓練摘要與教練公開提醒，不會顯示其他學生資料。如需查詢、更正、停止使用或刪除資料，請聯繫教練或系統管理者。</div>
-    <label class="consent-row"><input type="checkbox" id="consentTrainingData"> 同意訓練與出席資料用於訓練管理</label>
-    <label class="consent-row"><input type="checkbox" id="consentHealthData"> 同意身體狀態資料用於安全追蹤</label>
-    <label class="consent-row"><input type="checkbox" id="consentParentNotice"> 同意接收教練公開提醒與家長摘要</label>
-    <label class="consent-row"><input type="checkbox" id="consentReport"> 同意資料用於個人訓練報表</label>
-    <label class="consent-row"><input type="checkbox" id="consentLineNotice"> 同意接收 LINE 通知（選填）</label>
+    <div class="consent-notice">本系統用於訓練管理、運動傷害風險追蹤、家長溝通與匿名研究分析，不作為公開排名、懲罰或醫療診斷使用。家長端僅能查看自己孩子的訓練摘要與教練公開提醒，不會顯示其他學生資料。</div>
+    <label class="consent-row"><input type="checkbox" id="consentTrainingData"> 同意訓練資料使用</label>
+    <label class="consent-row"><input type="checkbox" id="consentHealthData"> 同意健康資料使用</label>
+    <label class="consent-row"><input type="checkbox" id="consentLineNotice"> 同意 LINE 通知</label>
+    <label class="consent-row"><input type="checkbox" id="consentAnonymousResearch"> 同意匿名研究分析</label>
+    <label class="consent-row"><input type="checkbox" id="consentReport"> 同意報告產生</label>
     <div class="login-step2-actions"><button class="login-back" id="consentCancel">取消</button><button class="btn btn-primary" id="consentGo" style="flex:1">同意並繼續</button></div>
     <p id="loginErr" class="login-sub" style="color:#ff7b7b;display:none"></p>`;
   $id('consentCancel').addEventListener('click', () => { clearRole(); showLoginOverlay(); });
@@ -578,9 +578,10 @@ async function submitParentConsent() {
       action: 'parentConsent',
       consentTrainingData: $id('consentTrainingData').checked,
       consentHealthData: $id('consentHealthData').checked,
-      consentParentNotice: $id('consentParentNotice').checked,
+      consentParentNotice: true,
       consentReport: $id('consentReport').checked,
-      consentLineNotice: $id('consentLineNotice').checked
+      consentLineNotice: $id('consentLineNotice').checked,
+      consentAnonymousResearch: $id('consentAnonymousResearch').checked
     });
     if (!res || !res.ok) { loginError((res && res.error) || '同意資料儲存失敗。'); return; }
     const user = res.user || {};

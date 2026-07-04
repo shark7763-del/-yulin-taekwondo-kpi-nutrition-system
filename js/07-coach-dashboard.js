@@ -75,7 +75,8 @@ function mergeCoachScores(records, scores) {
     const s = map[normDate(r.date) + '|' + String(r.name || '').trim()];
     if (s) Object.assign(r, {
       coachAttitudeScore: s.coachAttitudeScore,
-      coachTechniqueScore: s.coachTechniqueScore,
+      coachTechnicalScore: s.coachTechnicalScore || s.coachTechniqueScore,
+      coachTechniqueScore: s.coachTechnicalScore || s.coachTechniqueScore,
       coachExecutionScore: s.coachExecutionScore,
       coachRiskScore: s.coachRiskScore,
       coachPublicNote: s.coachPublicNote,
@@ -806,8 +807,9 @@ function renderCoachReadinessOverview(todays, all) {
 
 function coachScoreButtons(field, value) {
   const cur = String(value || '');
+  const scale = [0, 25, 50, 75, 100];
   return `<div class="coach-score-row" data-field="${field}">` +
-    [1, 2, 3, 4, 5].map(n => `<button type="button" class="coach-score-btn ${cur === String(n) ? 'sel' : ''}" data-score="${n}" title="${escapeHtml(COACH_SCORE_HELP[field][n - 1])}">${n}<small>${escapeHtml(COACH_SCORE_HELP[field][n - 1])}</small></button>`).join('') +
+    scale.map((n, i) => `<button type="button" class="coach-score-btn ${cur === String(n) ? 'sel' : ''}" data-score="${n}" title="${escapeHtml((COACH_SCORE_HELP[field] || [])[i] || '')}">${n}<small>${escapeHtml((COACH_SCORE_HELP[field] || [])[i] || '')}</small></button>`).join('') +
     `</div>`;
 }
 function renderCoachQuickScores(todays, coachScores) {
@@ -827,7 +829,7 @@ function renderCoachQuickScores(todays, coachScores) {
     const r = byName[name] || {};
     const s = Object.assign({}, scoreMap[name] || {}, r);
     const readiness = r.name ? buildReadinessAnalysis(s, []) : null;
-    const scored = !!(s.coachAttitudeScore && s.coachTechniqueScore && s.coachExecutionScore && s.coachRiskScore);
+    const scored = s.coachAttitudeScore !== '' && (s.coachTechnicalScore || s.coachTechniqueScore) !== '' && s.coachExecutionScore !== '' && s.coachRiskScore !== '';
     return `<div class="coach-score-card collapsed${scored ? ' is-scored' : ''}" data-name="${escapeHtml(name)}">
       <div class="coach-score-head">
         <div class="coach-score-head-main"><b>${traitName(name)}${scored ? ' <span class="coach-score-done">✓ 已評</span>' : ''}</b><span>${r.name ? `${readiness.finalReadinessScore}｜${readiness.statusLight}` : '今日尚未回報，可先建立教練簡評'}</span></div>
@@ -835,7 +837,7 @@ function renderCoachQuickScores(todays, coachScores) {
       </div>
       <div class="coach-score-body">
         <label>訓練態度 ${coachScoreButtons('coachAttitudeScore', s.coachAttitudeScore)}</label>
-        <label>技術表現 ${coachScoreButtons('coachTechniqueScore', s.coachTechniqueScore)}</label>
+        <label>技術表現 ${coachScoreButtons('coachTechnicalScore', s.coachTechnicalScore || s.coachTechniqueScore)}</label>
         <label>執行力 ${coachScoreButtons('coachExecutionScore', s.coachExecutionScore)}</label>
         <label>風險判斷 ${coachScoreButtons('coachRiskScore', s.coachRiskScore)}</label>
         <textarea class="text-input coach-public-note" rows="2" placeholder="教練公開提醒，可給家長看">${escapeHtml(s.coachPublicNote || '')}</textarea>
@@ -868,7 +870,9 @@ function renderCoachQuickScores(todays, coachScores) {
       });
       row.coachPublicNote = card.querySelector('.coach-public-note').value.trim();
       row.coachPrivateNote = card.querySelector('.coach-private-note').value.trim();
-      if (!row.coachAttitudeScore || !row.coachTechniqueScore || !row.coachExecutionScore || !row.coachRiskScore) {
+      row.coachTechniqueScore = row.coachTechnicalScore;
+      row.coachOverallScore = Math.round((Number(row.coachAttitudeScore) + Number(row.coachTechnicalScore) + Number(row.coachExecutionScore) + Number(row.coachRiskScore)) / 4);
+      if (row.coachAttitudeScore === '' || row.coachTechnicalScore === '' || row.coachExecutionScore === '' || row.coachRiskScore === '') {
         toast('請先完成 4 個教練簡評分數');
         return;
       }
@@ -881,9 +885,11 @@ function renderCoachQuickScores(todays, coachScores) {
           const rd = applyReadiness(existing, []);
           await updateRecordRemote(existing.recordId, {
             coachAttitudeScore: row.coachAttitudeScore,
-            coachTechniqueScore: row.coachTechniqueScore,
+            coachTechnicalScore: row.coachTechnicalScore,
+            coachTechniqueScore: row.coachTechnicalScore,
             coachExecutionScore: row.coachExecutionScore,
             coachRiskScore: row.coachRiskScore,
+            coachOverallScore: row.coachOverallScore,
             coachPublicNote: row.coachPublicNote,
             coachPrivateNote: row.coachPrivateNote,
             selfScore: existing.selfScore,
@@ -960,6 +966,11 @@ function renderOverview(todays) {
   const sleepBad = todays.filter(r => String(r.sleepQuality || '') === '差' || (nval(r.sleepHours) !== null && nval(r.sleepHours) < 6)).length;
   const moodLow = todays.filter(r => nval(r.moodIndex) !== null && nval(r.moodIndex) <= 2).length;
   const parentNotify = todays.filter(r => painScoreValue(r) >= 7 || /受傷風險|需要關心|脫水風險|高風險/.test(String(r.aiTags || ''))).length;
+  const highRisk = todays.filter(r =>
+    painScoreValue(r) >= 7 ||
+    cleanLightForCoach(r.readinessStatusLight) === '紅燈' ||
+    /受傷風險|需要關心|脫水風險|高風險|重大疼痛|高疼痛/.test(String(r.aiTags || '') + String(r.aiLabel || ''))
+  );
   const cells = [
     ['已回報', count],
     ['未回報', missing],
@@ -970,7 +981,17 @@ function renderOverview(todays) {
     ['心情低落', moodLow],
     ['需家長通知', parentNotify]
   ];
-  box.innerHTML = cells.map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
+  box.innerHTML = (highRisk.length ? `<div class="hint-box warn" style="grid-column:1/-1"><b>高風險未處理提醒</b>：${highRisk.map(r => escapeHtml(r.name || '')).join('、')}。請先確認疼痛、訓練調整、家長通知或復健/就醫建議。</div>` : '') +
+    cells.map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
+}
+
+function cleanLightForCoach(v) {
+  const s = String(v || '');
+  if (s.indexOf('紅') !== -1) return '紅燈';
+  if (s.indexOf('橘') !== -1) return '橘燈';
+  if (s.indexOf('黃') !== -1) return '黃燈';
+  if (s.indexOf('綠') !== -1) return '綠燈';
+  return '';
 }
 
 function renderCoachSimpleGroups(todays) {

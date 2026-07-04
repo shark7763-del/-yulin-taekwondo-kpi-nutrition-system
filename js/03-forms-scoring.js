@@ -1368,10 +1368,12 @@ function focusField(id) {
 }
 
 function validateForm() {
+  if (typeof syncGradeClassFields === 'function') syncGradeClassFields();
+  if (typeof syncPainAreaField === 'function') syncPainAreaField();
   const group = $id('group').value;
   if (isAbsenceGroup(group)) {
     const required = [
-      ['name', '選手姓名'], ['gradeClass', '年級／班級'], ['group', '組別'], ['absenceReason', '未出席訓練原因']
+      ['name', '選手姓名'], ['schoolLevel', '學制'], ['grade', '年級'], ['classCode', '班級代碼'], ['group', '組別'], ['absenceReason', '未出席訓練原因']
     ];
     for (const [id, label] of required) {
       const v = $id(id).value;
@@ -1380,7 +1382,7 @@ function validateForm() {
     return true;
   }
   const required = [
-    ['name', '選手姓名'], ['gradeClass', '年級／班級'], ['group', '組別'],
+    ['name', '選手姓名'], ['schoolLevel', '學制'], ['grade', '年級'], ['classCode', '班級代碼'], ['group', '組別'], ['trainingMinutes', '今日訓練分鐘數'],
     ['trainingTopic', '今日訓練主題'], ['reflection', '今日心得'], ['tomorrowGoal', '明日目標'],
     ['heightCm', '身高'], ['weightKg', '今日體重'],
     ['breakfast', '早餐'], ['lunch', '午餐'], ['dinner', '晚餐'],
@@ -1394,6 +1396,34 @@ function validateForm() {
   if (h < 100 || h > 220) { toast('身高似乎不合理，請確認（100–220 cm）'); $id('heightCm').focus(); return false; }
   const w = parseFloat($id('weightKg').value);
   if (w < 25 || w > 150) { toast('體重似乎不合理，請確認（25–150 kg）'); $id('weightKg').focus(); return false; }
+  const numericChecks = [
+    ['trainingMinutes', '今日訓練分鐘數', 0, 360],
+    ['sleepHours', '睡眠時數', 3, 14],
+    ['soreness', '肌肉痠痛程度', 1, 7],
+    ['rpe', 'RPE', 1, 10],
+    ['painScore', '疼痛指數', 0, 10]
+  ];
+  for (const [id, label, min, max] of numericChecks) {
+    const el = $id(id);
+    const raw = el ? String(el.value).trim() : '';
+    if (raw === '') { toast(`請填寫：${label}`); focusField(id); return false; }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || String(raw).match(/[^\d.-]/)) {
+      toast(`${label} 必須是數字，不能填文字`);
+      focusField(id);
+      return false;
+    }
+    if (n < min || n > max) {
+      toast(`${label} 必須介於 ${min}–${max}`);
+      focusField(id);
+      return false;
+    }
+  }
+  if (Number($id('painScore').value) > 0 && !$id('painArea').value) {
+    toast('疼痛指數大於 0 時，請選擇受傷／不適部位');
+    focusField('painArea');
+    return false;
+  }
 
   // KPI 必填：每一項都要實際滑過（打破「全留 3 分」），只在每日 KPI 開放時檢查
   if (isDailyKpiAvailable()) {
@@ -1407,6 +1437,18 @@ function validateForm() {
       first.scrollIntoView({ behavior: 'smooth', block: 'center' });
       first.focus();
       return false;
+    }
+    const aspect = collectScores().aspectAvg || {};
+    const fields = [
+      ['physical', '體能'], ['technical', '技術'], ['tactical', '戰術'],
+      ['focus', '心理'], ['discipline', '態度'], ['emotion', '生理／恢復']
+    ];
+    for (const [key, label] of fields) {
+      const n = Number(aspect[key]);
+      if (!Number.isFinite(n) || n < 1 || n > 5) {
+        toast(`KPI ${label} 構面必須介於 1–5`);
+        return false;
+      }
     }
   }
 

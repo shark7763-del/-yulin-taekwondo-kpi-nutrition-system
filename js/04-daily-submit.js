@@ -29,7 +29,7 @@ function setTrainingSession(str) {
   syncTrainingSession();
 }
 
-const SORENESS_TXT = ['', '幾乎不痠', '輕微痠', '中等痠', '蠻痠的', '非常痠'];
+const SORENESS_TXT = ['', '幾乎不痠', '輕微痠', '中等痠', '蠻痠的', '非常痠', '明顯影響動作', '嚴重痠痛'];
 function updateSorenessReadout() {
   const el = $id('soreness'), out = $id('sorenessReadout'); if (!el || !out) return;
   const n = parseInt(el.value, 10) || 1;
@@ -111,7 +111,10 @@ function updateWaterAdvice() {
 }
 
 function buildRecord() {
+  if (typeof syncGradeClassFields === 'function') syncGradeClassFields();
+  if (typeof syncPainAreaField === 'function') syncPainAreaField();
   const groupValue = $id('group').value;
+  const groupType = typeof normalizeGroupType === 'function' ? normalizeGroupType(groupValue) : groupValue;
   const absenceMode = isAbsenceGroup(groupValue);
   const kpiEnabled = !absenceMode && isDailyKpiAvailable();
   const scoreData = !kpiEnabled
@@ -136,7 +139,8 @@ function buildRecord() {
   const sleepQuality = $id('sleepQuality') ? $id('sleepQuality').value : '';
   const soreness = $id('soreness') ? $id('soreness').value : '';
   const rpe = $id('rpe') ? $id('rpe').value : '';
-  const injuryArea = $id('injuryArea') ? $id('injuryArea').value : '';
+  const painArea = $id('painArea') ? $id('painArea').value : '';
+  const injuryArea = painArea || ($id('injuryArea') ? $id('injuryArea').value : '');
   const painScore = $id('painScore') ? $id('painScore').value : '';
   const painLevel = (painScore === '' ? '' : painGrade(parseInt(painScore, 10) || 0).label);
   const urineStatus = $id('urineStatus') ? $id('urineStatus').value : '';
@@ -189,8 +193,15 @@ function buildRecord() {
     mode: 'standard',
     date: $id('date').value || todayStr(),
     name: $id('name').value,
+    athleteId: getAthleteIdForName($id('name').value),
+    studentName: $id('name').value,
+    schoolLevel: $id('schoolLevel') ? $id('schoolLevel').value : '',
+    grade: $id('grade') ? $id('grade').value : '',
+    classCode: $id('classCode') ? $id('classCode').value : '',
     gradeClass: $id('gradeClass').value,
     group: groupValue,
+    groupType: groupType,
+    trainingMinutes: $id('trainingMinutes') ? $id('trainingMinutes').value : '',
     trainingTopic: $id('trainingTopic').value,
     absenceReason: $id('absenceReason') ? $id('absenceReason').value.trim() : '',
     absenceMiss: absenceMode && $id('absenceMiss') ? $id('absenceMiss').value.trim() : '',
@@ -198,6 +209,7 @@ function buildRecord() {
     absenceHonesty: absenceMode && $id('absenceHonesty') ? $id('absenceHonesty').value : '',
     bodyStatus: bodyStatus,
     moodIndex: getMoodIndex(),
+    emotionIndex: getMoodIndex(),
     moodReason: getMoodReason(),
     bedTime: bedTime,
     wakeTime: wakeTime,
@@ -206,6 +218,7 @@ function buildRecord() {
     soreness: soreness,
     rpe: rpe,
     injuryArea: injuryArea,
+    painArea: painArea,
     painScore: painScore,
     painLevel: painLevel,
     urineStatus: urineStatus,
@@ -228,6 +241,7 @@ function buildRecord() {
     focusAvg: aspectAvg.focus != null ? aspectAvg.focus : '',
     disciplineAvg: aspectAvg.discipline != null ? aspectAvg.discipline : '',
     emotionAvg: aspectAvg.emotion != null ? aspectAvg.emotion : '',
+    recoveryAvg: aspectAvg.emotion != null ? aspectAvg.emotion : '',
     tacticalAvg: aspectAvg.tactical != null ? aspectAvg.tactical : '',
     totalScore: total,
     averageScore: average,

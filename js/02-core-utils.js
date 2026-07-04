@@ -12,6 +12,17 @@ const LS_KEYS = {
   coachScores: 'yulin_coach_scores'
 };
 
+function getAthleteIdForName(name) {
+  const n = String(name || '').trim();
+  if (!n) return '';
+  const players = getPlayers();
+  const idx = players.indexOf(n);
+  if (idx >= 0) return 'S' + String(idx + 1).padStart(3, '0');
+  let hash = 0;
+  for (let i = 0; i < n.length; i++) hash = ((hash << 5) - hash + n.charCodeAt(i)) | 0;
+  return 'S' + String(Math.abs(hash) % 10000).padStart(4, '0');
+}
+
 function getPlayers() {
   try {
     const raw = localStorage.getItem(LS_KEYS.players);

@@ -59,7 +59,7 @@ const DEFAULT_PARENTS = DEFAULT_PLAYERS.map((name, index) => ({
 
 // 運動項目選單（組別）
 const GROUP_OPTIONS = [
-  '跆拳道對練', '跆拳道品勢', '自由品勢', '武術套路', '散打', '未出席訓練'
+  '對打', '品勢', '自由品勢', '散打', '體能', '復健', '比賽', '休息', '未出席訓練'
 ];
 
 const ABSENCE_GROUP = '未出席訓練';
@@ -90,7 +90,12 @@ const FREESTYLE_EXTRA_FIELDS = [
 // 全部 freestyle 額外欄位 id（草稿、清空、收集共用）
 const FREESTYLE_EXTRA_IDS = FREESTYLE_EXTRA_FIELDS.map(f => f.id);
 
-function isFreestyle(group) { return group === FREESTYLE_GROUP; }
+function normalizeGroupType(group) {
+  const g = String(group || '').trim();
+  const map = { '跆拳道對練': '對打', '跆拳道品勢': '品勢', '武術套路': '散打', '無訓練': '休息' };
+  return map[g] || g;
+}
+function isFreestyle(group) { return normalizeGroupType(group) === FREESTYLE_GROUP; }
 function isAbsenceGroup(group) { return group === ABSENCE_GROUP; }
 
 // 訓練強度選項

@@ -558,21 +558,25 @@ function setupAiHandlers() {
        + attendanceScore*0.10 - riskPenalty
    ============================================================ */
 const READINESS_LIGHTS = [
-  { min: 85, key: 'boost', label: '綠燈強化日', cls: 'green', group: '強化組', direction: '可以安排高品質技術、速度、對打、模擬賽、爆發力訓練。' },
-  { min: 70, key: 'stable', label: '綠燈穩定日', cls: 'green', group: '穩定組', direction: '正常訓練，補一個明確弱點，維持品質。' },
-  { min: 55, key: 'adjust', label: '黃燈調整日', cls: 'yellow', group: '調整組', direction: '降低總量，重點放技術修正、節奏、基本功、動作品質。' },
-  { min: 40, key: 'protect', label: '橘燈保護日', cls: 'orange', group: '保護組', direction: '避免高強度，做恢復、伸展、低強度技術、心理調整。' },
-  { min: 0, key: 'care', label: '紅燈關懷日', cls: 'red', group: '關懷組', direction: '不追分數，優先處理睡眠、疼痛、情緒、請假原因或生活壓力。' }
+  { min: 70, key: 'stable', label: '綠燈', cls: 'green', group: '穩定 / 強化日', direction: '穩定 / 強化日：可安排正常訓練與高品質技術課，持續觀察疼痛與疲勞。' },
+  { min: 55, key: 'adjust', label: '黃燈', cls: 'yellow', group: '調整日', direction: '調整日：降低總量，重點放技術修正、節奏、基本功與動作品質。' },
+  { min: 40, key: 'protect', label: '橘燈', cls: 'orange', group: '保護日', direction: '保護日：避免高強度，做恢復、伸展、低強度技術與心理調整。' },
+  { min: 0, key: 'care', label: '紅燈', cls: 'red', group: '關懷日', direction: '關懷日：不追分數，優先處理睡眠、疼痛、情緒、請假原因或生活壓力。' }
 ];
 const COACH_SCORE_HELP = {
   coachAttitudeScore: ['明顯消極', '需要提醒', '正常完成', '主動投入', '高度專注且能帶動他人'],
+  coachTechnicalScore: ['動作品質明顯不穩', '多次失誤', '基本穩定', '有明顯進步', '達到比賽品質'],
   coachTechniqueScore: ['動作品質明顯不穩', '多次失誤', '基本穩定', '有明顯進步', '達到比賽品質'],
   coachExecutionScore: ['無法完成教練要求', '需多次提醒', '能完成基本要求', '能主動修正', '能理解並立即轉化成表現'],
   coachRiskScore: ['高風險，建議停止或大幅調整', '有明顯疲勞、疼痛或情緒風險', '普通，可正常觀察', '狀態穩定', '恢復良好，可承受較高品質訓練']
 };
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 function nval(v) { const n = parseFloat(v); return isNaN(n) ? null : n; }
-function pct5(v) { const n = nval(v); return n === null ? null : clamp(n, 1, 5) * 20; }
+function pct5(v) {
+  const n = nval(v);
+  if (n === null) return null;
+  return n > 5 ? clamp(n, 0, 100) : clamp(n, 1, 5) * 20;
+}
 function avgPresent(vals, fallback) {
   const xs = vals.filter(v => v !== null && !isNaN(v));
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : fallback;
@@ -607,7 +611,12 @@ function computeSelfReadinessScore(rec) {
   return Math.round(clamp(score, 0, 100));
 }
 function computeCoachReadinessScore(rec) {
-  const vals = ['coachAttitudeScore', 'coachTechniqueScore', 'coachExecutionScore', 'coachRiskScore'].map(k => pct5(rec[k]));
+  const vals = [
+    pct5(rec.coachAttitudeScore),
+    pct5(rec.coachTechnicalScore || rec.coachTechniqueScore),
+    pct5(rec.coachExecutionScore),
+    pct5(rec.coachRiskScore)
+  ];
   return Math.round(avgPresent(vals, 75));
 }
 function mealLooksComplete(rec) {
@@ -687,8 +696,24 @@ function buildReadinessAnalysis(rec, history) {
   const attendanceScore = computeAttendanceReadinessScore(rec);
   const risk = computeRiskPenalty(rec, recoveryScore, history || []);
   const finalReadinessScore = Math.round(clamp(selfScore * 0.30 + coachScore * 0.35 + recoveryScore * 0.25 + attendanceScore * 0.10 - risk.penalty, 0, 100));
-  const light = readinessLight(finalReadinessScore);
+  let light = readinessLight(finalReadinessScore);
   const tags = buildReadinessTags(rec, selfScore, coachScore, recoveryScore, finalReadinessScore, risk.risks, history || []);
+  const pain = nval(rec.painScore);
+  if (pain !== null) {
+    if (pain >= 10) {
+      light = { key: 'major_pain', label: '紅燈', cls: 'red', group: '關懷日', direction: '重大警示：建議停止高強度訓練並通知家長，必要時評估就醫。' };
+      tags.push('重大疼痛警示');
+    } else if (pain >= 7) {
+      light = { key: 'high_pain', label: '紅燈', cls: 'red', group: '關懷日', direction: '疼痛 7–9 分：列入高風險名單，停止高強度與對抗訓練並追蹤處置。' };
+      tags.push('高疼痛風險');
+    } else if (pain >= 4 && light.label === '綠燈') {
+      light = { key: 'medium_pain', label: '黃燈', cls: 'yellow', group: '調整日', direction: '疼痛 4–6 分：提醒教練調整強度，避免高衝擊與疼痛部位負荷。' };
+      tags.push('中度疼痛');
+    } else if (pain >= 1) {
+      tags.push('疼痛觀察');
+    }
+  }
+  const uniqueTags = Array.from(new Set(tags));
   return {
     selfScore, coachScore, recoveryScore, attendanceScore,
     riskPenalty: risk.penalty,
@@ -698,8 +723,10 @@ function buildReadinessAnalysis(rec, history) {
     statusClass: light.cls,
     trainingGroup: light.group,
     trainingDirection: light.direction,
-    aiTags: tags,
-    needInterview: tags.indexOf('需要關心') !== -1 || tags.indexOf('受傷風險') !== -1 || (nval(rec.coachRiskScore) || 5) <= 2 || finalReadinessScore < 40
+    aiTags: uniqueTags,
+    aiLabel: uniqueTags.join('、') || '資料穩定',
+    algorithmType: 'rule-based algorithm',
+    needInterview: uniqueTags.indexOf('需要關心') !== -1 || uniqueTags.indexOf('受傷風險') !== -1 || uniqueTags.indexOf('高疼痛風險') !== -1 || (nval(rec.coachRiskScore) || 100) <= 40 || finalReadinessScore < 40
   };
 }
 function applyReadiness(rec, history) {
@@ -713,7 +740,10 @@ function applyReadiness(rec, history) {
     finalReadinessScore: r.finalReadinessScore,
     readinessStatusLight: r.statusLight,
     aiTags: r.aiTags.join('、'),
+    aiLabel: r.aiLabel,
+    trainingAdvice: r.trainingDirection,
     trainingDirection: r.trainingDirection,
+    algorithmType: 'rule-based algorithm',
     readinessJson: JSON.stringify(r)
   });
   return r;

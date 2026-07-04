@@ -74,6 +74,7 @@
     <button type="button" class="tab-link" id="tabSolace" style="display:none;">💌 解憂信箱</button>
     <button class="tab-btn" data-tab="parent">👨‍👩‍👧 家長後台</button>
     <button class="tab-btn" data-tab="coach">📊 教練後台</button>
+    <button class="tab-btn" data-tab="research">🔬 研究資料</button>
     <button class="tab-btn" data-tab="settings">⚙️ 系統設定</button>
   </nav>
 
@@ -146,11 +147,31 @@
           <label class="field-label">選手姓名 <span class="req">*</span></label>
           <select id="name" class="text-input"></select>
 
-          <label class="field-label">年級／班級 <span class="req">*</span></label>
-          <input type="text" id="gradeClass" class="text-input" placeholder="例如：八年三班" />
+          <label class="field-label">學制 <span class="req">*</span></label>
+          <select id="schoolLevel" class="text-input">
+            <option value="">請選擇學制</option>
+            <option>國小</option><option>國中</option><option>高中</option><option>大學</option><option>道館</option>
+          </select>
+
+          <label class="field-label">年級 <span class="req">*</span></label>
+          <select id="grade" class="text-input">
+            <option value="">請選擇年級</option>
+            <option>國一</option><option>國二</option><option>國三</option>
+            <option>高一</option><option>高二</option><option>高三</option><option>其他</option>
+          </select>
+
+          <label class="field-label">班級代碼 <span class="req">*</span></label>
+          <select id="classCode" class="text-input">
+            <option value="">請選擇班級</option>
+            <option>701</option><option>702</option><option>801</option><option>802</option><option>901</option><option>其他</option>
+          </select>
+          <input type="hidden" id="gradeClass" />
 
           <label class="field-label">組別 <span class="req">*</span></label>
           <select id="group" class="text-input"></select>
+
+          <label class="field-label">今日訓練分鐘數 <span class="req">*</span></label>
+          <input type="number" id="trainingMinutes" class="text-input" min="0" max="360" step="1" placeholder="例如：90；休息日填 0" />
 
           <label class="field-label">今日訓練時段 <span class="mood-note">（可複選；今天沒練就點「無訓練」）</span></label>
           <div id="trainingSessionChips" class="quick-chips session-chips"></div>
@@ -219,8 +240,8 @@
               <option value="差">差</option>
             </select>
 
-            <label class="field-label">肌肉痠痛程度（1–5）</label>
-            <input type="range" id="soreness" class="slider-input" min="1" max="5" step="1" value="2" />
+            <label class="field-label">肌肉痠痛程度（1–7）</label>
+            <input type="range" id="soreness" class="slider-input" min="1" max="7" step="1" value="2" />
             <div class="slider-readout" id="sorenessReadout"></div>
 
             <label class="field-label">今日主觀強度 RPE（1–10）</label>
@@ -228,7 +249,12 @@
             <div class="slider-readout" id="rpeReadout"></div>
 
             <label class="field-label">受傷／不適部位</label>
-            <input type="text" id="injuryArea" class="text-input" placeholder="沒有可留空，例如：右膝、腳踝" />
+            <select id="painArea" class="text-input">
+              <option value="">無疼痛或請選擇部位</option>
+              <option>膝</option><option>腳踝</option><option>腰</option><option>髖</option><option>腳背</option>
+              <option>大腿</option><option>小腿</option><option>手肘</option><option>其他</option>
+            </select>
+            <input type="hidden" id="injuryArea" />
 
             <label class="field-label">受傷部位疼痛指數（0–10）
               <button type="button" id="painRefToggle" class="inline-ref-btn">📖 分級說明</button>
@@ -855,6 +881,43 @@
     </section>
 
     <!-- ========================================================= -->
+    <!-- 分頁：研究資料管理                                        -->
+    <!-- ========================================================= -->
+    <section class="tab-panel" id="tab-research">
+      <div class="card">
+        <h3 class="card-title">🔬 研究資料管理</h3>
+        <p class="review-label">供論文研究資料整理使用。匯出檔會自動匿名化，不含姓名、電話、PIN、家長資料。</p>
+        <div class="coach-controls">
+          <label class="field-label">研究開始日</label>
+          <input type="date" id="researchStartDate" class="text-input" value="2026-06-01" />
+          <label class="field-label">研究結束日</label>
+          <input type="date" id="researchEndDate" class="text-input" value="2026-08-31" />
+          <button type="button" id="btnRefreshResearch" class="btn btn-primary">🔄 更新研究儀表板</button>
+        </div>
+        <div class="btn-group">
+          <button type="button" id="btnExportResearchZip" class="btn btn-primary">📤 一鍵匯出論文乾淨資料</button>
+          <button type="button" id="btnExportAnonymizedRoster" class="btn btn-secondary">匿名名冊 CSV</button>
+        </div>
+        <div id="researchExportStatus" class="conn-status"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">📌 資料品質總覽</h3>
+        <div id="researchOverview" class="overview-grid"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">📊 研究儀表板</h3>
+        <div id="researchCharts" class="research-chart-grid"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">⚠️ 風險旗標處置</h3>
+        <div id="researchRiskFlags"></div>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
     <!-- 分頁四：系統設定                                          -->
     <!-- ========================================================= -->
     <section class="tab-panel" id="tab-settings">
@@ -1060,6 +1123,7 @@
   <script src="js/08-profile-journal.js?v=20260628i"></script>
   <script src="js/09-settings-auth.js?v=20260628i"></script>
   <script src="js/11-trait-radar.js?v=20260628-trait-fix-01"></script>
+  <script src="js/12-research-data.js?v=20260704a"></script>
   <script src="js/10-init.js?v=20260628h"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
