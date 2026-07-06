@@ -8,25 +8,39 @@
 async function fetchAllRecords(opts) {
   opts = opts || {};
   const url = getWebAppUrl();
-  if (!url) return getLocalRecords();   // 純本機模式才用 localStorage
+  if (!url) return getLocalRecords().map(normalizeCoachRecord);   // 純本機模式才用 localStorage
 
   let res;
   try {
     res = await postToWebApp({ action: 'getAllRecords' });
   } catch (e) {
-    if (opts.strict) throw new Error('雲端連線失敗，請檢查網路後重試。');
-    return getLocalRecords();
+    console.error('getAllRecords 連線失敗:', e);
+    if (opts.strict) {
+      toast('⚠️ 後台讀不到雲端 records，請檢查網路後重試');
+      throw new Error('FETCH_FAILED');
+    }
+    return getLocalRecords().map(normalizeCoachRecord);
   }
-  if (res && res.ok && Array.isArray(res.data)) return res.data;
+
+  if (res && res.ok && Array.isArray(res.data)) return res.data.map(normalizeCoachRecord);
+
+  console.error('getAllRecords 回傳失敗:', res);
 
   // session 過期／未授權：一律跳出重新登入提示（不論 strict 與否，都不再假裝成空資料）
   if (res && res.authRequired) {
     if (typeof notifySessionExpired === 'function') notifySessionExpired();
-    if (opts.strict) throw new Error('登入已過期，請重新登入後再讀取資料。');
-    return getLocalRecords();
+    if (opts.strict) {
+      toast('⚠️ 教練登入已過期，請重新登入後再讀取資料');
+      throw new Error('AUTH_REQUIRED');
+    }
+    return getLocalRecords().map(normalizeCoachRecord);
   }
-  if (opts.strict) throw new Error((res && res.error) || '讀取雲端資料失敗。');
-  return getLocalRecords();
+
+  if (opts.strict) {
+    toast('⚠️ 後台讀不到雲端 records，請重新登入或檢查 Apps Script 部署');
+    throw new Error((res && res.error) || '後台讀不到 records 資料');
+  }
+  return getLocalRecords().map(normalizeCoachRecord);
 }
 
 function getLocalCoachScores() {
@@ -953,7 +967,22 @@ async function refreshCoach() {
 
   // ── 當日完整紀錄 todaysAll（不受狀態篩選影響）──
   // 填寫狀況／今日總覽／出席報表都用這份，才不會被紅黃綠燈篩選洗成 0。
-  let todaysAll = all.filter(r => normDate(r.date) === filterDate);
+  // 日期用 r.date || r.timestamp，避免只有 timestamp、date 欄空白的紀錄被濾掉。
+  let todaysAll = all.filter(r => normDate(r.date || r.timestamp) === filterDate);
+
+  // ── console debug：一眼看出是「資料沒進來」還是「日期對不上」還是「名單比對漏判」──
+  console.log('[Coach Debug]', {
+    filterDate,
+    allRecords: all.length,
+    todaysAll: todaysAll.length,
+    sampleDates: all.slice(0, 5).map(r => ({
+      date: r.date,
+      normDate: normDate(r.date || r.timestamp),
+      name: r.name,
+      studentName: r.studentName
+    }))
+  });
+
   todaysAll = dedupeLatestByName(todaysAll); // 同一人同一天只留最新一筆
   mergeCoachScores(todaysAll, coachScores);
   todaysAll.forEach(r => applyReadiness(
@@ -961,42 +990,30 @@ async function refreshCoach() {
     all.filter(x => normalizeNameKey(recordName(x)) === normalizeNameKey(recordName(r)))
   ));
 
-  // ── 狀態篩選後的子集 todaysFiltered（只給風險名單／狀態名單使用）──
+  // ── 狀態篩選後的子集 todaysFiltered（給狀態名單／風險名單／分析區使用）──
   const todaysFiltered = (statusFilter && statusFilter !== 'all')
     ? todaysAll.filter(r => r.status === statusFilter)
     : todaysAll;
 
-  // ── console debug：一眼看出是資料沒進來、還是名單比對漏判 ──
-  const rosterDbg = getPlayers();
-  const submittedKeysDbg = {};
-  todaysAll.forEach(r => { const k = normalizeNameKey(recordName(r)); if (k) submittedKeysDbg[k] = true; });
-  const submittedDbg = rosterDbg.filter(n => submittedKeysDbg[normalizeNameKey(n)]).length;
-  console.log('[coach] filterDate=', filterDate,
-    '｜allRecords=', all.length,
-    '｜todaysAll=', todaysAll.length,
-    '｜roster=', rosterDbg.length,
-    '｜submitted=', submittedDbg,
-    '｜notSubmitted=', (rosterDbg.length - submittedDbg));
-
-  // 總覽／填寫狀況／出席 → 一律用完整當日資料
-  renderCoachWarRoom(todaysAll, all);
-  renderCoachReadinessOverview(todaysAll, all);
-  renderCoachQuickScores(todaysAll, coachScores);
+  // 這三個一定要用完整今日資料 todaysAll，狀態篩選不能影響「已回報／未回報」
   renderOverview(todaysAll);
-  renderCoachSimpleGroups(todaysAll);
-  renderTeamMood(todaysAll);
   renderSubmitStatus(todaysAll);
   renderCoachAttendanceReports(todaysAll);
-  renderRedLightCoaching(todaysAll);
-  renderAnalysis(todaysAll);
-  renderCoachNutrition(todaysAll, all);
-  renderCoachAlerts(all);
-  renderInterviewList(todaysAll, all);
-  renderCoachTasks();
 
-  // 只有「風險名單／狀態名單」吃狀態篩選
+  // 其餘視圖吃狀態篩選 todaysFiltered
+  renderCoachWarRoom(todaysFiltered, all);
+  renderCoachReadinessOverview(todaysFiltered, all);
+  renderCoachQuickScores(todaysFiltered, coachScores);
+  renderCoachSimpleGroups(todaysFiltered);
   renderRiskTracking(todaysFiltered, all);
+  renderTeamMood(todaysFiltered);
   renderStatusLists(todaysFiltered);
+  renderRedLightCoaching(todaysFiltered);
+  renderAnalysis(todaysFiltered);
+  renderCoachNutrition(todaysFiltered, all);
+  renderCoachAlerts(all);
+  renderInterviewList(todaysFiltered, all);
+  renderCoachTasks();
 
   toast('✅ 已更新');
 }

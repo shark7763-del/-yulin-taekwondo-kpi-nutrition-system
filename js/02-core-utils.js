@@ -135,6 +135,23 @@ function normalizeNameKey(v) {
     .toLowerCase();
 }
 
+/*
+   把一筆紀錄正規化成教練後台好用的形狀：
+   - date：一律 normDate(r.date || r.timestamp)。
+     有些紀錄 date 欄可能空白，只有 timestamp，若只看 r.date 會被濾成 0 筆。
+   - name / studentName：兩個欄位互補，避免只有其中一個造成漏判。
+   會保留原本其它欄位（...r）。
+*/
+function normalizeCoachRecord(r) {
+  if (!r || typeof r !== 'object') return r;
+  const name = String(r.name || r.studentName || r.athleteName || '').trim();
+  return Object.assign({}, r, {
+    date: normDate(r.date || r.timestamp),
+    name: name,
+    studentName: String(r.studentName || r.name || name).trim()
+  });
+}
+
 function round1(n) { return Math.round(n * 10) / 10; }
 function round2(n) { return Math.round(n * 100) / 100; }
 
