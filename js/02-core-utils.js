@@ -115,6 +115,26 @@ function normDate(v) {
   return s;
 }
 
+// 從一筆紀錄取出「姓名」，相容不同來源欄位（name / studentName / athleteName）
+function recordName(r) {
+  if (!r) return '';
+  return r.name || r.studentName || r.athleteName || '';
+}
+
+/*
+   姓名比對用的正規化 key：
+   - NFKC：全形英數／全形空白 → 半形
+   - 去掉所有空白（含中間空白）
+   - 轉小寫
+   避免同一個人因為「空白、全形／半形、大小寫、欄位名稱不同」被當成兩個人而漏判。
+*/
+function normalizeNameKey(v) {
+  return String(v == null ? '' : v)
+    .normalize('NFKC')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
 function round1(n) { return Math.round(n * 10) / 10; }
 function round2(n) { return Math.round(n * 100) / 100; }
 

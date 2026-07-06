@@ -3,14 +3,29 @@
    ============================================================ */
 
 // 取得所有紀錄（正式優先，否則本機）
-async function fetchAllRecords() {
+// opts.strict = true 時：雲端讀取失敗／session 過期不再靜默回傳本機空資料，
+// 而是丟出錯誤，交給呼叫端（教練後台 refreshCoach）顯示提示，避免誤判「全隊未回報」。
+async function fetchAllRecords(opts) {
+  opts = opts || {};
   const url = getWebAppUrl();
-  if (url) {
-    try {
-      const res = await postToWebApp({ action: 'getAllRecords' });
-      if (res && res.ok && Array.isArray(res.data)) return res.data;
-    } catch (e) { /* 落回本機 */ }
+  if (!url) return getLocalRecords();   // 純本機模式才用 localStorage
+
+  let res;
+  try {
+    res = await postToWebApp({ action: 'getAllRecords' });
+  } catch (e) {
+    if (opts.strict) throw new Error('雲端連線失敗，請檢查網路後重試。');
+    return getLocalRecords();
   }
+  if (res && res.ok && Array.isArray(res.data)) return res.data;
+
+  // session 過期／未授權：一律跳出重新登入提示（不論 strict 與否，都不再假裝成空資料）
+  if (res && res.authRequired) {
+    if (typeof notifySessionExpired === 'function') notifySessionExpired();
+    if (opts.strict) throw new Error('登入已過期，請重新登入後再讀取資料。');
+    return getLocalRecords();
+  }
+  if (opts.strict) throw new Error((res && res.error) || '讀取雲端資料失敗。');
   return getLocalRecords();
 }
 
@@ -455,9 +470,12 @@ function upsertAttendanceReportFromKpi(payload) {
 async function renderCoachAttendanceReports(todays) {
   const box = $id('coachAttendanceReports');
   if (!box) return;
-  const filterDate = $id('coachDate').value || todayStr();
-  const allReports = await fetchAllAttendanceReports();
-  const allRecords = await fetchAllRecords();
+  const filterDate = normDate($id('coachDate').value || todayStr());
+  let allReports = [];
+  try { allReports = await fetchAllAttendanceReports(); } catch (e) { allReports = []; }
+  // 已有當日完整紀錄 todaysAll 可用，這裡讀取失敗就用它，不讓 strict 例外中斷出席報表
+  let allRecords = Array.isArray(todays) ? todays : [];
+  try { allRecords = await fetchAllRecords(); } catch (e) { allRecords = Array.isArray(todays) ? todays : []; }
   let rows = mergeAttendanceWithKpi(allReports, allRecords, '').filter(r => normDate(r.date) === filterDate);
   if (!rows.length && Array.isArray(todays)) rows = todays.map(attendanceReportFromRecord);
   const roster = getPlayers();
@@ -597,8 +615,8 @@ async function renderWeeklyStars() {
 // 同一人同一天只保留最新一筆（依 timestamp，缺則用 date）
 function dedupeLatestByName(records) {
   const map = {};
-  records.forEach(r => {
-    const k = String(r.name || '').trim();
+  (records || []).forEach(r => {
+    const k = normalizeNameKey(recordName(r)); // 相容 name / studentName / athleteName
     if (!k) return;
     if (!map[k]) { map[k] = r; return; }
     const tNew = new Date(r.timestamp || r.date || 0).getTime();
@@ -918,35 +936,68 @@ function renderCoachQuickScores(todays, coachScores) {
 async function refreshCoach() {
   toast('讀取資料中...');
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
-  const all = await fetchAllRecords();
-  const filterDate = $id('coachDate').value;
-  const statusFilter = $id('coachStatusFilter').value;
+
+  // 雲端讀取失敗／session 過期 → 顯示提示並中止，不再誤判「全隊未回報」
+  let all;
+  try {
+    all = await fetchAllRecords({ strict: true });
+  } catch (e) {
+    toast('⚠️ ' + (e && e.message ? e.message : '讀取資料失敗，請重新登入'));
+    return;
+  }
+
+  // 日期一律正規化，且空白時退回今天，避免 0 筆資料
+  const filterDate = normDate($id('coachDate').value || todayStr());
+  const statusFilter = $id('coachStatusFilter') ? $id('coachStatusFilter').value : 'all';
   const coachScores = await fetchCoachScores(filterDate);
 
-  // 今日（或選定日期）紀錄（日期先正規化，避免 Sheet 把日期轉成 Date 物件導致比對失敗）
-  let todays = all.filter(r => normDate(r.date) === filterDate);
-  // 同一人同一天只保留最新一筆，避免重複送出灌水（含舊資料已存在的重複）
-  todays = dedupeLatestByName(todays);
-  mergeCoachScores(todays, coachScores);
-  todays.forEach(r => applyReadiness(r, all.filter(x => String(x.name) === String(r.name))));
-  if (statusFilter !== 'all') todays = todays.filter(r => r.status === statusFilter);
+  // ── 當日完整紀錄 todaysAll（不受狀態篩選影響）──
+  // 填寫狀況／今日總覽／出席報表都用這份，才不會被紅黃綠燈篩選洗成 0。
+  let todaysAll = all.filter(r => normDate(r.date) === filterDate);
+  todaysAll = dedupeLatestByName(todaysAll); // 同一人同一天只留最新一筆
+  mergeCoachScores(todaysAll, coachScores);
+  todaysAll.forEach(r => applyReadiness(
+    r,
+    all.filter(x => normalizeNameKey(recordName(x)) === normalizeNameKey(recordName(r)))
+  ));
 
-  renderCoachWarRoom(todays, all);
-  renderCoachReadinessOverview(todays, all);
-  renderCoachQuickScores(todays, coachScores);
-  renderOverview(todays);
-  renderCoachSimpleGroups(todays);
-  renderRiskTracking(todays, all);
-  renderTeamMood(todays);
-  renderSubmitStatus(todays);
-  renderCoachAttendanceReports(todays);
-  renderStatusLists(todays);
-  renderRedLightCoaching(todays);
-  renderAnalysis(todays);
-  renderCoachNutrition(todays, all);
+  // ── 狀態篩選後的子集 todaysFiltered（只給風險名單／狀態名單使用）──
+  const todaysFiltered = (statusFilter && statusFilter !== 'all')
+    ? todaysAll.filter(r => r.status === statusFilter)
+    : todaysAll;
+
+  // ── console debug：一眼看出是資料沒進來、還是名單比對漏判 ──
+  const rosterDbg = getPlayers();
+  const submittedKeysDbg = {};
+  todaysAll.forEach(r => { const k = normalizeNameKey(recordName(r)); if (k) submittedKeysDbg[k] = true; });
+  const submittedDbg = rosterDbg.filter(n => submittedKeysDbg[normalizeNameKey(n)]).length;
+  console.log('[coach] filterDate=', filterDate,
+    '｜allRecords=', all.length,
+    '｜todaysAll=', todaysAll.length,
+    '｜roster=', rosterDbg.length,
+    '｜submitted=', submittedDbg,
+    '｜notSubmitted=', (rosterDbg.length - submittedDbg));
+
+  // 總覽／填寫狀況／出席 → 一律用完整當日資料
+  renderCoachWarRoom(todaysAll, all);
+  renderCoachReadinessOverview(todaysAll, all);
+  renderCoachQuickScores(todaysAll, coachScores);
+  renderOverview(todaysAll);
+  renderCoachSimpleGroups(todaysAll);
+  renderTeamMood(todaysAll);
+  renderSubmitStatus(todaysAll);
+  renderCoachAttendanceReports(todaysAll);
+  renderRedLightCoaching(todaysAll);
+  renderAnalysis(todaysAll);
+  renderCoachNutrition(todaysAll, all);
   renderCoachAlerts(all);
-  renderInterviewList(todays, all);
+  renderInterviewList(todaysAll, all);
   renderCoachTasks();
+
+  // 只有「風險名單／狀態名單」吃狀態篩選
+  renderRiskTracking(todaysFiltered, all);
+  renderStatusLists(todaysFiltered);
+
   toast('✅ 已更新');
 }
 
@@ -954,7 +1005,10 @@ function renderOverview(todays) {
   const box = $id('coachOverview');
   if (!box) return;
   const roster = getPlayers();
-  const count = todays.length;
+  // 已回報 = 名單中有交的人數（用正規化姓名比對，相容 name/studentName/athleteName）
+  const submittedKeys = {};
+  (todays || []).forEach(r => { const k = normalizeNameKey(recordName(r)); if (k) submittedKeys[k] = true; });
+  const count = roster.filter(n => submittedKeys[normalizeNameKey(n)]).length;
   const missing = Math.max(0, roster.length - count);
   const redYellow = todays.filter(r =>
     String(r.status || '').indexOf('紅') !== -1 || String(r.status || '').indexOf('黃') !== -1 ||
@@ -1129,14 +1183,23 @@ function renderSubmitStatus(todays) {
   if (!box) return;
   const roster = getPlayers();
 
-  // 已填寫姓名（去重）
-  const submittedSet = {};
-  todays.forEach(r => { if (r.name) submittedSet[String(r.name).trim()] = true; });
+  // 已填寫姓名（正規化 key 去重）：相容 name / studentName / athleteName，
+  // 並用 normalizeNameKey 比對，避免空白、全形半形、大小寫或欄位名稱不同造成漏判。
+  const submittedSet = {};   // key: 正規化姓名 → 原始顯示名
+  (todays || []).forEach(r => {
+    const disp = recordName(r);
+    const key = normalizeNameKey(disp);
+    if (key) submittedSet[key] = disp;
+  });
 
-  const submitted = roster.filter(n => submittedSet[n]);
-  const notSubmitted = roster.filter(n => !submittedSet[n]);
-  // 有填寫但不在名單上的（例如名單改過、或臨時填的）
-  const extra = Object.keys(submittedSet).filter(n => roster.indexOf(n) === -1);
+  const submitted = roster.filter(n => submittedSet[normalizeNameKey(n)]);
+  const notSubmitted = roster.filter(n => !submittedSet[normalizeNameKey(n)]);
+  // 有填寫但不在名單上的（例如名單改過、或臨時填的）——用原始顯示名呈現
+  const rosterKeys = {};
+  roster.forEach(n => { rosterKeys[normalizeNameKey(n)] = true; });
+  const extra = Object.keys(submittedSet)
+    .filter(k => !rosterKeys[k])
+    .map(k => submittedSet[k]);
 
   // 卡片標題：未填 > 0 時顯示紅字提醒
   const title = $id('coachSubmitTitle');
