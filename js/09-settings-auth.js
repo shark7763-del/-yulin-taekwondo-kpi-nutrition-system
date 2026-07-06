@@ -342,8 +342,23 @@ async function postToWebApp(body) {
     body: JSON.stringify(requestBody)
   });
   const text = await res.text();
-  try { return JSON.parse(text); }
+  let parsed;
+  try { parsed = JSON.parse(text); }
   catch (e) { throw new Error('回傳非 JSON：' + text.slice(0, 120)); }
+  // 後端回報 session 過期／未授權時，主動提示重新登入，
+  // 避免呼叫端（如 fetchAllRecords）靜默落回本機空資料，害教練後台誤顯示「全體未回報」。
+  if (parsed && parsed.ok === false && parsed.authRequired) notifySessionExpired();
+  return parsed;
+}
+
+// 全域 session 過期處理（同一波只提示一次，避免多個請求同時洗版）
+let _sessionExpiredShown = false;
+function notifySessionExpired() {
+  if (_sessionExpiredShown) return;
+  _sessionExpiredShown = true;
+  try { toast('⚠️ 登入已過期，請重新登入後再讀取資料'); } catch (e) {}
+  try { clearRole(); } catch (e) {}
+  try { if (typeof showLoginOverlay === 'function') showLoginOverlay(); } catch (e) {}
 }
 
 /* ============================================================
@@ -683,6 +698,7 @@ async function coachLogin() {
   if (result.ok) {
     const user = result.user || {};
     setRole('coach', '', Object.assign({}, user, { authToken: result.authToken }));
+    _sessionExpiredShown = false; // 重新登入成功，解除過期提示鎖
     $id('loginOverlay').classList.add('hidden');
     applyRole();
   } else {
@@ -693,6 +709,7 @@ async function coachLogin() {
 // 完成登入
 function finishLogin(role, name) {
   setRole(role, name);
+  _sessionExpiredShown = false; // 重新登入成功，解除過期提示鎖
   $id('loginOverlay').classList.add('hidden');
   applyRole();
 }
