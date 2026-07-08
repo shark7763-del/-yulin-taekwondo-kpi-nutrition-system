@@ -1142,6 +1142,11 @@ function scorePercent(r) {
   return round1(Math.min(100, (t / base) * 100));
 }
 
+function readinessTrendValue(r) {
+  const v = parseFloat(r.finalReadinessScore || r.readinessScore || r.score);
+  return isNaN(v) ? null : round1(Math.max(0, Math.min(100, v)));
+}
+
 // 在 box 內渲染「可切換指標」的七天趨勢圖
 function renderTrendSection(box, records, days, opts) {
   opts = opts || {};
@@ -1154,6 +1159,8 @@ function renderTrendSection(box, records, days, opts) {
   }
 
   const METRICS = [
+    // 每日回報一定會產生準備度；KPI 未開啟或未填時，也能先用這條看成長趨勢。
+    { key: 'finalReadinessScore', label: '準備度', max: 100, min: 0, derive: readinessTrendValue },
     // 總分改為「完成度%」：KPI 量表歷經 /50（舊）與 /150（新）兩種滿分，
     // 直接畫原始總分會因基準不同而暴衝。改用平均分換算百分比（滿分 5 → 100%），
     // 新舊紀錄一致可比，不再有假跳動。
@@ -1165,9 +1172,12 @@ function renderTrendSection(box, records, days, opts) {
     { key: 'disciplineAvg', label: '自律', max: 5, min: 0 },
     { key: 'emotionAvg', label: '情緒', max: 5, min: 0 },
     { key: 'tacticalAvg', label: '戰術', max: 5, min: 0 },
+    { key: 'sleepHours', label: '睡眠', max: null, min: null },
+    { key: 'moodIndex', label: '心情', max: 5, min: 1 },
+    { key: 'painScore', label: '疼痛', max: 10, min: 0 },
+    { key: 'rpe', label: 'RPE', max: 10, min: 1 },
     { key: 'weightKg', label: '體重', max: null, min: null }
   ];
-  let cur = METRICS[0];
 
   // 範圍選擇器：讓使用者把較舊的紀錄（如 5 月）也整合進來看
   // opts.picker === false（個人檔案的固定 7/30 兩張圖）則不顯示選擇器
@@ -1176,6 +1186,18 @@ function renderTrendSection(box, records, days, opts) {
   if (allRecs.length > 7) RANGES.push({ n: 30, label: '近 30 天' });
   if (allRecs.length > 30) RANGES.push({ n: 99999, label: '全部' });
   let range = Math.min(days || 7, allRecs.length);
+  const metricValue = (metric, rec) => {
+    if (metric.derive) return metric.derive(rec);
+    const v = parseFloat(rec[metric.key]);
+    return isNaN(v) ? null : v;
+  };
+  const metricHasEnoughData = metric => {
+    return allRecs.slice(0, range).filter(r => {
+      const v = metricValue(metric, r);
+      return v !== null && v !== undefined;
+    }).length >= 2;
+  };
+  let cur = METRICS.find(metricHasEnoughData) || METRICS[0];
 
   let html = '';
   if (showPicker) {
@@ -1198,11 +1220,7 @@ function renderTrendSection(box, records, days, opts) {
     box.querySelectorAll('.trend-range-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.range, 10) === range));
 
     const recs = allRecs.slice(0, range).reverse(); // 取目前範圍，改為舊→新
-    const valOf = r => {
-      if (cur.derive) return cur.derive(r);
-      const v = parseFloat(r[cur.key]);
-      return isNaN(v) ? null : v;
-    };
+    const valOf = r => metricValue(cur, r);
     // 沒填該指標的當天（值為 null）直接跳過，不畫成 0 造成假性暴跌
     const pts = recs.map(r => ({ r, v: valOf(r) })).filter(p => p.v !== null && p.v !== undefined);
     if (pts.length < 2) {
