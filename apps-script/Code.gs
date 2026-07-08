@@ -2531,7 +2531,7 @@ function runKpiSelfTest(data) {
 
   try {
     var t0 = Date.now();
-    currentWeekKpiSnapshot_(true);
+    currentWeekKpiSnapshot_(false);
     var t1 = Date.now() - t0;
     pass('currentWeekKpiSnapshot', String(t1) + 'ms');
   } catch (e) { fail('currentWeekKpiSnapshot', String(e)); }
@@ -2545,7 +2545,7 @@ function runKpiSelfTest(data) {
 
   try {
     var manageStart = Date.now();
-    currentWeekKpiSnapshot_(true);
+    currentWeekKpiSnapshot_(false);
     var manageMs = Date.now() - manageStart;
     pass('getKpiManageData 核心時間', String(manageMs) + 'ms');
   } catch (e) { fail('getKpiManageData 核心時間', String(e)); }
