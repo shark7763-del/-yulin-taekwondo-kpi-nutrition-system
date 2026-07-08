@@ -2433,6 +2433,12 @@ function getStudentKpiSession(data) {
     var es = effectiveSessionStatus(s);
     return (es === 'open' || es === 'scheduled') && studentInTarget(s, studentId, studentName, myGroup);
   }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); })[0];
+  if (!open) {
+    open = sessions.filter(function (s) {
+      var es = effectiveSessionStatus(s);
+      return (es === 'open' || es === 'scheduled') && studentInTarget(s, studentId, studentName, myGroup);
+    }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); })[0];
+  }
 
   if (!open) {
     // 是否有最近剛截止的
