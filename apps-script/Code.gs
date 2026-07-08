@@ -1395,6 +1395,7 @@ function addRecord(payload) {
     sheet.getRange(existingRow, 1, 1, HEADERS.length).setValues([rowVals]);
 
     try { pushResult = pushRecordToLine(payload); } catch (e) { pushResult = { ok: false, error: String(e) }; }
+    clearKpiCaches_();
     return { ok: true, updated: true, message: '已更新今日紀錄（同一天只保留最新一筆）', name: payload.name, date: payload.date, line: pushResult };
   }
 
@@ -1407,6 +1408,7 @@ function addRecord(payload) {
   sheet.appendRow(row);
 
   try { pushResult = pushRecordToLine(payload); } catch (e) { pushResult = { ok: false, error: String(e) }; }
+  clearKpiCaches_();
   return { ok: true, updated: false, message: '已新增紀錄', name: payload.name, date: payload.date, line: pushResult };
 }
 
@@ -1615,7 +1617,7 @@ function getAccountAdminData(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
   syncStudentAccountsFromRoster();
-  var groupMap = latestGroupByName();
+  var groupMap = getCachedLatestGroupByName_();
   var students = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS).map(function (r) {
     return {
       studentId: r.studentId, studentName: r.studentName, teamId: r.teamId,
@@ -2143,6 +2145,22 @@ function latestGroupByName() {
   return out;
 }
 
+function getCachedLatestGroupByName_() {
+  var cached = readKpiCache_(KPI_GROUP_CACHE_KEY);
+  if (cached && cached.updatedAt && (Date.now() - Number(cached.updatedAt) < 5 * 60 * 1000) && cached.data && typeof cached.data === 'object') {
+    return cached.data;
+  }
+  var data = latestGroupByName();
+  writeKpiCache_(KPI_GROUP_CACHE_KEY, { updatedAt: Date.now(), data: data }, 300);
+  return data;
+}
+
+function activeStudentAccountsLight_() {
+  return readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS).filter(function (a) {
+    return a.studentId && a.studentName && a.accountStatus !== 'disabled';
+  });
+}
+
 function activeStudentAccounts() {
   syncStudentAccountsFromRoster();
   return readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS).filter(function (a) {
@@ -2152,7 +2170,7 @@ function activeStudentAccounts() {
 
 // 新 session 一律把開放對象展開成 studentId 快照，避免日後換組影響完成率。
 function resolveKpiTargetSnapshot(data) {
-  var accounts = activeStudentAccounts();
+  var accounts = activeStudentAccountsLight_();
   var byId = {};
   accounts.forEach(function (a) { byId[String(a.studentId)] = a; });
   var requested = Array.isArray(data.targetStudentIds)
@@ -2168,7 +2186,7 @@ function resolveKpiTargetSnapshot(data) {
     targets = requested.map(function (id) { return byId[id]; });
   } else {
     var targetGroup = String(data.targetGroup || '全隊');
-    var groupMap = latestGroupByName();
+    var groupMap = getCachedLatestGroupByName_();
     targets = accounts.filter(function (a) {
       return studentInTarget({ targetGroup: targetGroup, targetStudentIds: '' }, a.studentId, a.studentName,
         groupMap[String(a.studentName).trim()] || '');
@@ -2188,7 +2206,7 @@ function kpiTargetIds(session, accounts, groupMap) {
 
 function kpiTargetConflict(candidate, excludeSessionId) {
   var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS);
-  var groupMap = latestGroupByName();
+  var groupMap = getCachedLatestGroupByName_();
   var candidateIds = kpiTargetIds(candidate, accounts, groupMap);
   var candidateWeek = String(candidate.weekId || candidate.weekKey || isoWeekId(new Date()));
   var candidateMap = {};
@@ -2213,7 +2231,7 @@ function kpiSessionStats(session) {
   // 新 session 已保存名單快照；即使帳號日後停用，歷史完成率分母也不能漂移。
   if (!session.targetStudentIds) accounts = accounts.filter(function (a) { return a.accountStatus !== 'disabled'; });
   // 對象名單（依 targetGroup/targetStudentIds）。組別來自每日回報的最新 group。
-  var groupMap = latestGroupByName();
+  var groupMap = getCachedLatestGroupByName_();
   var targets = accounts.filter(function (a) { return studentInTarget(session, a.studentId, a.studentName, groupMap[String(a.studentName).trim()] || ''); });
   var doneById = {}, doneNames = {};
   reports.forEach(function (r) {
@@ -2281,6 +2299,7 @@ function kpiSessionStatsFromData_(session, reports, accounts, groupMap) {
 var KPI_STUDENT_CACHE_KEY = 'teampro_kpi_students_cache_v1';
 var KPI_SESSION_CACHE_KEY = 'teampro_kpi_sessions_cache_v1';
 var KPI_MANAGE_CACHE_KEY = 'teampro_kpi_manage_data_v1';
+var KPI_GROUP_CACHE_KEY = 'teampro_kpi_group_map_v1';
 var KPI_REQUEST_CACHE_PREFIX = 'teampro_kpi_request_';
 
 function kpiCache_() { return CacheService.getScriptCache(); }
@@ -2296,15 +2315,15 @@ function clearKpiCaches_() {
   try { kpiCache_().remove(KPI_STUDENT_CACHE_KEY); } catch (e) {}
   try { kpiCache_().remove(KPI_SESSION_CACHE_KEY); } catch (e) {}
   try { kpiCache_().remove(KPI_MANAGE_CACHE_KEY); } catch (e) {}
+  try { kpiCache_().remove(KPI_GROUP_CACHE_KEY); } catch (e) {}
 }
 function clearKpiRequestCache_(requestId) {
   if (!requestId) return;
   try { kpiCache_().remove(KPI_REQUEST_CACHE_PREFIX + String(requestId)); } catch (e) {}
 }
 function loadKpiStudentsLight_(groupMap) {
-  syncStudentAccountsFromRoster();
-  groupMap = groupMap || latestGroupByName();
-  return readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS).map(function (r) {
+  groupMap = groupMap || {};
+  return activeStudentAccountsLight_().map(function (r) {
     return {
       studentId: r.studentId,
       studentName: r.studentName,
@@ -2314,16 +2333,21 @@ function loadKpiStudentsLight_(groupMap) {
   }).filter(function (s) { return s.studentId && s.studentName && s.accountStatus !== 'disabled'; })
     .sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
 }
-function loadKpiSessionsLight_(groupMap) {
-  ensureFridayWeeklyKpiSession_();
-  var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS);
-  var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS);
-  groupMap = groupMap || latestGroupByName();
-  return listKpiSessions().map(function (s) {
+function loadKpiSessionsLight_(groupMap, includeStats) {
+  groupMap = groupMap || {};
+  var sessions = listKpiSessions().map(function (s) {
     s.effectiveStatus = effectiveSessionStatus(s);
-    s.stats = kpiSessionStatsFromData_(s, reports, accounts, groupMap);
     return s;
-  }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+  });
+  if (includeStats !== false) {
+    var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS);
+    var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS);
+    sessions = sessions.map(function (s) {
+      s.stats = kpiSessionStatsFromData_(s, reports, accounts, groupMap);
+      return s;
+    });
+  }
+  return sessions.sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
 }
 function getCachedOrFreshKpiStudents_(forceFresh, groupMap) {
   var cached = readKpiCache_(KPI_STUDENT_CACHE_KEY);
@@ -2333,10 +2357,10 @@ function getCachedOrFreshKpiStudents_(forceFresh, groupMap) {
   writeKpiCache_(KPI_STUDENT_CACHE_KEY, out, 300);
   return out;
 }
-function getCachedOrFreshKpiSessions_(forceFresh, groupMap) {
+function getCachedOrFreshKpiSessions_(forceFresh, groupMap, includeStats) {
   var cached = readKpiCache_(KPI_SESSION_CACHE_KEY);
   if (!forceFresh && cached && cached.updatedAt && (Date.now() - Number(cached.updatedAt) < 60 * 1000) && Array.isArray(cached.data)) return cached;
-  var data = loadKpiSessionsLight_(groupMap);
+  var data = loadKpiSessionsLight_(groupMap, includeStats);
   var out = { updatedAt: Date.now(), data: data };
   writeKpiCache_(KPI_SESSION_CACHE_KEY, out, 60);
   return out;
@@ -2344,10 +2368,8 @@ function getCachedOrFreshKpiSessions_(forceFresh, groupMap) {
 function getKpiManageData(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
-  ensureFridayWeeklyKpiSession_();
-  var groupMap = latestGroupByName();
-  var sessions = getCachedOrFreshKpiSessions_(false, groupMap);
-  var students = getCachedOrFreshKpiStudents_(false, groupMap);
+  var sessions = getCachedOrFreshKpiSessions_(false, {}, false);
+  var students = getCachedOrFreshKpiStudents_(false, {});
   writeKpiCache_(KPI_MANAGE_CACHE_KEY, {
     updatedAt: Date.now(),
     sessions: sessions.data || [],
@@ -2406,7 +2428,7 @@ function normalizeBulkStudents_(students) {
     try { students = JSON.parse(students); } catch (e) { students = []; }
   }
   if (!Array.isArray(students)) students = [];
-  var accounts = activeStudentAccounts();
+  var accounts = activeStudentAccountsLight_();
   var byId = {}, byName = {};
   accounts.forEach(function (a) {
     byId[String(a.studentId)] = a;
@@ -2446,7 +2468,8 @@ function bulkSetKpiSession(data) {
       obj.__rowIndex = idx;
       return obj;
     });
-    var groupMap = latestGroupByName();
+    var groupMap = readKpiCache_(KPI_GROUP_CACHE_KEY);
+    groupMap = groupMap && groupMap.data && typeof groupMap.data === 'object' ? groupMap.data : {};
     var now = nowIso();
 
     if (!enabled && (data.closeAll === true || String(data.closeAll).toLowerCase() === 'true')) {
@@ -2461,7 +2484,7 @@ function bulkSetKpiSession(data) {
         rows[s.__rowIndex] = buildKpiSessionRow_(s);
       });
       if (rows.length) sh.getRange(2, 1, rows.length, KPI_SESSION_HEADERS.length).setValues(rows);
-      var closeStudents = students.length ? students : activeStudentAccounts();
+      var closeStudents = students.length ? students : activeStudentAccountsLight_();
       var closeResult = {
         ok: true,
         closedCount: closeTargets.length,
@@ -2561,7 +2584,7 @@ function getKpiSessions(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
   ensureFridayWeeklyKpiSession_();
-  var cached = getCachedOrFreshKpiSessions_(false, latestGroupByName());
+  var cached = getCachedOrFreshKpiSessions_(false, getCachedLatestGroupByName_(), true);
   return { ok: true, data: cached.data || [] };
 }
 
@@ -2586,7 +2609,7 @@ function getStudentKpiSession(data) {
     var acc = findStudentAccountByName(studentName);
     if (acc && acc.studentId) studentId = acc.studentId;
   }
-  var myGroup = latestGroupByName()[String(studentName).trim()] || '';
+  var myGroup = getCachedLatestGroupByName_()[String(studentName).trim()] || '';
   var sessions = listKpiSessions();
   var currentWeek = isoWeekId(new Date());
   // 找最新一個「對這位學生有效（open/scheduled）」的 session
@@ -2634,7 +2657,7 @@ function submitWeeklyKpi(data) {
   if (!found) return { ok: false, error: '找不到此 KPI 回報。' };
   var session = found.object;
   if (effectiveSessionStatus(session) !== 'open') return { ok: false, error: '本次 KPI 已截止或尚未開放。' };
-  var myGroup = latestGroupByName()[String(studentName).trim()] || '';
+  var myGroup = getCachedLatestGroupByName_()[String(studentName).trim()] || '';
   if (!studentInTarget(session, studentId, studentName, myGroup)) return { ok: false, error: '本次 KPI 不需要你填寫。' };
 
   var sh = getWeeklyKpiReportsSheet();

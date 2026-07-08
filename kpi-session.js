@@ -269,7 +269,11 @@
     } catch (e) {
       state.loadingCoach = false;
       if (!state.loaded) {
-        box.innerHTML = '<div class="hint-box warn">' + esc(e.message || '讀取失敗，請確認連線。') + '</div>' +
+        var msg = String((e && e.message) || '');
+        var friendly = msg.indexOf('逾時') !== -1
+          ? '目前正在同步 KPI 管理資料，可能是 Apps Script 暫時較慢。請點擊重新確認，不代表 KPI 未開放。'
+          : (e.message || '讀取失敗，請確認連線。');
+        box.innerHTML = '<div class="hint-box warn">' + esc(friendly) + '</div>' +
           '<button type="button" class="btn btn-secondary" data-kpi-retry-load>重新讀取</button>';
         box.querySelector('[data-kpi-retry-load]')?.addEventListener('click', function () {
           state.loaded = false;
