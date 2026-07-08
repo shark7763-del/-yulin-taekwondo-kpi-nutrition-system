@@ -30,7 +30,7 @@
    留空字串 '' 時，系統會改用「系統設定」存在各裝置的網址（舊行為）。
    ============================================================ */
 const CONFIG = {
-  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbxfgS4OTFhQQZwnVt5hZcR5WKaosLHBKMeYFHpxjuw/exec'
+  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbxyPgaXgpOA4oyRVxswOWkyvWv5iLC6QTkzOPUSIDl20wE1hBFVXAaSamy3cmvDz_LW/exec'
 };
 
 /* ============================================================

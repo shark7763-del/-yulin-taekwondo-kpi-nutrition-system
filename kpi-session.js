@@ -9,7 +9,6 @@
 
   if (window.__TEAMPRO_KPI_INITIALIZED__) return;
   window.__TEAMPRO_KPI_INITIALIZED__ = true;
-  const FRONTEND_BUILD = '20260708-kpi-fix-1';
 
   function el(id) { return document.getElementById(id); }
   function esc(s) { return (typeof escapeHtml === 'function') ? escapeHtml(s) : String(s == null ? '' : s); }
@@ -18,18 +17,6 @@
   async function api(body) {
     if (typeof postToWebApp !== 'function') throw new Error('postToWebApp 未就緒');
     return postToWebApp(body);
-  }
-  function markApiResult(action, ms, ok, backendBuild) {
-    state.lastApiAction = action || '';
-    state.lastApiMs = ms || 0;
-    state.lastApiOk = !!ok;
-    if (backendBuild) state.backendBuild = backendBuild;
-  }
-  function buildMismatchText() {
-    if (state.backendBuild && state.backendBuild !== FRONTEND_BUILD) {
-      return '前後端版本不一致，請重新部署 Google Apps Script 新版本。';
-    }
-    return '';
   }
   function withTimeout(promise, ms, label) {
     var timer;
@@ -69,7 +56,6 @@
   var state = {
     students: [],
     sessions: [],
-    currentWeek: null,
     enabled: {},
     sync: {},
     selected: {},
@@ -86,10 +72,6 @@
     cachedCoachAt: 0,
     cachedStudentsAt: 0,
     cachedSessionsAt: 0,
-    backendBuild: '',
-    lastApiAction: '',
-    lastApiMs: 0,
-    lastApiOk: null,
     studentRetryUsed: false
   };
 
@@ -105,8 +87,6 @@
   var _coachBgTimer = null;
   var _studentRetryTimer = null;
   var _initBound = false;
-  var coachLoadPromise = null;
-  var studentLoadPromise = null;
 
   function ndate(v) { var d = new Date(v); return isNaN(d.getTime()) ? null : d; }
   function pad(n) { return ('0' + n).slice(-2); }
@@ -159,11 +139,9 @@
   }
   function doneNameSet() {
     var out = {};
-    var doneIds = ((state.currentWeek && state.currentWeek.doneStudentIds) || []).map(function (x) { return String(x); });
-    state.students.forEach(function (s) {
-      if (doneIds.indexOf(String(s.studentId)) !== -1 || doneIds.indexOf(String(s.studentName).trim()) !== -1) {
-        out[String(s.studentName).trim()] = true;
-      }
+    currentWeekSessions().forEach(function (s) {
+      var st = s.stats || {};
+      (st.doneNames || []).forEach(function (n) { out[String(n).trim()] = true; });
     });
     return out;
   }
@@ -210,27 +188,21 @@
   function readCoachCache() {
     var students = cacheRead(COACH_STUDENT_CACHE_KEY);
     var sessions = cacheRead(COACH_SESSION_CACHE_KEY);
-    var currentWeek = cacheRead('teampro_kpi_manage_data_v1');
-    return { students: students, sessions: sessions, currentWeek: currentWeek };
+    return { students: students, sessions: sessions };
   }
   function writeCoachCache(snap) {
     if (!snap) return;
     cacheWrite(COACH_STUDENT_CACHE_KEY, { updatedAt: Date.now(), data: snap.students || [] });
     cacheWrite(COACH_SESSION_CACHE_KEY, { updatedAt: Date.now(), data: snap.sessions || [] });
-    cacheWrite('teampro_kpi_manage_data_v1', { updatedAt: Date.now(), data: snap.currentWeek || null });
     state.cachedCoachAt = Date.now();
     state.cachedStudentsAt = Date.now();
     state.cachedSessionsAt = Date.now();
   }
-  function applyCoachData(sessions, students, fromCache, currentWeek) {
-    state.currentWeek = currentWeek || state.currentWeek || null;
-    state.sessions = Array.isArray(sessions) ? sessions : ((state.currentWeek && state.currentWeek.sessions) || []);
+  function applyCoachData(sessions, students, fromCache) {
+    state.sessions = Array.isArray(sessions) ? sessions : [];
     state.students = (Array.isArray(students) ? students : []).filter(function (s) {
       return s && s.studentId && s.studentName && s.accountStatus !== 'disabled';
     }).sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
-    if (state.currentWeek) {
-      state.currentWeek.sessions = state.sessions;
-    }
     rebuildEnabledFromSessions();
     state.loaded = true;
     state.coachNotice = fromCache ? '已顯示最近資料，正在背景確認最新狀態…' : '';
@@ -257,74 +229,57 @@
     var r = role();
     if (!r || r.role !== 'coach') return;
     try {
-      var start = Date.now();
-      var res = await withTimeout(api(coachNetworkBody()), COACH_LOAD_TIMEOUT, 'KPI 進度同步');
-      markApiResult('getKpiManageData', Date.now() - start, !!(res && res.ok), res && res.backendBuild);
+      var res = await withTimeout(api({ action: 'getKpiSessions' }), COACH_LOAD_TIMEOUT, 'KPI 進度同步');
       if (res && res.ok) {
-        applyCoachData((res.currentWeek && res.currentWeek.sessions) || [], res.students || [], true, res.currentWeek || {});
-        writeCoachCache({ sessions: (res.currentWeek && res.currentWeek.sessions) || [], students: res.students || [], currentWeek: res.currentWeek || {} });
+        state.sessions = res.data || state.sessions;
+        cacheWrite(COACH_SESSION_CACHE_KEY, { updatedAt: Date.now(), data: state.sessions || [] });
+        rebuildEnabledFromSessions();
+        state.loaded = true;
         showCoachMessage('ok', '✅ 本週 KPI 已成功開放', '');
         renderCoachKpiManage();
       }
     } catch (e) {}
   }
-  function loadCoachData(opts) {
-    if (coachLoadPromise) return coachLoadPromise;
+  async function loadCoachData(opts) {
     var box = el('coachKpiManage');
-    if (!box) return Promise.resolve();
+    if (!box) return;
     var r = role();
-    if (!r || r.role !== 'coach') {
-      box.innerHTML = '<div class="hint-box">此區僅教練可操作。</div>';
-      return Promise.resolve();
-    }
+    if (!r || r.role !== 'coach') { box.innerHTML = '<div class="hint-box">此區僅教練可操作。</div>'; return; }
     opts = opts || {};
     var cached = readCoachCache();
     var studentsCached = cacheFresh(cached.students, COACH_CACHE_TTL) ? cached.students : null;
     var sessionsCached = cacheFresh(cached.sessions, COACH_SESSION_BG_TTL) ? cached.sessions : null;
-    var currentWeekCached = cacheFresh(cached.currentWeek, COACH_SESSION_BG_TTL) ? cached.currentWeek : null;
     if (studentsCached || sessionsCached) {
-      applyCoachData((sessionsCached && sessionsCached.data) || (currentWeekCached && currentWeekCached.data && currentWeekCached.data.sessions) || (state.currentWeek && state.currentWeek.sessions) || state.sessions, (studentsCached && studentsCached.data) || state.students, true, (currentWeekCached && currentWeekCached.data) || state.currentWeek || null);
+      applyCoachData((sessionsCached && sessionsCached.data) || state.sessions, (studentsCached && studentsCached.data) || state.students, true);
     } else if (!state.loaded) {
       box.innerHTML = '<div class="hint-box">正在讀取本週 KPI 狀態…</div>';
     }
-    coachLoadPromise = (async function () {
-      try {
-        state.loadingCoach = true;
-        var start = Date.now();
+    try {
+      state.loadingCoach = true;
       var data = await withTimeout(api(coachNetworkBody()), COACH_LOAD_TIMEOUT, 'KPI 管理資料讀取');
       if (!data || !data.ok) throw new Error((data && data.error) || 'KPI 管理資料讀取失敗');
-      markApiResult('getKpiManageData', Date.now() - start, true, data.backendBuild);
-        var mismatch = buildMismatchText();
-      var currentWeek = data.currentWeek || {};
-      var sessions = (currentWeek.sessions || []).slice();
+      var sessions = data.sessions || [];
       var students = data.students || [];
-      applyCoachData(sessions, students, false, currentWeek);
-      writeCoachCache({ sessions: sessions, students: students, currentWeek: currentWeek });
-        showCoachMessage(mismatch ? 'warn' : 'ok', mismatch || '✅ KPI 管理資料已同步', mismatch ? 'retry' : '');
+      applyCoachData(sessions, students, false);
+      writeCoachCache({ sessions: sessions, students: students });
+      showCoachMessage('ok', '✅ KPI 管理資料已同步', '');
+      state.loadingCoach = false;
+      renderCoachKpiManage();
+      if (opts.backgroundRefresh !== false) scheduleCoachSessionsRefresh(BULK_CONFIRM_DELAY);
+    } catch (e) {
+      state.loadingCoach = false;
+      if (!state.loaded) {
+        box.innerHTML = '<div class="hint-box warn">' + esc(e.message || '讀取失敗，請確認連線。') + '</div>' +
+          '<button type="button" class="btn btn-secondary" data-kpi-retry-load>重新讀取</button>';
+        box.querySelector('[data-kpi-retry-load]')?.addEventListener('click', function () {
+          state.loaded = false;
+          loadCoachData();
+        });
+      } else {
+        showCoachMessage('warn', '目前連線不穩，已保留最近資料。請稍後重新確認。', 'retry');
         renderCoachKpiManage();
-        if (opts.backgroundRefresh !== false) scheduleCoachSessionsRefresh(BULK_CONFIRM_DELAY);
-      } catch (e) {
-        if (!state.loaded) {
-          var msg = String((e && e.message) || '');
-          var friendly = msg.indexOf('逾時') !== -1
-            ? '目前正在同步 KPI 管理資料，可能是 Apps Script 暫時較慢。請點擊重新確認，不代表 KPI 未開放。'
-            : (e.message || '讀取失敗，請確認連線。');
-          box.innerHTML = '<div class="hint-box warn">' + esc(friendly) + '</div>' +
-            '<button type="button" class="btn btn-secondary" data-kpi-retry-load>重新讀取</button>';
-          box.querySelector('[data-kpi-retry-load]')?.addEventListener('click', function () {
-            state.loaded = false;
-            loadCoachData();
-          });
-        } else {
-          showCoachMessage('warn', '目前連線不穩，已保留最近資料。請稍後重新確認。', 'retry');
-          renderCoachKpiManage();
-        }
-      } finally {
-        state.loadingCoach = false;
-        coachLoadPromise = null;
       }
-    })();
-    return coachLoadPromise;
+    }
   }
 
   function renderCoachKpiManage() {
@@ -376,7 +331,6 @@
         (state.studentPanel ? renderStudentPanel() : '') +
         renderPendingTools(pending) +
         renderAdvancedToggles() +
-        renderDiagnostics() +
         renderHistorySessions() +
       '</div>';
 
@@ -415,40 +369,14 @@
         '</div>';
       }).join('') + '</div></details>';
   }
-  function renderDiagnostics() {
-    var currentWeek = state.currentWeek || {};
-    var versionOk = !buildMismatchText();
-    return '<details class="kpi-advanced-toggle"><summary>系統診斷</summary>' +
-      '<div class="kpi-diagnostics">' +
-        '<div class="kpi-diag-row"><span>前端版本</span><b>' + esc(FRONTEND_BUILD) + '</b></div>' +
-        '<div class="kpi-diag-row"><span>後端版本</span><b>' + esc(state.backendBuild || '未知') + '</b></div>' +
-        '<div class="kpi-diag-row"><span>版本一致</span><b>' + (versionOk ? '是' : '否') + '</b></div>' +
-        '<div class="kpi-diag-row"><span>最近 API</span><b>' + esc(state.lastApiAction || '無') + '</b></div>' +
-        '<div class="kpi-diag-row"><span>API 耗時</span><b>' + esc(state.lastApiMs ? state.lastApiMs + ' ms' : '—') + '</b></div>' +
-        '<div class="kpi-diag-row"><span>API 結果</span><b>' + (state.lastApiOk == null ? '—' : (state.lastApiOk ? '成功' : '失敗')) + '</b></div>' +
-        '<div class="kpi-diag-row"><span>學生人數</span><b>' + esc(String((state.students || []).length)) + '</b></div>' +
-        '<div class="kpi-diag-row"><span>本週 session 數</span><b>' + esc(String((currentWeek.sessions || []).length)) + '</b></div>' +
-        '<div class="kpi-diag-row"><span>本週開放人數</span><b>' + esc(String(currentWeek.enabledCount || 0)) + '</b></div>' +
-        '<div class="kpi-diag-row"><span>本週完成人數</span><b>' + esc(String(currentWeek.doneCount || 0)) + '</b></div>' +
-        '<div class="kpi-diag-actions">' +
-          '<button type="button" class="btn btn-secondary" data-kpi-diag-test>測試後端</button>' +
-          '<button type="button" class="btn btn-secondary" data-kpi-diag-refresh>重新確認 KPI</button>' +
-          '<button type="button" class="btn btn-ghost" data-kpi-diag-clear>清除本機 KPI 快取</button>' +
-          '<button type="button" class="btn btn-ghost" data-kpi-diag-copy>複製診斷結果</button>' +
-        '</div>' +
-      '</div></details>';
-  }
   function renderHistorySessions() {
     var sessions = (state.sessions || []).slice(0, 8);
     if (!sessions.length) return '';
-    return '<details class="kpi-advanced-toggle"><summary>本週任務與週報</summary><div class="kpi-session-list">' +
+    return '<details class="kpi-advanced-toggle"><summary>歷史任務與週報</summary><div class="kpi-session-list">' +
       sessions.map(function (s) {
-        var targetStudents = state.students.filter(function (stu) { return sessionTargetsStudent(s, stu); });
-        var doneIds = ((state.currentWeek && state.currentWeek.doneStudentIds) || []).map(function (x) { return String(x); });
-        var doneCount = targetStudents.filter(function (stu) { return doneIds.indexOf(String(stu.studentId)) !== -1 || doneIds.indexOf(String(stu.studentName).trim()) !== -1; }).length;
-        var total = targetStudents.length;
+        var st = s.stats || {};
         return '<div class="kpi-session-item" data-id="' + esc(s.sessionId) + '"><div class="kpi-session-head"><span class="kpi-session-name">' + esc(s.sessionName || 'KPI 回報') + ' ' + esc(s.weekId || '') + '</span><span class="kpi-session-sub">' + esc(s.status || '') + '</span></div>' +
-          '<div class="kpi-session-stat">完成率 <b>' + doneCount + '/' + total + '（' + (total ? Math.round(doneCount / total * 100) : 0) + '%）</b></div>' +
+          '<div class="kpi-session-stat">完成率 <b>' + (st.doneCount || 0) + '/' + (st.total || 0) + '（' + (st.completionRate || 0) + '%）</b></div>' +
           '<div class="kpi-session-ops"><button class="btn btn-ghost kpi-op" data-op="detail" data-id="' + esc(s.sessionId) + '">📊 完成率</button><button class="btn btn-ghost kpi-op" data-op="report" data-id="' + esc(s.sessionId) + '">📄 週報</button><button class="btn btn-ghost kpi-op" data-op="remind" data-id="' + esc(s.sessionId) + '">📱 提醒</button></div>' +
           '<div class="kpi-session-detail" id="kpiDetail-' + esc(s.sessionId) + '"></div></div>';
       }).join('') + '</div></details>';
@@ -460,7 +388,7 @@
       showCoachMessage('', '', '');
       loadCoachData({ backgroundRefresh: false });
     });
-    box.querySelector('[data-kpi-open-all]')?.addEventListener('click', function () { optimisticBulk(state.students, true, 'all', '全隊'); });
+    box.querySelector('[data-kpi-open-all]')?.addEventListener('click', function () { optimisticBulk(state.students, true); });
     box.querySelector('[data-kpi-toggle-groups]')?.addEventListener('click', function () { state.groupPanel = !state.groupPanel; renderCoachKpiManage(); });
     box.querySelector('[data-kpi-toggle-students]')?.addEventListener('click', function () { state.studentPanel = !state.studentPanel; renderCoachKpiManage(); });
     box.querySelector('[data-kpi-close-week]')?.addEventListener('click', function () {
@@ -471,7 +399,7 @@
       b.addEventListener('click', function () {
         var g = b.dataset.kpiOpenGroup;
         var targets = g === '全隊' ? state.students : state.students.filter(function (s) { return String(s.group || '').indexOf(g) !== -1; });
-        optimisticBulk(targets, true, 'group', g);
+        optimisticBulk(targets, true);
       });
     });
     box.querySelectorAll('[data-kpi-select-student]').forEach(function (c) {
@@ -480,23 +408,19 @@
     box.querySelector('[data-kpi-open-selected]')?.addEventListener('click', function () {
       var targets = state.students.filter(function (s) { return state.selected[s.studentId]; });
       if (!targets.length) { notify('請先勾選選手'); return; }
-      optimisticBulk(targets, true, targets.length === 1 ? 'individual' : 'students', '指定選手');
+      optimisticBulk(targets, true);
     });
     box.querySelectorAll('[data-kpi-toggle-one]').forEach(function (b) {
       b.addEventListener('click', function () {
         var stu = state.students.find(function (s) { return String(s.studentId) === String(b.dataset.kpiToggleOne); });
-        if (stu) optimisticBulk([stu], !state.enabled[stu.studentId], 'individual', stu.group || '');
+        if (stu) optimisticBulk([stu], !state.enabled[stu.studentId]);
       });
     });
     box.querySelector('[data-kpi-copy-remind]')?.addEventListener('click', copyPendingReminder);
-    box.querySelector('[data-kpi-diag-test]')?.addEventListener('click', function () { testKpiBackend(); });
-    box.querySelector('[data-kpi-diag-refresh]')?.addEventListener('click', function () { loadCoachData({ backgroundRefresh: false }); });
-    box.querySelector('[data-kpi-diag-clear]')?.addEventListener('click', clearKpiLocalCache);
-    box.querySelector('[data-kpi-diag-copy]')?.addEventListener('click', copyKpiDiagnostics);
     box.querySelectorAll('.kpi-op').forEach(function (b) { b.addEventListener('click', function () { coachOp(b.dataset.op, b.dataset.id); }); });
   }
 
-  function optimisticBulk(students, enabled, targetType, targetGroup) {
+  function optimisticBulk(students, enabled) {
     if (!students.length || state.bulkBusy) return;
     state.bulkBusy = true;
     var requestId = makeRequestId();
@@ -513,8 +437,6 @@
       enabled: enabled,
       dueAt: dueSunday2359(),
       requestId: requestId,
-      targetType: targetType || (students.length === 1 ? 'individual' : 'students'),
-      targetGroup: targetGroup || (students.length > 1 ? '指定選手' : ''),
       sessionName: '本週 KPI 回報',
       students: students.map(function (s) { return { studentId: s.studentId, studentName: s.studentName, group: s.group || '' }; })
     }), COACH_LOAD_TIMEOUT, 'KPI 同步').then(function (res) {
@@ -574,8 +496,6 @@
       enabled: false,
       closeAll: true,
       requestId: requestId,
-      targetType: 'all',
-      targetGroup: '全隊',
       students: targets.map(function (s) {
         return { studentId: s.studentId, studentName: s.studentName, group: s.group || '' };
       })
@@ -620,47 +540,6 @@
     var text = '本週 KPI 回報提醒\n尚未完成：' + (names.length ? names.join('、') : '無') + '\n\n請在今天完成本週 KPI 回報，讓教練掌握這週訓練狀態。';
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(function () {});
     notify('已複製提醒文字');
-  }
-  function clearKpiLocalCache() {
-    try {
-      [COACH_STUDENT_CACHE_KEY, COACH_SESSION_CACHE_KEY, 'teampro_kpi_manage_data_v1'].forEach(function (key) { localStorage.removeItem(key); });
-      for (var i = localStorage.length - 1; i >= 0; i--) {
-        var key = localStorage.key(i);
-        if (key && key.indexOf(STUDENT_STATE_PREFIX) === 0) localStorage.removeItem(key);
-      }
-      notify('已清除本機 KPI 快取');
-    } catch (e) {}
-  }
-  function copyKpiDiagnostics() {
-    var currentWeek = state.currentWeek || {};
-    var lines = [
-      'frontendBuild=' + FRONTEND_BUILD,
-      'backendBuild=' + (state.backendBuild || ''),
-      'versionMatch=' + (!buildMismatchText()),
-      'lastApi=' + (state.lastApiAction || ''),
-      'lastApiMs=' + (state.lastApiMs || 0),
-      'lastApiOk=' + (state.lastApiOk == null ? '' : state.lastApiOk),
-      'students=' + ((state.students || []).length),
-      'currentWeekSessions=' + ((currentWeek.sessions || []).length),
-      'enabledCount=' + (currentWeek.enabledCount || 0),
-      'doneCount=' + (currentWeek.doneCount || 0)
-    ];
-    var text = lines.join('\n');
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(function () {});
-    notify('已複製診斷結果');
-  }
-  async function testKpiBackend() {
-    try {
-      var start = Date.now();
-      var res = await withTimeout(api({ action: 'healthCheck' }), COACH_LOAD_TIMEOUT, '後端測試');
-      markApiResult('healthCheck', Date.now() - start, !!(res && res.ok), res && res.backendBuild);
-      renderCoachKpiManage();
-      if (buildMismatchText()) notify(buildMismatchText());
-      else notify('後端測試完成');
-    } catch (e) {
-      markApiResult('healthCheck', 0, false, state.backendBuild);
-      notify(e.message || '後端測試失敗');
-    }
   }
 
   async function coachOp(op, id) {
@@ -731,122 +610,101 @@
       (showRetry ? '<div style="margin-top:10px"><button type="button" class="btn btn-secondary" data-kpi-student-retry>重新確認</button></div>' : '') +
       '</div>';
   }
-  function clearStudentRetryTimer() {
-    if (_studentRetryTimer) {
-      clearTimeout(_studentRetryTimer);
-      _studentRetryTimer = null;
-    }
-  }
-  function renderStudentKpi() {
-    if (studentLoadPromise) return studentLoadPromise;
+  async function renderStudentKpi() {
     var card = el('studentKpiCard'), body = el('studentKpiBody');
-    if (!card || !body) return Promise.resolve();
+    if (!card || !body) return;
     var r = role();
     card.style.display = 'none';
     body.innerHTML = '';
     if (!r || r.role !== 'student') {
       state.studentOpen = false;
       if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
-      clearStudentRetryTimer();
-      return Promise.resolve();
+      return;
     }
     card.style.display = 'block';
     body.innerHTML = '<div class="hint-box">正在確認本週 KPI 開放狀態…</div>';
-    studentLoadPromise = (async function () {
-      try {
-        var start = Date.now();
-        var res = await withTimeout(api({
-          action: 'getStudentKpiSession',
-          studentName: r.name || '',
-          studentId: r.studentId || ''
-        }), STUDENT_LOAD_TIMEOUT, 'KPI 開放狀態');
-        markApiResult('getStudentKpiSession', Date.now() - start, !!(res && res.ok), res && res.backendBuild);
-        if (buildMismatchText()) {
-          state.studentOpen = false;
-          clearStudentRetryTimer();
-          renderStudentStatusMessage(body, '前後端版本不一致', buildMismatchText(), 'warn', true);
-          return;
-        }
-        if (!res || !res.ok) throw new Error((res && res.error) || '無法確認 KPI 狀態');
-        if (res.state === 'open') {
-          state.studentOpen = true;
-          state.studentRetryUsed = false;
-          clearStudentRetryTimer();
-          writeStudentStateCache(true, res.session, { state: 'open', closeAt: res.session && res.session.closeAt });
-          if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, res.session);
-          renderStudentKpiOpen(body, res.session, res.message || '');
-        } else if (res.state === 'done') {
-          state.studentOpen = true;
-          state.studentRetryUsed = false;
-          clearStudentRetryTimer();
-          writeStudentStateCache(true, res.session, { state: 'done', closeAt: res.session && res.session.closeAt, message: res.message });
-          if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, res.session);
-          renderStudentStatusMessage(body, '本週 KPI 已完成', res.message || '你已完成本次 KPI 回報，可以查看本週成長報告。', 'good', false);
-        } else if (res.state === 'scheduled') {
-          state.studentOpen = false;
-          state.studentRetryUsed = false;
-          clearStudentRetryTimer();
-          writeStudentStateCache(false, res.session, { state: 'scheduled', closeAt: res.session && res.session.closeAt, message: res.message });
-          if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
-          renderStudentStatusMessage(body, '本週 KPI 尚未開放', res.message || '請依照教練通知時間再回來確認。', '', false);
-        } else if (res.state === 'closed' || res.state === 'none') {
-          state.studentOpen = false;
-          state.studentRetryUsed = false;
-          clearStudentRetryTimer();
-          writeStudentStateCache(false, res.session, { state: res.state, closeAt: res.session && res.session.closeAt, message: res.message });
-          if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
-          renderStudentStatusMessage(body, '本週 KPI 尚未開放', res.message || '請等待教練開放後再填寫。', '', false);
-        } else {
-          throw new Error('非預期回傳');
-        }
-        if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
-      } catch (e) {
-        var cached = readStudentStateCache();
-        if (cached && cached.state === 'open' && cached.session) {
-          state.studentOpen = true;
-          if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, cached.session);
-          renderStudentKpiOpen(body, cached.session, '已顯示最近成功狀態，正在背景確認最新資料…');
-          if (!_studentRetryTimer && !state.studentRetryUsed) {
-            _studentRetryTimer = setTimeout(function () {
-              _studentRetryTimer = null;
-              state.studentRetryUsed = true;
-              renderStudentKpi();
-            }, 10000);
-          }
-        } else if (cached && cached.state === 'done' && cached.session) {
-          state.studentOpen = true;
-          state.studentRetryUsed = false;
-          clearStudentRetryTimer();
-          if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, cached.session);
-          renderStudentStatusMessage(body, '本週 KPI 已完成', cached.message || '已使用最近成功狀態。', 'good', true);
-        } else {
-          state.studentOpen = false;
-          state.studentRetryUsed = false;
-          if (typeof window.setDailyKpiAvailability === 'function') {
-            // 網路錯誤不等於未開放；先維持既有狀態，由使用者手動重試。
-          }
-          renderStudentStatusMessage(
-            body,
-            '目前無法確認 KPI 開放狀態',
-            '可能是網路不穩或伺服器暫時延遲。請點擊重新確認，不代表教練尚未開放。',
-            'warn',
-            true
-          );
-          if (!_studentRetryTimer && !state.studentRetryUsed) {
-            _studentRetryTimer = setTimeout(function () {
-              _studentRetryTimer = null;
-              state.studentRetryUsed = true;
-              renderStudentKpi();
-            }, 10000);
-          }
-        }
-        if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
-        body.querySelector('[data-kpi-student-retry]')?.addEventListener('click', function () { renderStudentKpi(); });
-      } finally {
-        studentLoadPromise = null;
+    try {
+      var res = await withTimeout(api({
+        action: 'getStudentKpiSession',
+        studentName: r.name || '',
+        studentId: r.studentId || ''
+      }), STUDENT_LOAD_TIMEOUT, 'KPI 開放狀態');
+      if (!res || !res.ok) throw new Error((res && res.error) || '無法確認 KPI 狀態');
+      if (res.state === 'open') {
+        state.studentOpen = true;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        writeStudentStateCache(true, res.session, { state: 'open', closeAt: res.session && res.session.closeAt });
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, res.session);
+        renderStudentKpiOpen(body, res.session, res.message || '');
+      } else if (res.state === 'done') {
+        state.studentOpen = true;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        writeStudentStateCache(true, res.session, { state: 'done', closeAt: res.session && res.session.closeAt, message: res.message });
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, res.session);
+        renderStudentStatusMessage(body, '本週 KPI 已完成', res.message || '你已完成本次 KPI 回報，可以查看本週成長報告。', 'good', false);
+      } else if (res.state === 'scheduled') {
+        state.studentOpen = false;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        writeStudentStateCache(false, res.session, { state: 'scheduled', closeAt: res.session && res.session.closeAt, message: res.message });
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
+        renderStudentStatusMessage(body, '本週 KPI 尚未開放', res.message || '請依照教練通知時間再回來確認。', '', false);
+      } else if (res.state === 'closed' || res.state === 'none') {
+        state.studentOpen = false;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        writeStudentStateCache(false, res.session, { state: res.state, closeAt: res.session && res.session.closeAt, message: res.message });
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
+        renderStudentStatusMessage(body, '本週 KPI 尚未開放', res.message || '請等待教練開放後再填寫。', '', false);
+      } else {
+        throw new Error('非預期回傳');
       }
-    })();
-    return studentLoadPromise;
+      if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
+    } catch (e) {
+      var cached = readStudentStateCache();
+      if (cached && cached.state === 'open' && cached.session) {
+        state.studentOpen = true;
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, cached.session);
+        renderStudentKpiOpen(body, cached.session, '已顯示最近成功狀態，正在背景確認最新資料…');
+        if (!_studentRetryTimer && !state.studentRetryUsed) {
+          _studentRetryTimer = setTimeout(function () {
+            _studentRetryTimer = null;
+            state.studentRetryUsed = true;
+            renderStudentKpi();
+          }, 10000);
+        }
+      } else if (cached && cached.state === 'done' && cached.session) {
+        state.studentOpen = true;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, cached.session);
+        renderStudentStatusMessage(body, '本週 KPI 已完成', cached.message || '已使用最近成功狀態。', 'good', true);
+      } else {
+        state.studentOpen = false;
+        state.studentRetryUsed = false;
+        if (typeof window.setDailyKpiAvailability === 'function') {
+          // 網路錯誤不等於未開放；先維持既有狀態，由使用者手動重試。
+        }
+        renderStudentStatusMessage(
+          body,
+          '目前無法確認 KPI 開放狀態',
+          '可能是網路不穩或伺服器暫時延遲。請點擊重新確認，不代表教練尚未開放。',
+          'warn',
+          true
+        );
+        if (!_studentRetryTimer && !state.studentRetryUsed) {
+          _studentRetryTimer = setTimeout(function () {
+            _studentRetryTimer = null;
+            state.studentRetryUsed = true;
+            renderStudentKpi();
+          }, 10000);
+        }
+      }
+      if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
+      body.querySelector('[data-kpi-student-retry]')?.addEventListener('click', function () { renderStudentKpi(); });
+    }
   }
   function renderStudentKpiOpen(body, session, extraMessage) {
     var card = el('studentKpiCard');
@@ -899,7 +757,6 @@
   function refreshForRole() {
     var r = role();
     if (!r) return;
-    clearStudentRetryTimer();
     if (r.role === 'coach') loadCoachData();
     if (r.role === 'student' || r.role === 'coach') renderStudentKpi();
   }
