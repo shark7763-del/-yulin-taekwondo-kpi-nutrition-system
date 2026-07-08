@@ -745,8 +745,9 @@ function renderCoachReadinessOverview(todays, all) {
 
   const buckets = { '強化組': [], '穩定組': [], '調整組': [], '保護組': [], '關懷組': [] };
   todays.forEach(r => {
-    const light = readinessLight(nval(r.finalReadinessScore) || 0);
-    buckets[light.group].push(r);
+    const score = nval(r.finalReadinessScore) || 0;
+    const key = score >= 85 ? '強化組' : (score >= 70 ? '穩定組' : (score >= 55 ? '調整組' : (score >= 40 ? '保護組' : '關懷組')));
+    buckets[key].push(r);
   });
   const replyTemplates = {
     '強化組': '{name}，今天狀態很好，可以安排高品質技術、速度、對打模擬與爆發力訓練。不過記得，狀態好更要把動作品質守住，不是只有衝強度。',
