@@ -2399,7 +2399,6 @@ function currentWeekKpiSnapshot_(forceFresh) {
 
   var weekKey = isoWeekId(new Date());
   var accounts = activeStudentAccountsLight_();
-  var groupMap = getCachedLatestGroupByName_();
   var sessions = listKpiSessions().filter(function (s) { return String(s.weekId || '') === weekKey; }).map(function (s) {
     return {
       sessionId: s.sessionId || '',
@@ -2413,6 +2412,13 @@ function currentWeekKpiSnapshot_(forceFresh) {
       effectiveStatus: effectiveSessionStatus(s)
     };
   }).sort(function (a, b) { return String(b.openAt || b.sessionId).localeCompare(String(a.openAt || a.sessionId)); });
+  var needLegacyGroupMap = sessions.some(function (s) {
+    return !String(s.targetStudentIds || '').trim() &&
+      String(s.targetType || '') !== 'all' &&
+      String(s.targetGroup || '') &&
+      String(s.targetGroup || '') !== '全隊';
+  });
+  var groupMap = needLegacyGroupMap ? getCachedLatestGroupByName_() : {};
 
   var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS).filter(function (r) {
     return String(r.weekId || '') === weekKey;
