@@ -2606,12 +2606,12 @@ function createKpiSession(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return kpiBuildOut_(auth);
   var targetSnapshot = resolveKpiTargetSnapshot(data);
-  if (!targetSnapshot.ok) return targetSnapshot;
+  if (!targetSnapshot.ok) return kpiBuildOut_(targetSnapshot);
   if (data.lineNotify && targetSnapshot.targets.length !== targetSnapshot.accounts.length) {
-    return { ok: false, error: '目前 LINE 通知是全頻道廣播，只有開放全隊時才能使用。' };
+    return kpiBuildOut_({ ok: false, error: '目前 LINE 通知是全頻道廣播，只有開放全隊時才能使用。' });
   }
   var conflicts = kpiTargetConflict({ targetStudentIds: targetSnapshot.ids.join(','), targetGroup: data.targetGroup || '全隊', weekId: data.weekId || data.weekKey || isoWeekId(new Date()) });
-  if (conflicts.length) return { ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' };
+  if (conflicts.length) return kpiBuildOut_({ ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' });
   var now = nowIso();
   var openMode = data.openMode === 'autoReminder' ? 'autoReminder' : 'manual';
   var openAt = (data.openAt === 'schedule' && data.openAtTime) ? new Date(data.openAtTime).toISOString() : now;
@@ -2641,7 +2641,7 @@ function createKpiSession(data) {
   if (session.lineNotify && status === 'open') {
     try { pushToLine(kpiReminderText('student', session, null)); } catch (e) {}
   }
-  return { ok: true, session: session };
+  return kpiBuildOut_({ ok: true, session: session });
 }
 
 function normalizeBulkStudents_(students) {
@@ -2812,13 +2812,13 @@ function updateKpiSessionStatus(data, status) {
   if (!found.sheet) return kpiBuildOut_({ ok: false, error: 'KPI 工作表未建立，請先執行 setupSheet()。' });
   if (status === 'open') {
     var conflicts = kpiTargetConflict(found.object, found.object.sessionId);
-    if (conflicts.length) return { ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' };
+    if (conflicts.length) return kpiBuildOut_({ ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' });
   }
   var fields = { status: status, updatedAt: nowIso() };
   if (status === 'open' && data.closeAtPreset) fields.closeAt = resolveCloseAt(data.closeAtPreset, data.closeAtTime);
   updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, fields);
   clearKpiCaches_();
-  return { ok: true };
+  return kpiBuildOut_({ ok: true });
 }
 
 function extendKpiSession(data) {
@@ -2828,7 +2828,7 @@ function extendKpiSession(data) {
   if (!found) return kpiBuildOut_({ ok: false, error: '找不到此 KPI 回報。' });
   if (!found.sheet) return kpiBuildOut_({ ok: false, error: 'KPI 工作表未建立，請先執行 setupSheet()。' });
   var conflicts = kpiTargetConflict(found.object, found.object.sessionId);
-  if (conflicts.length) return { ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' };
+  if (conflicts.length) return kpiBuildOut_({ ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' });
   var newClose = resolveCloseAt(data.closeAtPreset || 'custom', data.closeAtTime);
   updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, { closeAt: newClose, status: 'open', updatedAt: nowIso() });
   clearKpiCaches_();
@@ -2913,9 +2913,9 @@ function submitWeeklyKpi(data) {
   var found = findKpiSession(data.sessionId);
   if (!found) return kpiBuildOut_({ ok: false, error: '找不到此 KPI 回報。' });
   var session = found.object;
-  if (effectiveSessionStatus(session) !== 'open') return { ok: false, error: '本次 KPI 已截止或尚未開放。' };
+  if (effectiveSessionStatus(session) !== 'open') return kpiBuildOut_({ ok: false, error: '本次 KPI 已截止或尚未開放。' });
   var myGroup = getCachedLatestGroupByName_()[String(studentName).trim()] || '';
-  if (!studentInTarget(session, studentId, studentName, myGroup)) return { ok: false, error: '本次 KPI 不需要你填寫。' };
+  if (!studentInTarget(session, studentId, studentName, myGroup)) return kpiBuildOut_({ ok: false, error: '本次 KPI 不需要你填寫。' });
 
   var sh = getWeeklyKpiReportsSheet();
   var reports = readSheetObjects(sh, WEEKLY_KPI_REPORT_HEADERS);
@@ -2923,7 +2923,7 @@ function submitWeeklyKpi(data) {
     return String(r.sessionId) === String(session.sessionId) &&
       (studentId ? String(r.studentId) === String(studentId) : String(r.studentName).trim() === String(studentName).trim());
   });
-  if (dup.length) return { ok: false, error: '你已完成本次 KPI 回報。' };
+  if (dup.length) return kpiBuildOut_({ ok: false, error: '你已完成本次 KPI 回報。' });
 
   var sc = data.scores || {};
   var keys = ['technicalScore', 'tacticalScore', 'physicalScore', 'mentalScore', 'attitudeScore', 'recoveryScore'];
