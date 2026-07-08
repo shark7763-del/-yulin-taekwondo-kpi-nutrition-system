@@ -33,7 +33,8 @@
     selected: {},
     groupPanel: false,
     studentPanel: false,
-    loaded: false
+    loaded: false,
+    studentOpen: false
   };
 
   function ndate(v) { var d = new Date(v); return isNaN(d.getTime()) ? null : d; }
@@ -398,20 +399,27 @@
     card.style.display = 'none';
     body.innerHTML = '';
     if (!r || r.role !== 'student') {
+      state.studentOpen = false;
       if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
       return;
     }
     try {
       var res = await api({ action: 'getStudentKpiSession' });
       if (!res || !res.ok) {
+        state.studentOpen = false;
         if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
+        if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
         return;
       }
       var open = res.state === 'open';
+      state.studentOpen = open;
       if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(open, open ? res.session : null);
       if (open) renderStudentKpiOpen(body, res.session);
+      if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
     } catch (e) {
+      state.studentOpen = false;
       if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
+      if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
     }
   }
   function renderStudentKpiOpen(body, session) {
@@ -477,7 +485,13 @@
     setTimeout(refreshForRole, 800);
   }
 
-  window.KpiSession = { init: init, refreshCoach: loadCoachData, refreshStudent: renderStudentKpi, refresh: refreshForRole };
+  window.KpiSession = {
+    init: init,
+    refreshCoach: loadCoachData,
+    refreshStudent: renderStudentKpi,
+    refresh: refreshForRole,
+    isStudentOpen: function () { return !!state.studentOpen; }
+  };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();

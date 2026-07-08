@@ -993,7 +993,9 @@ function renderTodayGuide() {
   if (r.role === 'student') {
     const card = $id('studentTodayGuide'), list = $id('studentTodayGuideList');
     if (!card || !list) return;
-    const kpiOpen = (typeof isDailyKpiAvailable === 'function') && isDailyKpiAvailable();
+    const kpiOpen =
+      (window.KpiSession && typeof window.KpiSession.isStudentOpen === 'function' && window.KpiSession.isStudentOpen()) ||
+      ((typeof isDailyKpiAvailable === 'function') && isDailyKpiAvailable());
     list.innerHTML = [
       guideItem('📝', '<b>今天有訓練</b>：填下方「每日基本回報」', 'studentForm'),
       guideItem('🤔', '<b>今天沒出席</b>：把「組別」選未出席，誠實填未出席反思', 'studentForm'),
@@ -1015,6 +1017,7 @@ function renderTodayGuide() {
     card.style.display = '';
   }
 }
+window.renderTodayGuide = renderTodayGuide;
 function setupTodayGuideNav() {
   document.addEventListener('click', e => {
     const it = e.target.closest('.tg-item[data-goto]');
