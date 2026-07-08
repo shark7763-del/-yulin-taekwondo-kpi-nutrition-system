@@ -2,13 +2,27 @@
    11. 教練後台
    ============================================================ */
 
+// 短效記憶體快取：避免每次開分頁／查詢都重抓整張 records 表（GAS /exec 每次呼叫都慢，
+// 又會被 Google 逐一排隊）。opts.force = true 時繞過快取強制重抓；任何一次成功雲端讀取
+// 都會更新快取，故「更新名單／教練後台」強制重抓後，短時間內其他分頁可直接重用。
+let _allRecordsCache = { data: null, ts: 0 };
+const ALL_RECORDS_TTL_MS = 90000; // 90 秒
+function invalidateAllRecordsCache() { _allRecordsCache = { data: null, ts: 0 }; }
+window.invalidateAllRecordsCache = invalidateAllRecordsCache;
+
 // 取得所有紀錄（正式優先，否則本機）
 // opts.strict = true 時：雲端讀取失敗／session 過期不再靜默回傳本機空資料，
 // 而是丟出錯誤，交給呼叫端（教練後台 refreshCoach）顯示提示，避免誤判「全隊未回報」。
+// opts.force = true 時：略過記憶體快取，強制向後端重抓最新資料。
 async function fetchAllRecords(opts) {
   opts = opts || {};
   const url = getWebAppUrl();
   if (!url) return getLocalRecords().map(normalizeCoachRecord);   // 純本機模式才用 localStorage
+
+  // 命中未過期的快取就直接回傳，不再打後端（開分頁最大的加速來源）。
+  if (!opts.force && _allRecordsCache.data && (Date.now() - _allRecordsCache.ts) < ALL_RECORDS_TTL_MS) {
+    return _allRecordsCache.data;
+  }
 
   let res;
   try {
@@ -22,7 +36,11 @@ async function fetchAllRecords(opts) {
     return getLocalRecords().map(normalizeCoachRecord);
   }
 
-  if (res && res.ok && Array.isArray(res.data)) return res.data.map(normalizeCoachRecord);
+  if (res && res.ok && Array.isArray(res.data)) {
+    const mapped = res.data.map(normalizeCoachRecord);
+    _allRecordsCache = { data: mapped, ts: Date.now() };   // 成功才更新快取
+    return mapped;
+  }
 
   console.error('getAllRecords 回傳失敗:', res);
 
@@ -954,7 +972,7 @@ async function refreshCoach() {
   // 雲端讀取失敗／session 過期 → 顯示提示並中止，不再誤判「全隊未回報」
   let all;
   try {
-    all = await fetchAllRecords({ strict: true });
+    all = await fetchAllRecords({ strict: true, force: true });
   } catch (e) {
     toast('⚠️ ' + (e && e.message ? e.message : '讀取資料失敗，請重新登入'));
     return;
@@ -1228,9 +1246,24 @@ function renderSubmitStatus(todays) {
     }
   }
 
+  const submitPct = roster.length ? Math.round((submitted.length / roster.length) * 100) : 0;
   let html = '';
-  html += `<div class="review-row"><span class="review-label">填寫進度</span>` +
-          `<span class="review-value">${submitted.length} / ${roster.length} 人（未填 ${notSubmitted.length} 人）</span></div>`;
+  html += `<div class="submit-progress-card">
+    <div class="submit-progress-head">
+      <div>
+        <span class="review-label">填寫進度</span>
+        <b>${submitted.length} / ${roster.length} 人</b>
+      </div>
+      <strong>${submitPct}%</strong>
+    </div>
+    <div class="submit-progress-bar" aria-label="填寫進度 ${submitPct}%">
+      <span style="width:${submitPct}%"></span>
+    </div>
+    <div class="submit-progress-meta">
+      <span>已填 ${submitted.length} 人</span>
+      <span>未填 ${notSubmitted.length} 人</span>
+    </div>
+  </div>`;
 
   html += `<div class="list-block"><h4>✅ 已填寫（${submitted.length}）</h4><div class="name-list">`;
   if (submitted.length) submitted.forEach(n => html += `<span class="tag tag-green">${n}</span>`);
@@ -2178,7 +2211,8 @@ const LASTPERF_TODAY_STATE = {
   items: [],
   summary: { reported: 0, pending: 0, priority: 0 },
   filter: 'all',
-  selected: ''
+  selected: '',
+  date: ''
 };
 
 function lastPerfRecordName(rec) {
@@ -2190,6 +2224,26 @@ function lastPerfNum(v) {
 }
 function lastPerfScoreValue(rec) {
   return lastPerfNum(rec && (rec.totalScore || rec.score || rec.averageScore || rec.finalReadinessScore));
+}
+function getLastPerfSelectedDate() {
+  const input = $id('lastPerfDate');
+  const date = normDate(input && input.value ? input.value : LASTPERF_TODAY_STATE.date || todayStr());
+  LASTPERF_TODAY_STATE.date = date || todayStr();
+  if (input && !input.value) input.value = LASTPERF_TODAY_STATE.date;
+  return LASTPERF_TODAY_STATE.date;
+}
+function lastPerfDateLabel(date) {
+  const d = normDate(date || todayStr());
+  return d === todayStr() ? '今日' : dateSlash(d);
+}
+function latestRecordForNameDate(records, name, date) {
+  const key = normalizeNameKey(name);
+  const targetDate = normDate(date);
+  const rows = (records || []).filter(r => {
+    return normalizeNameKey(lastPerfRecordName(r) || recordName(r)) === key &&
+      normDate(r.date || r.timestamp || r.createdAt) === targetDate;
+  }).sort((a, b) => String(b.timestamp || b.createdAt || b.updatedAt || b.date || '').localeCompare(String(a.timestamp || a.createdAt || a.updatedAt || a.date || '')));
+  return rows[0] || null;
 }
 function lastPerfHasCoachReply(rec, replies) {
   if (String((rec && (rec.coachReply || rec.coachReplyText || rec.replyText || rec.coachComment || rec.coachPublicNote)) || '').trim()) return true;
@@ -2231,24 +2285,21 @@ function lastPerfHasPriority(rec, history) {
     riskWords.test(reflection) || obviousDrop;
 }
 
-async function loadTodayReportedStudents() {
-  const today = todayStr();
-  const records = await fetchAllRecords();
+async function loadTodayReportedStudents(opts) {
+  const targetDate = getLastPerfSelectedDate();
+  const records = await fetchAllRecords(opts || {});
   const todays = {};
   (records || []).forEach(rec => {
     const name = lastPerfRecordName(rec);
-    if (!name || normDate(rec.date || rec.timestamp || rec.createdAt) !== today) return;
+    if (!name || normDate(rec.date || rec.timestamp || rec.createdAt) !== targetDate) return;
     const prev = todays[name];
     const t = String(rec.timestamp || rec.createdAt || rec.updatedAt || '');
     if (!prev || t >= String(prev.timestamp || prev.createdAt || prev.updatedAt || '')) todays[name] = rec;
   });
-  let remoteReplies = [];
-  const names = Object.keys(todays);
-  if (names.length && getWebAppUrl()) {
-    const packs = await Promise.all(names.map(name => fetchCoachRepliesForStudent(name, today, 5).catch(() => [])));
-    remoteReplies = packs.flat();
-  }
-  const replies = getCoachReplyStore().concat(remoteReplies);
+  // 「待回覆／已回報」標籤改用已抓回的 record（其 coachReply 欄位）＋本機回覆暫存判斷，
+  // 不再為每位今日回報選手各發一個 getCoachReplies 請求（原本的 N+1，是開分頁最大的延遲來源）。
+  // lastPerfHasCoachReply 會優先看 rec.coachReply，教練透過本系統回覆時已寫回該欄位，狀態仍準確。
+  const replies = getCoachReplyStore();
   return buildTodayReportStatus(Object.values(todays), replies, records || []);
 }
 
@@ -2296,11 +2347,12 @@ function renderTodayReportedList(items, filter) {
   const box = $id('todayReportedList');
   if (!box) return;
   const key = filter || LASTPERF_TODAY_STATE.filter || 'all';
+  const label = lastPerfDateLabel(getLastPerfSelectedDate());
   let list = items || LASTPERF_TODAY_STATE.items || [];
   if (key === 'pending') list = list.filter(x => x.pending);
   if (key === 'priority') list = list.filter(x => x.priority);
   if (!list.length) {
-    box.innerHTML = `<div class="hint-box">${key === 'all' ? '今天還沒有選手回報。' : '目前沒有符合此篩選的選手。'}</div>`;
+    box.innerHTML = `<div class="hint-box">${key === 'all' ? `${escapeHtml(label)}還沒有選手回報。` : '目前沒有符合此篩選的選手。'}</div>`;
     return;
   }
   box.innerHTML = list.map(item => {
@@ -2340,21 +2392,24 @@ function selectStudentFromQuickList(studentName) {
   }
 }
 
-async function refreshTodayReportedList() {
+async function refreshTodayReportedList(opts) {
   const panel = $id('lastPerfTodayPanel');
   if (!panel) return;
   const role = (getRole() || {}).role;
   panel.style.display = role === 'coach' ? '' : 'none';
   if (role !== 'coach') return;
+  const selectedDate = getLastPerfSelectedDate();
+  const title = $id('todayReportedTitle');
+  if (title) title.textContent = `${lastPerfDateLabel(selectedDate)}已回報名單`;
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
   const list = $id('todayReportedList');
-  if (list) list.innerHTML = '<div class="hint-box">讀取今日回報名單中...</div>';
+  if (list) list.innerHTML = `<div class="hint-box">讀取${escapeHtml(lastPerfDateLabel(selectedDate))}回報名單中...</div>`;
   try {
-    const data = await loadTodayReportedStudents();
+    const data = await loadTodayReportedStudents(opts || {});
     renderTodayReportSummary(data.summary);
     renderTodayReportedList(data.items, LASTPERF_TODAY_STATE.filter);
   } catch (e) {
-    if (list) list.innerHTML = `<div class="hint-box warn">今日名單讀取失敗，請稍後再試。</div>`;
+    if (list) list.innerHTML = `<div class="hint-box warn">名單讀取失敗，請稍後再試。</div>`;
   }
 }
 
@@ -2451,6 +2506,7 @@ async function saveCoachReplyRemote(row, rec) {
   }
   saveCoachReplyStore(payload);
   if (rec) rec.coachReply = payload.replyText;
+  invalidateAllRecordsCache();  // 回覆已寫回後端，讓下一次名單重整抓到最新的 coachReply
   return ok;
 }
 function getCoachAiStyleText() {
@@ -2713,22 +2769,32 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
 }
 
 async function loadLastPerfPage() {
-  const name = $id('lastPerfName').value;
+  const name = String($id('lastPerfName').value || '').trim();
   if (!name) { toast('請選擇選手'); return; }
   toast('讀取中...');
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') {
     await window.TraitRadar.loadCache();
   }
-  // 同時抓最近一筆與歷史（畫趨勢圖）
-  const [rec, history] = await Promise.all([
-    fetchLastRecord(name),
-    fetchRecentRecords(name, 180)
-  ]);
+  const role = (getRole() || {}).role;
+  const selectedDate = role === 'coach' ? getLastPerfSelectedDate() : '';
+  let rec = null;
+  let history = [];
+  if (role === 'coach' && selectedDate) {
+    const allRecords = await fetchAllRecords();
+    history = (allRecords || [])
+      .filter(r => normalizeNameKey(lastPerfRecordName(r) || recordName(r)) === normalizeNameKey(name))
+      .sort((a, b) => normDate(b.date || b.timestamp).localeCompare(normDate(a.date || a.timestamp)));
+    rec = latestRecordForNameDate(history, name, selectedDate);
+  } else {
+    [rec, history] = await Promise.all([
+      fetchLastRecord(name),
+      fetchRecentRecords(name, 180)
+    ]);
+  }
   const card = $id('lastPerfResultCard');
   const box = $id('lastPerfResult');
   const trendCard = $id('trendCard');
   const trendBox = $id('trendBox');
-  const role = (getRole() || {}).role;
 
   // 七天成長趨勢圖
   if (trendCard && trendBox) {
@@ -2742,7 +2808,9 @@ async function loadLastPerfPage() {
   }
 
   if (!rec) {
-    box.innerHTML = `<div class="hint-box good">這是你的第一筆紀錄，今天開始建立自己的成長軌跡。</div>`;
+    box.innerHTML = role === 'coach' && selectedDate
+      ? `<div class="hint-box">查無 ${escapeHtml(name)} 在 ${escapeHtml(dateSlash(selectedDate))} 的回報紀錄。可切換日期，或確認選手當天是否已送出。</div>`
+      : `<div class="hint-box good">這是你的第一筆紀錄，今天開始建立自己的成長軌跡。</div>`;
     card.style.display = 'block';
     renderCoachPerformanceReplyAssistant(name, null, history || [], 7);
     return;
@@ -3071,4 +3139,3 @@ function renderLastReviewInto(rec, box) {
     });
   }
 }
-

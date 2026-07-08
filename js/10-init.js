@@ -134,6 +134,13 @@ function init() {
       if (typeof applyTodayReportFilter === 'function') applyTodayReportFilter(btn.dataset.lastperfFilter || 'all');
     });
   });
+  { const d = $id('lastPerfDate'); if (d) {
+    d.value = d.value || todayStr();
+    d.addEventListener('change', () => {
+      if (typeof LASTPERF_TODAY_STATE !== 'undefined') LASTPERF_TODAY_STATE.selected = '';
+      if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
+    });
+  } }
 
   ['schoolLevel', 'grade', 'classCode'].forEach(id => {
     const el = $id(id);
@@ -141,7 +148,8 @@ function init() {
   });
   { const pa = $id('painArea'); if (pa) pa.addEventListener('change', syncPainAreaField); }
   { const b = $id('btnRefreshTodayReported'); if (b) b.addEventListener('click', () => {
-    if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
+    // 使用者按「更新名單」＝要最新資料，強制略過快取重抓
+    if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList({ force: true });
   }); }
 
   // 教練後台
