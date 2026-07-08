@@ -15,6 +15,13 @@
     if (typeof postToWebApp !== 'function') throw new Error('postToWebApp 未就緒');
     return postToWebApp(body);
   }
+  function withTimeout(promise, ms, label) {
+    var timer;
+    var timeout = new Promise(function (_, reject) {
+      timer = setTimeout(function () { reject(new Error((label || '讀取') + '逾時，請重新整理或重新登入後再試。')); }, ms || 20000);
+    });
+    return Promise.race([promise, timeout]).finally(function () { clearTimeout(timer); });
+  }
 
   var WK_DIMS = [
     { key: 'technicalScore', label: '技術', icon: '🎯' },
@@ -134,10 +141,10 @@
     if (!r || r.role !== 'coach') { box.innerHTML = '<div class="hint-box">此區僅教練可操作。</div>'; return; }
     if (!state.loaded) box.innerHTML = '<div class="hint-box">讀取中...</div>';
     try {
-      var data = await Promise.all([
+      var data = await withTimeout(Promise.all([
         api({ action: 'getKpiSessions' }),
         api({ action: 'getAccountAdminData' })
-      ]);
+      ]), 20000, 'KPI 管理資料讀取');
       var sessRes = data[0], accRes = data[1];
       if (!sessRes || !sessRes.ok) throw new Error((sessRes && sessRes.error) || 'KPI 任務讀取失敗');
       if (!accRes || !accRes.ok) throw new Error((accRes && accRes.error) || '選手名單讀取失敗');
@@ -149,7 +156,12 @@
       state.loaded = true;
       renderCoachKpiManage();
     } catch (e) {
-      box.innerHTML = '<div class="hint-box warn">' + esc(e.message || '讀取失敗，請確認連線。') + '</div>';
+      box.innerHTML = '<div class="hint-box warn">' + esc(e.message || '讀取失敗，請確認連線。') + '</div>' +
+        '<button type="button" class="btn btn-secondary" data-kpi-retry-load>重新讀取</button>';
+      box.querySelector('[data-kpi-retry-load]')?.addEventListener('click', function () {
+        state.loaded = false;
+        loadCoachData();
+      });
     }
   }
 
