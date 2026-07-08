@@ -144,7 +144,7 @@
       var data = await withTimeout(Promise.all([
         api({ action: 'getKpiSessions' }),
         api({ action: 'getAccountAdminData' })
-      ]), 20000, 'KPI 管理資料讀取');
+      ]), 45000, 'KPI 管理資料讀取');
       var sessRes = data[0], accRes = data[1];
       if (!sessRes || !sessRes.ok) throw new Error((sessRes && sessRes.error) || 'KPI 任務讀取失敗');
       if (!accRes || !accRes.ok) throw new Error((accRes && accRes.error) || '選手名單讀取失敗');

@@ -2232,6 +2232,42 @@ function kpiSessionStats(session) {
   };
 }
 
+function kpiSessionStatsFromData_(session, reports, accounts, groupMap) {
+  var sessionReports = (reports || []).filter(function (r) { return String(r.sessionId) === String(session.sessionId); });
+  var targetAccounts = (accounts || []).slice();
+  if (!session.targetStudentIds) targetAccounts = targetAccounts.filter(function (a) { return a.accountStatus !== 'disabled'; });
+  var targets = targetAccounts.filter(function (a) {
+    return studentInTarget(session, a.studentId, a.studentName, (groupMap || {})[String(a.studentName).trim()] || '');
+  });
+  var doneById = {}, doneNames = {};
+  sessionReports.forEach(function (r) {
+    if (r.studentId) doneById[String(r.studentId)] = r;
+    doneNames[String(r.studentName).trim()] = r;
+  });
+  var done = [], pending = [], red = 0, yellow = 0, green = 0, sum = 0, cnt = 0;
+  targets.forEach(function (a) {
+    var rep = doneById[String(a.studentId)] || doneNames[String(a.studentName).trim()];
+    if (rep) {
+      done.push(a.studentName);
+      var avg = parseFloat(rep.averageScore); if (!isNaN(avg)) { sum += avg; cnt++; }
+      var rl = String(rep.riskLevel || '');
+      if (rl.indexOf('紅') !== -1 || rl === 'red') red++;
+      else if (rl.indexOf('黃') !== -1 || rl === 'yellow') yellow++;
+      else if (rl.indexOf('綠') !== -1 || rl === 'green') green++;
+    } else {
+      pending.push(a.studentName);
+    }
+  });
+  var total = targets.length;
+  return {
+    total: total, doneCount: done.length, pendingCount: pending.length,
+    completionRate: total ? Math.round((done.length / total) * 100) : 0,
+    avgScore: cnt ? Math.round((sum / cnt) * 10) / 10 : null,
+    red: red, yellow: yellow, green: green,
+    doneNames: done, pendingNames: pending, reports: sessionReports
+  };
+}
+
 // 教練：手動開啟 KPI（建立 session）
 function createKpiSession(data) {
   var auth = requireRole(data, ['coach']);
@@ -2395,9 +2431,12 @@ function getKpiSessions(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
   ensureFridayWeeklyKpiSession_();
+  var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS);
+  var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS);
+  var groupMap = latestGroupByName();
   var sessions = listKpiSessions().map(function (s) {
     s.effectiveStatus = effectiveSessionStatus(s);
-    s.stats = kpiSessionStats(s);
+    s.stats = kpiSessionStatsFromData_(s, reports, accounts, groupMap);
     return s;
   }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
   return { ok: true, data: sessions };
