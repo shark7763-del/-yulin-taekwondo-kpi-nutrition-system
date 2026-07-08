@@ -2094,7 +2094,13 @@ function effectiveSessionStatus(s) {
 // 學生是否在此 session 對象內
 function studentInTarget(session, studentId, studentName, group) {
   var ids = String(session.targetStudentIds || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
-  if (ids.length) return ids.indexOf(studentId) !== -1 || ids.indexOf(studentName) !== -1;
+  if (ids.length) {
+    var sid = String(studentId || '').trim();
+    var sname = String(studentName || '').trim();
+    if (ids.indexOf(sid) !== -1 || ids.indexOf(sname) !== -1) return true;
+    var acc = sname ? findStudentAccountByName(sname) : null;
+    return !!(acc && ids.indexOf(String(acc.studentId || '').trim()) !== -1);
+  }
   var tg = String(session.targetGroup || '全隊');
   if (!tg || tg === '全隊' || tg === 'all') return true;
   return String(group || '').indexOf(tg) !== -1;
@@ -2412,7 +2418,12 @@ function getStudentKpiSession(data) {
   var who = authorizedStudentName(data, false);
   if (!who.ok) return who;
   ensureFridayWeeklyKpiSession_();
-  var studentName = who.name, studentId = who.studentId || '';
+  var studentName = who.name || normalizeName(data.studentName || data.name);
+  var studentId = who.studentId || data.studentId || '';
+  if (!studentId && studentName) {
+    var acc = findStudentAccountByName(studentName);
+    if (acc && acc.studentId) studentId = acc.studentId;
+  }
   var myGroup = latestGroupByName()[String(studentName).trim()] || '';
   var sessions = listKpiSessions();
   var currentWeek = isoWeekId(new Date());

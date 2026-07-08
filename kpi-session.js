@@ -404,7 +404,11 @@
       return;
     }
     try {
-      var res = await api({ action: 'getStudentKpiSession' });
+      var res = await api({
+        action: 'getStudentKpiSession',
+        studentName: r.name || '',
+        studentId: r.studentId || ''
+      });
       if (!res || !res.ok) {
         state.studentOpen = false;
         if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
