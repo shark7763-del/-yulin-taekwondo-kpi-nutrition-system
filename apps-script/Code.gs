@@ -304,6 +304,8 @@ function handleAction(action, data) {
       return jsonOut(extendKpiSession(data));
     case 'reopenKpiSession':      // 重新開放補填
       return jsonOut(updateKpiSessionStatus(data, 'open'));
+    case 'getKpiManageData':      // 教練：KPI 管理輕量資料
+      return jsonOut(getKpiManageData(data));
     case 'getKpiSessions':        // 教練：所有 session（含完成率統計）
       return jsonOut(getKpiSessions(data));
     case 'getKpiSessionDetail':   // 教練：單一 session 完成率表格
@@ -1552,6 +1554,7 @@ function setRoster(players, data) {
   if (players.length) {
     sh.getRange(2, 1, players.length, 1).setValues(players.map(function (n) { return [String(n)]; }));
   }
+  clearKpiCaches_();
   return { ok: true, count: players.length };
 }
 
@@ -1667,6 +1670,7 @@ function studentAccountAction(data) {
     return { ok: false, error: '未知的帳號操作。' };
   }
   updateObjectRow(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS, found.row, fields);
+  clearKpiCaches_();
   return { ok: true, activationCode: activationCode, expiresAt: fields.activationCodeExpiresAt || '' };
 }
 
@@ -1990,8 +1994,12 @@ function appendKpiSession_(session) {
   session.createdAt = session.createdAt || now;
   session.updatedAt = session.updatedAt || now;
   var sh = getKpiSessionsSheet();
-  sh.appendRow(KPI_SESSION_HEADERS.map(function (h) { return session[h] == null ? '' : session[h]; }));
+  sh.appendRow(buildKpiSessionRow_(session));
   return session;
+}
+
+function buildKpiSessionRow_(session) {
+  return KPI_SESSION_HEADERS.map(function (h) { return session[h] == null ? '' : session[h]; });
 }
 
 function ensureFridayWeeklyKpiSession_() {
@@ -2009,7 +2017,7 @@ function ensureFridayWeeklyKpiSession_() {
   if (autoWasClosed) return null;
   var accounts = activeStudentAccounts();
   if (!accounts.length) return null;
-  return appendKpiSession_({
+  var created = appendKpiSession_({
     sessionName: '本週 KPI 回報',
     sessionType: 'weekly',
     weekId: currentWeek,
@@ -2020,6 +2028,8 @@ function ensureFridayWeeklyKpiSession_() {
     status: 'open',
     createdBy: 'system'
   });
+  if (created) clearKpiCaches_();
+  return created;
 }
 
 function normalizeReadinessLight_(value) {
@@ -2268,6 +2278,86 @@ function kpiSessionStatsFromData_(session, reports, accounts, groupMap) {
   };
 }
 
+var KPI_STUDENT_CACHE_KEY = 'teampro_kpi_students_cache_v1';
+var KPI_SESSION_CACHE_KEY = 'teampro_kpi_sessions_cache_v1';
+var KPI_MANAGE_CACHE_KEY = 'teampro_kpi_manage_data_v1';
+var KPI_REQUEST_CACHE_PREFIX = 'teampro_kpi_request_';
+
+function kpiCache_() { return CacheService.getScriptCache(); }
+function readKpiCache_(key) {
+  var raw = kpiCache_().get(key);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+function writeKpiCache_(key, value, ttlSeconds) {
+  try { kpiCache_().put(key, JSON.stringify(value), Math.max(1, Math.min(ttlSeconds || 60, 21600))); } catch (e) {}
+}
+function clearKpiCaches_() {
+  try { kpiCache_().remove(KPI_STUDENT_CACHE_KEY); } catch (e) {}
+  try { kpiCache_().remove(KPI_SESSION_CACHE_KEY); } catch (e) {}
+  try { kpiCache_().remove(KPI_MANAGE_CACHE_KEY); } catch (e) {}
+}
+function clearKpiRequestCache_(requestId) {
+  if (!requestId) return;
+  try { kpiCache_().remove(KPI_REQUEST_CACHE_PREFIX + String(requestId)); } catch (e) {}
+}
+function loadKpiStudentsLight_(groupMap) {
+  syncStudentAccountsFromRoster();
+  groupMap = groupMap || latestGroupByName();
+  return readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS).map(function (r) {
+    return {
+      studentId: r.studentId,
+      studentName: r.studentName,
+      group: groupMap[String(r.studentName || '').trim()] || '',
+      accountStatus: r.accountStatus
+    };
+  }).filter(function (s) { return s.studentId && s.studentName && s.accountStatus !== 'disabled'; })
+    .sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
+}
+function loadKpiSessionsLight_(groupMap) {
+  ensureFridayWeeklyKpiSession_();
+  var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS);
+  var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS);
+  groupMap = groupMap || latestGroupByName();
+  return listKpiSessions().map(function (s) {
+    s.effectiveStatus = effectiveSessionStatus(s);
+    s.stats = kpiSessionStatsFromData_(s, reports, accounts, groupMap);
+    return s;
+  }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+}
+function getCachedOrFreshKpiStudents_(forceFresh, groupMap) {
+  var cached = readKpiCache_(KPI_STUDENT_CACHE_KEY);
+  if (!forceFresh && cached && cached.updatedAt && (Date.now() - Number(cached.updatedAt) < 5 * 60 * 1000) && Array.isArray(cached.data)) return cached;
+  var data = loadKpiStudentsLight_(groupMap);
+  var out = { updatedAt: Date.now(), data: data };
+  writeKpiCache_(KPI_STUDENT_CACHE_KEY, out, 300);
+  return out;
+}
+function getCachedOrFreshKpiSessions_(forceFresh, groupMap) {
+  var cached = readKpiCache_(KPI_SESSION_CACHE_KEY);
+  if (!forceFresh && cached && cached.updatedAt && (Date.now() - Number(cached.updatedAt) < 60 * 1000) && Array.isArray(cached.data)) return cached;
+  var data = loadKpiSessionsLight_(groupMap);
+  var out = { updatedAt: Date.now(), data: data };
+  writeKpiCache_(KPI_SESSION_CACHE_KEY, out, 60);
+  return out;
+}
+function getKpiManageData(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  ensureFridayWeeklyKpiSession_();
+  var groupMap = latestGroupByName();
+  var sessions = getCachedOrFreshKpiSessions_(false, groupMap);
+  var students = getCachedOrFreshKpiStudents_(false, groupMap);
+  writeKpiCache_(KPI_MANAGE_CACHE_KEY, {
+    updatedAt: Date.now(),
+    sessions: sessions.data || [],
+    students: students.data || [],
+    serverTime: nowIso(),
+    weekKey: isoWeekId(new Date())
+  }, 60);
+  return { ok: true, sessions: sessions.data || [], students: students.data || [], serverTime: nowIso(), weekKey: isoWeekId(new Date()) };
+}
+
 // 教練：手動開啟 KPI（建立 session）
 function createKpiSession(data) {
   var auth = requireRole(data, ['coach']);
@@ -2303,6 +2393,7 @@ function createKpiSession(data) {
     updatedAt: now
   };
   appendKpiSession_(session);
+  clearKpiCaches_();
   // 可選：開啟即發 LINE 學生版提醒
   if (session.lineNotify && status === 'open') {
     try { pushToLine(kpiReminderText('student', session, null)); } catch (e) {}
@@ -2332,70 +2423,107 @@ function normalizeBulkStudents_(students) {
 function bulkSetKpiSession(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
-  var weekKey = String(data.weekKey || data.weekId || isoWeekId(new Date()));
-  var enabled = data.enabled === true || String(data.enabled).toLowerCase() === 'true';
-  var dueAt = data.dueAt || thisWeekSunday2359Iso_();
-  var students = normalizeBulkStudents_(data.students);
-  var sessions = listKpiSessions();
-  if (!enabled && (data.closeAll === true || String(data.closeAll).toLowerCase() === 'true')) {
-    var closeTargets = sessions.filter(function (s) {
-      if (String(s.weekId || '') !== weekKey) return false;
-      var es = effectiveSessionStatus(s);
-      return es === 'open' || es === 'scheduled';
-    });
-    closeTargets.forEach(function (s) {
-      var found = findKpiSession(s.sessionId);
-      if (found && found.sheet) updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, { status: 'closed', updatedAt: nowIso() });
-    });
-    var closeStudents = students.length ? students : activeStudentAccounts();
-    return {
-      ok: true,
-      closedCount: closeTargets.length,
-      results: closeStudents.map(function (stu) {
-        return { studentName: stu.studentName, studentId: stu.studentId, ok: true };
-      })
-    };
+  var requestId = String(data.requestId || '').trim();
+  if (requestId) {
+    var cached = readKpiCache_(KPI_REQUEST_CACHE_PREFIX + requestId);
+    if (cached && cached.result) return cached.result;
   }
-  if (!students.length) return { ok: false, results: [], error: '沒有可操作的選手' };
-  var results = [];
-  students.forEach(function (stu) {
-    try {
-      var mine = sessions.filter(function (s) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    return { ok: false, code: 'KPI_TIMEOUT_OR_LOCKED', error: 'KPI 任務正在同步，請稍後重新確認。', retryable: true };
+  }
+  try {
+    var weekKey = String(data.weekKey || data.weekId || isoWeekId(new Date()));
+    var enabled = data.enabled === true || String(data.enabled).toLowerCase() === 'true';
+    var dueAt = data.dueAt || thisWeekSunday2359Iso_();
+    var students = normalizeBulkStudents_(data.students);
+    var sh = getKpiSessionsSheet();
+    var values = sh.getDataRange().getValues();
+    if (!values.length) values = [KPI_SESSION_HEADERS.slice()];
+    var rows = values.slice(1);
+    var existing = rows.map(function (row, idx) {
+      var obj = rowToObject(KPI_SESSION_HEADERS, row);
+      obj.__rowIndex = idx;
+      return obj;
+    });
+    var groupMap = latestGroupByName();
+    var now = nowIso();
+
+    if (!enabled && (data.closeAll === true || String(data.closeAll).toLowerCase() === 'true')) {
+      var closeTargets = existing.filter(function (s) {
         if (String(s.weekId || '') !== weekKey) return false;
-        if (effectiveSessionStatus(s) !== 'open' && effectiveSessionStatus(s) !== 'scheduled') return false;
-        return studentInTarget(s, String(stu.studentId), String(stu.studentName || '').trim(), stu.group || '');
+        var es = effectiveSessionStatus(s);
+        return es === 'open' || es === 'scheduled';
       });
-      if (enabled) {
-        if (!mine.length) {
-          var created = createKpiSession({
-            authToken: data.authToken,
-            sessionName: data.sessionName || '本週 KPI 回報－' + stu.studentName,
+      closeTargets.forEach(function (s) {
+        s.status = 'closed';
+        s.updatedAt = now;
+        rows[s.__rowIndex] = buildKpiSessionRow_(s);
+      });
+      if (rows.length) sh.getRange(2, 1, rows.length, KPI_SESSION_HEADERS.length).setValues(rows);
+      var closeStudents = students.length ? students : activeStudentAccounts();
+      var closeResult = {
+        ok: true,
+        closedCount: closeTargets.length,
+        results: closeStudents.map(function (stu) {
+          return { studentName: stu.studentName, studentId: stu.studentId, ok: true };
+        })
+      };
+      clearKpiCaches_();
+      if (requestId) writeKpiCache_(KPI_REQUEST_CACHE_PREFIX + requestId, { result: closeResult }, 120);
+      return closeResult;
+    }
+
+    if (!students.length) return { ok: false, results: [], error: '沒有可操作的選手' };
+    var results = [];
+    students.forEach(function (stu) {
+      try {
+        var mine = existing.filter(function (s) {
+          if (String(s.weekId || '') !== weekKey) return false;
+          if (effectiveSessionStatus(s) !== 'open' && effectiveSessionStatus(s) !== 'scheduled') return false;
+          return studentInTarget(s, String(stu.studentId), String(stu.studentName || '').trim(), groupMap[String(stu.studentName || '').trim()] || '');
+        });
+        if (enabled && !mine.length) {
+          var newSession = {
+            sessionId: 'kpi_' + Date.now() + '_' + Math.floor(Math.random() * 100000),
+            sessionName: String(data.sessionName || '本週 KPI 回報－' + stu.studentName).trim(),
             sessionType: 'weekly',
             weekId: weekKey,
+            openMode: 'manual',
             targetGroup: '指定選手',
-            targetStudentIds: [stu.studentId],
-            closeAtPreset: 'custom',
-            closeAtTime: dueAt,
+            targetStudentIds: String(stu.studentId || ''),
+            openAt: now,
+            closeAt: dueAt,
+            status: 'open',
             includeInWeeklyReport: true,
             includeInMonthlyReport: true,
-            lineNotify: false
+            lineNotify: false,
+            createdBy: 'coach',
+            createdAt: now,
+            updatedAt: now
+          };
+          existing.push(Object.assign({}, newSession, { __rowIndex: rows.length }));
+          rows.push(buildKpiSessionRow_(newSession));
+        } else if (!enabled) {
+          mine.forEach(function (s) {
+            s.status = 'closed';
+            s.updatedAt = now;
+            rows[s.__rowIndex] = buildKpiSessionRow_(s);
           });
-          if (!created.ok) throw new Error(created.error || '開放失敗');
-          sessions.push(created.session);
         }
-      } else {
-        mine.forEach(function (s) {
-          var found = findKpiSession(s.sessionId);
-          if (found && found.sheet) updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, { status: 'closed', updatedAt: nowIso() });
-        });
+        results.push({ studentName: stu.studentName, studentId: stu.studentId, ok: true });
+      } catch (e) {
+        results.push({ studentName: stu.studentName, studentId: stu.studentId, ok: false, error: String(e.message || e) });
       }
-      results.push({ studentName: stu.studentName, studentId: stu.studentId, ok: true });
-    } catch (e) {
-      results.push({ studentName: stu.studentName, studentId: stu.studentId, ok: false, error: String(e.message || e) });
-    }
-  });
-  var allOk = results.every(function (r) { return r.ok; });
-  return { ok: allOk, results: results };
+    });
+    if (rows.length) sh.getRange(2, 1, rows.length, KPI_SESSION_HEADERS.length).setValues(rows);
+    var out = { ok: results.every(function (r) { return r.ok; }), results: results };
+    clearKpiCaches_();
+    if (requestId) writeKpiCache_(KPI_REQUEST_CACHE_PREFIX + requestId, { result: out }, 120);
+    return out;
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
 
 function updateKpiSessionStatus(data, status) {
@@ -2411,6 +2539,7 @@ function updateKpiSessionStatus(data, status) {
   var fields = { status: status, updatedAt: nowIso() };
   if (status === 'open' && data.closeAtPreset) fields.closeAt = resolveCloseAt(data.closeAtPreset, data.closeAtTime);
   updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, fields);
+  clearKpiCaches_();
   return { ok: true };
 }
 
@@ -2424,6 +2553,7 @@ function extendKpiSession(data) {
   if (conflicts.length) return { ok: false, error: '部分選手已有進行中的 KPI：' + conflicts.join('、') + '。請先關閉原回報。' };
   var newClose = resolveCloseAt(data.closeAtPreset || 'custom', data.closeAtTime);
   updateObjectRow(found.sheet, KPI_SESSION_HEADERS, found.row, { closeAt: newClose, status: 'open', updatedAt: nowIso() });
+  clearKpiCaches_();
   return { ok: true, closeAt: newClose };
 }
 
@@ -2431,15 +2561,8 @@ function getKpiSessions(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
   ensureFridayWeeklyKpiSession_();
-  var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS);
-  var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS);
-  var groupMap = latestGroupByName();
-  var sessions = listKpiSessions().map(function (s) {
-    s.effectiveStatus = effectiveSessionStatus(s);
-    s.stats = kpiSessionStatsFromData_(s, reports, accounts, groupMap);
-    return s;
-  }).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
-  return { ok: true, data: sessions };
+  var cached = getCachedOrFreshKpiSessions_(false, latestGroupByName());
+  return { ok: true, data: cached.data || [] };
 }
 
 function getKpiSessionDetail(data) {

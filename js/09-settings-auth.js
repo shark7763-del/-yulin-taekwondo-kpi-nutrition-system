@@ -351,6 +351,14 @@ async function postToWebApp(body) {
   return parsed;
 }
 
+function dispatchRoleChanged() {
+  try {
+    window.dispatchEvent(new CustomEvent('teampro:role-changed'));
+  } catch (e) {
+    try { window.dispatchEvent(new Event('teampro:role-changed')); } catch (err) {}
+  }
+}
+
 // 全域 session 過期處理（同一波只提示一次，避免多個請求同時洗版）
 let _sessionExpiredShown = false;
 function notifySessionExpired() {
@@ -804,9 +812,7 @@ function applyRole() {
   } else if (r.role === 'student' && traitTab) {
     switchTab('trait');
   }
-  if (window.KpiSession && window.KpiSession.refresh) {
-    setTimeout(() => window.KpiSession.refresh(), 0);
-  }
+  dispatchRoleChanged();
 
   // 今日我該做什麼（選手／家長導引卡）
   renderTodayGuide();
@@ -850,6 +856,7 @@ function setupRoleHandlers() {
     $id('roleBadge').style.display = 'none';
     $id('btnSwitchRole').style.display = 'none';
     showLoginOverlay();
+    dispatchRoleChanged();
   });
 }
 

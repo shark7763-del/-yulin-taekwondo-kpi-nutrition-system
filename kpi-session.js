@@ -7,6 +7,9 @@
 (function () {
   'use strict';
 
+  if (window.__TEAMPRO_KPI_INITIALIZED__) return;
+  window.__TEAMPRO_KPI_INITIALIZED__ = true;
+
   function el(id) { return document.getElementById(id); }
   function esc(s) { return (typeof escapeHtml === 'function') ? escapeHtml(s) : String(s == null ? '' : s); }
   function notify(m) { if (typeof toast === 'function') toast(m); }
@@ -22,6 +25,24 @@
     });
     return Promise.race([promise, timeout]).finally(function () { clearTimeout(timer); });
   }
+  function cacheRead(key) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) { return null; }
+  }
+  function cacheWrite(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+  }
+  function cacheFresh(entry, ttlMs) {
+    return !!(entry && entry.updatedAt && (Date.now() - Number(entry.updatedAt) <= ttlMs));
+  }
+  function makeRequestId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return 'req_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+  }
+  function currentWeekKey() { return weekKey(); }
 
   var WK_DIMS = [
     { key: 'technicalScore', label: '技術', icon: '🎯' },
@@ -41,8 +62,31 @@
     groupPanel: false,
     studentPanel: false,
     loaded: false,
-    studentOpen: false
+    studentOpen: false,
+    loadingCoach: false,
+    coachNotice: '',
+    coachNoticeType: '',
+    coachNoticeAction: '',
+    bulkBusy: false,
+    activeRequestId: '',
+    cachedCoachAt: 0,
+    cachedStudentsAt: 0,
+    cachedSessionsAt: 0,
+    studentRetryUsed: false
   };
+
+  var COACH_STUDENT_CACHE_KEY = 'teampro_kpi_students_cache_v1';
+  var COACH_SESSION_CACHE_KEY = 'teampro_kpi_sessions_cache_v1';
+  var STUDENT_STATE_PREFIX = 'teampro_student_kpi_state_';
+  var COACH_CACHE_TTL = 5 * 60 * 1000;
+  var COACH_SESSION_BG_TTL = 60 * 1000;
+  var STUDENT_CACHE_TTL = 5 * 60 * 1000;
+  var COACH_LOAD_TIMEOUT = 10000;
+  var STUDENT_LOAD_TIMEOUT = 9000;
+  var BULK_CONFIRM_DELAY = 800;
+  var _coachBgTimer = null;
+  var _studentRetryTimer = null;
+  var _initBound = false;
 
   function ndate(v) { var d = new Date(v); return isNaN(d.getTime()) ? null : d; }
   function pad(n) { return ('0' + n).slice(-2); }
@@ -134,34 +178,107 @@
     return base.filter(function (g, i, arr) { return g && arr.indexOf(g) === i; });
   }
 
-  async function loadCoachData() {
+  function coachSnapshotFromState() {
+    return {
+      sessions: state.sessions || [],
+      students: state.students || [],
+      updatedAt: Date.now()
+    };
+  }
+  function readCoachCache() {
+    var students = cacheRead(COACH_STUDENT_CACHE_KEY);
+    var sessions = cacheRead(COACH_SESSION_CACHE_KEY);
+    return { students: students, sessions: sessions };
+  }
+  function writeCoachCache(snap) {
+    if (!snap) return;
+    cacheWrite(COACH_STUDENT_CACHE_KEY, { updatedAt: Date.now(), data: snap.students || [] });
+    cacheWrite(COACH_SESSION_CACHE_KEY, { updatedAt: Date.now(), data: snap.sessions || [] });
+    state.cachedCoachAt = Date.now();
+    state.cachedStudentsAt = Date.now();
+    state.cachedSessionsAt = Date.now();
+  }
+  function applyCoachData(sessions, students, fromCache) {
+    state.sessions = Array.isArray(sessions) ? sessions : [];
+    state.students = (Array.isArray(students) ? students : []).filter(function (s) {
+      return s && s.studentId && s.studentName && s.accountStatus !== 'disabled';
+    }).sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
+    rebuildEnabledFromSessions();
+    state.loaded = true;
+    state.coachNotice = fromCache ? '已顯示最近資料，正在背景確認最新狀態…' : '';
+    state.coachNoticeType = fromCache ? 'info' : '';
+    state.coachNoticeAction = fromCache ? 'background' : '';
+    renderCoachKpiManage();
+  }
+  function showCoachMessage(type, message, action) {
+    state.coachNoticeType = type || '';
+    state.coachNotice = message || '';
+    state.coachNoticeAction = action || '';
+  }
+  function coachNetworkBody() {
+    return { action: 'getKpiManageData' };
+  }
+  function scheduleCoachSessionsRefresh(delayMs) {
+    if (_coachBgTimer) clearTimeout(_coachBgTimer);
+    _coachBgTimer = setTimeout(function () {
+      _coachBgTimer = null;
+      refreshCoachSessionsBackground();
+    }, Math.max(250, delayMs || BULK_CONFIRM_DELAY));
+  }
+  async function refreshCoachSessionsBackground() {
+    var r = role();
+    if (!r || r.role !== 'coach') return;
+    try {
+      var res = await withTimeout(api({ action: 'getKpiSessions' }), COACH_LOAD_TIMEOUT, 'KPI 進度同步');
+      if (res && res.ok) {
+        state.sessions = res.data || state.sessions;
+        cacheWrite(COACH_SESSION_CACHE_KEY, { updatedAt: Date.now(), data: state.sessions || [] });
+        rebuildEnabledFromSessions();
+        state.loaded = true;
+        showCoachMessage('ok', '✅ 本週 KPI 已成功開放', '');
+        renderCoachKpiManage();
+      }
+    } catch (e) {}
+  }
+  async function loadCoachData(opts) {
     var box = el('coachKpiManage');
     if (!box) return;
     var r = role();
     if (!r || r.role !== 'coach') { box.innerHTML = '<div class="hint-box">此區僅教練可操作。</div>'; return; }
-    if (!state.loaded) box.innerHTML = '<div class="hint-box">讀取中...</div>';
+    opts = opts || {};
+    var cached = readCoachCache();
+    var studentsCached = cacheFresh(cached.students, COACH_CACHE_TTL) ? cached.students : null;
+    var sessionsCached = cacheFresh(cached.sessions, COACH_SESSION_BG_TTL) ? cached.sessions : null;
+    if (studentsCached || sessionsCached) {
+      applyCoachData((sessionsCached && sessionsCached.data) || state.sessions, (studentsCached && studentsCached.data) || state.students, true);
+    } else if (!state.loaded) {
+      box.innerHTML = '<div class="hint-box">正在讀取本週 KPI 狀態…</div>';
+    }
     try {
-      var data = await withTimeout(Promise.all([
-        api({ action: 'getKpiSessions' }),
-        api({ action: 'getAccountAdminData' })
-      ]), 45000, 'KPI 管理資料讀取');
-      var sessRes = data[0], accRes = data[1];
-      if (!sessRes || !sessRes.ok) throw new Error((sessRes && sessRes.error) || 'KPI 任務讀取失敗');
-      if (!accRes || !accRes.ok) throw new Error((accRes && accRes.error) || '選手名單讀取失敗');
-      state.sessions = sessRes.data || [];
-      state.students = ((accRes.data && accRes.data.students) || []).filter(function (s) {
-        return s.studentId && s.studentName && s.accountStatus !== 'disabled';
-      }).sort(function (a, b) { return String(a.studentName).localeCompare(String(b.studentName), 'zh-Hant'); });
-      rebuildEnabledFromSessions();
-      state.loaded = true;
+      state.loadingCoach = true;
+      var data = await withTimeout(api(coachNetworkBody()), COACH_LOAD_TIMEOUT, 'KPI 管理資料讀取');
+      if (!data || !data.ok) throw new Error((data && data.error) || 'KPI 管理資料讀取失敗');
+      var sessions = data.sessions || [];
+      var students = data.students || [];
+      applyCoachData(sessions, students, false);
+      writeCoachCache({ sessions: sessions, students: students });
+      showCoachMessage('ok', '✅ KPI 管理資料已同步', '');
+      state.loadingCoach = false;
       renderCoachKpiManage();
+      if (opts.backgroundRefresh !== false) scheduleCoachSessionsRefresh(BULK_CONFIRM_DELAY);
     } catch (e) {
-      box.innerHTML = '<div class="hint-box warn">' + esc(e.message || '讀取失敗，請確認連線。') + '</div>' +
-        '<button type="button" class="btn btn-secondary" data-kpi-retry-load>重新讀取</button>';
-      box.querySelector('[data-kpi-retry-load]')?.addEventListener('click', function () {
-        state.loaded = false;
-        loadCoachData();
-      });
+      state.loadingCoach = false;
+      if (!state.loaded) {
+        box.innerHTML = '<div class="hint-box warn">' + esc(e.message || '讀取失敗，請確認連線。') + '</div>' +
+          '<button type="button" class="btn btn-secondary" data-kpi-retry-load>重新讀取</button>';
+        box.querySelector('[data-kpi-retry-load]')?.addEventListener('click', function () {
+          state.loaded = false;
+          loadCoachData();
+        });
+      } else {
+        showCoachMessage('warn', '目前連線不穩，已保留最近資料。請稍後重新確認。', 'retry');
+        renderCoachKpiManage();
+      }
     }
   }
 
@@ -179,8 +296,19 @@
     var pending = pendingStudents();
     var activeSessions = currentWeekSessions().filter(effectiveOpen);
     var due = activeSessions.map(function (s) { return s.closeAt; }).filter(Boolean).sort()[0] || dueSunday2359();
+    var openAllLabel = state.bulkBusy ? '⏳ 同步中…' : '✅ 開放全隊本週 KPI';
+    var groupLabel = state.bulkBusy ? '⏳ 同步中…' : '🏷️ 開放指定組別';
+    var studentLabel = state.bulkBusy ? '⏳ 同步中…' : '➕ 指定選手補填';
+    var closeLabel = state.bulkBusy ? '⏳ 同步中…' : '⏹ 關閉本週 KPI';
+    var banner = state.coachNotice
+      ? '<div class="hint-box ' + (state.coachNoticeType === 'warn' ? 'warn' : state.coachNoticeType === 'ok' ? 'good' : '') + '">' +
+          esc(state.coachNotice) +
+          (state.coachNoticeAction === 'retry' ? '<div style="margin-top:10px"><button type="button" class="btn btn-secondary" data-kpi-retry-load>重新確認</button></div>' : '') +
+        '</div>'
+      : '';
 
     box.innerHTML =
+      banner +
       '<div class="kpi-task-card">' +
         '<h3 class="card-title">📋 KPI 回報管理</h3>' +
         '<p class="review-label">每日基本回報每天開放；30 項完整 KPI 每週五自動開放，截止時間為週日 23:59；比賽日、訓練週期調整或狀態異常時，教練也可以手動加開。</p>' +
@@ -194,10 +322,10 @@
           '<div><b>' + enabled.length + '</b><span>已開放</span></div>' +
         '</div>' +
         '<div class="kpi-task-actions">' +
-          '<button type="button" class="btn btn-primary" data-kpi-open-all>✅ 開放全隊本週 KPI</button>' +
-          '<button type="button" class="btn btn-secondary" data-kpi-toggle-groups>🏷️ 開放指定組別</button>' +
-          '<button type="button" class="btn btn-secondary" data-kpi-toggle-students>➕ 指定選手補填</button>' +
-          '<button type="button" class="btn btn-ghost" data-kpi-close-week>⏹ 關閉本週 KPI</button>' +
+          '<button type="button" class="btn btn-primary" data-kpi-open-all' + (state.bulkBusy ? ' disabled' : '') + '>' + esc(openAllLabel) + '</button>' +
+          '<button type="button" class="btn btn-secondary" data-kpi-toggle-groups' + (state.bulkBusy ? ' disabled' : '') + '>' + esc(groupLabel) + '</button>' +
+          '<button type="button" class="btn btn-secondary" data-kpi-toggle-students' + (state.bulkBusy ? ' disabled' : '') + '>' + esc(studentLabel) + '</button>' +
+          '<button type="button" class="btn btn-ghost" data-kpi-close-week' + (state.bulkBusy ? ' disabled' : '') + '>' + esc(closeLabel) + '</button>' +
         '</div>' +
         (state.groupPanel ? renderGroupPanel() : '') +
         (state.studentPanel ? renderStudentPanel() : '') +
@@ -255,6 +383,11 @@
   }
 
   function bindCoachEvents(box) {
+    box.querySelector('[data-kpi-retry-load]')?.addEventListener('click', function () {
+      state.loaded = false;
+      showCoachMessage('', '', '');
+      loadCoachData({ backgroundRefresh: false });
+    });
     box.querySelector('[data-kpi-open-all]')?.addEventListener('click', function () { optimisticBulk(state.students, true); });
     box.querySelector('[data-kpi-toggle-groups]')?.addEventListener('click', function () { state.groupPanel = !state.groupPanel; renderCoachKpiManage(); });
     box.querySelector('[data-kpi-toggle-students]')?.addEventListener('click', function () { state.studentPanel = !state.studentPanel; renderCoachKpiManage(); });
@@ -288,20 +421,25 @@
   }
 
   function optimisticBulk(students, enabled) {
-    if (!students.length) return;
+    if (!students.length || state.bulkBusy) return;
+    state.bulkBusy = true;
+    var requestId = makeRequestId();
+    state.activeRequestId = requestId;
+    showCoachMessage('info', enabled ? '正在開放本週 KPI，請勿重複點擊…' : '正在關閉本週 KPI，請勿重複點擊…', '');
     students.forEach(function (s) {
       state.enabled[s.studentId] = enabled;
       state.sync[s.studentId] = 'syncing';
     });
     renderCoachKpiManage();
-    api({
+    withTimeout(api({
       action: 'bulkSetKpiSession',
       weekKey: weekKey(),
       enabled: enabled,
       dueAt: dueSunday2359(),
+      requestId: requestId,
       sessionName: '本週 KPI 回報',
       students: students.map(function (s) { return { studentId: s.studentId, studentName: s.studentName, group: s.group || '' }; })
-    }).then(function (res) {
+    }), COACH_LOAD_TIMEOUT, 'KPI 同步').then(function (res) {
       var results = (res && res.results) || [];
       var byId = {};
       results.forEach(function (r) { if (r.studentId) byId[String(r.studentId)] = r; });
@@ -310,18 +448,41 @@
         state.sync[s.studentId] = (!rr || rr.ok) ? 'synced' : 'error';
         if (rr && !rr.ok) state.enabled[s.studentId] = !enabled;
       });
-      if (!res || !res.ok) notify('部分 KPI 任務同步失敗，可在逐人開關重試。');
-      return loadCoachData();
-    }).catch(function () {
-      students.forEach(function (s) { state.sync[s.studentId] = 'error'; state.enabled[s.studentId] = !enabled; });
+      state.bulkBusy = false;
+      state.activeRequestId = '';
+      if (!res || !res.ok) {
+        showCoachMessage('warn', (res && res.error) || 'KPI 開放失敗，請重新同步。', 'retry');
+        renderCoachKpiManage();
+        notify('部分 KPI 任務同步失敗，可在逐人開關重試。');
+        return;
+      }
+      var successCount = results.filter(function (r) { return r && r.ok; }).length || students.length;
+      showCoachMessage('ok', '✅ 本週 KPI 已成功開放，共 ' + successCount + ' 位選手', '');
       renderCoachKpiManage();
+      scheduleCoachSessionsRefresh(BULK_CONFIRM_DELAY);
+      notify('✅ 本週 KPI 已開放，共 ' + successCount + ' 位選手');
+    }).catch(function (e) {
+      state.bulkBusy = false;
+      students.forEach(function (s) { state.sync[s.studentId] = 'error'; state.enabled[s.studentId] = !enabled; });
+      if (e && String(e.message || '').indexOf('逾時') !== -1) {
+        showCoachMessage('info', 'KPI 指令已送出，目前仍在確認後端狀態。', 'retry');
+        renderCoachKpiManage();
+        scheduleCoachSessionsRefresh(BULK_CONFIRM_DELAY);
+      } else {
+        showCoachMessage('warn', 'KPI 開放失敗：' + esc(e.message || '請稍後重試。'), 'retry');
+        renderCoachKpiManage();
+      }
       notify('同步失敗，請稍後重試。');
     });
   }
 
   function closeCurrentWeek() {
     var targets = state.students.slice();
-    if (!targets.length) return;
+    if (!targets.length || state.bulkBusy) return;
+    state.bulkBusy = true;
+    var requestId = makeRequestId();
+    state.activeRequestId = requestId;
+    showCoachMessage('info', '正在關閉本週 KPI，請勿重複點擊…', '');
     var previous = {};
     targets.forEach(function (s) {
       previous[s.studentId] = !!state.enabled[s.studentId];
@@ -329,31 +490,47 @@
       state.sync[s.studentId] = 'syncing';
     });
     renderCoachKpiManage();
-    api({
+    withTimeout(api({
       action: 'bulkSetKpiSession',
       weekKey: weekKey(),
       enabled: false,
       closeAll: true,
+      requestId: requestId,
       students: targets.map(function (s) {
         return { studentId: s.studentId, studentName: s.studentName, group: s.group || '' };
       })
-    }).then(function (res) {
+    }), COACH_LOAD_TIMEOUT, 'KPI 關閉').then(function (res) {
+      state.bulkBusy = false;
+      state.activeRequestId = '';
       if (!res || !res.ok) {
         targets.forEach(function (s) {
           state.sync[s.studentId] = 'error';
           state.enabled[s.studentId] = previous[s.studentId];
         });
+        showCoachMessage('warn', (res && res.error) || 'KPI 關閉失敗，請重新同步。', 'retry');
+        renderCoachKpiManage();
         notify('部分 KPI 任務同步失敗，可在逐人開關重試。');
       } else {
         targets.forEach(function (s) { state.sync[s.studentId] = 'synced'; });
+        showCoachMessage('ok', '✅ 本週 KPI 已關閉', '');
+        renderCoachKpiManage();
+        scheduleCoachSessionsRefresh(BULK_CONFIRM_DELAY);
+        notify('✅ 本週 KPI 已關閉');
       }
-      return loadCoachData();
-    }).catch(function () {
+    }).catch(function (e) {
+      state.bulkBusy = false;
       targets.forEach(function (s) {
         state.sync[s.studentId] = 'error';
         state.enabled[s.studentId] = previous[s.studentId];
       });
-      renderCoachKpiManage();
+      if (e && String(e.message || '').indexOf('逾時') !== -1) {
+        showCoachMessage('info', 'KPI 指令已送出，目前仍在確認後端狀態。', 'retry');
+        renderCoachKpiManage();
+        scheduleCoachSessionsRefresh(BULK_CONFIRM_DELAY);
+      } else {
+        showCoachMessage('warn', 'KPI 關閉失敗：' + esc(e.message || '請稍後重試。'), 'retry');
+        renderCoachKpiManage();
+      }
       notify('同步失敗，請稍後重試。');
     });
   }
@@ -404,6 +581,35 @@
   }
 
   /* ===================== 學生端 ===================== */
+  function studentStateKey() {
+    var r = role();
+    var sid = r && (r.studentId || r.name) ? String(r.studentId || r.name) : '';
+    var wk = currentWeekKey();
+    return STUDENT_STATE_PREFIX + sid + '_' + wk;
+  }
+  function writeStudentStateCache(open, session, extra) {
+    var r = role();
+    if (!r) return;
+    cacheWrite(studentStateKey(), {
+      state: open ? 'open' : (extra && extra.state) || 'closed',
+      session: session || null,
+      closeAt: session && session.closeAt ? session.closeAt : (extra && extra.closeAt) || '',
+      message: extra && extra.message ? extra.message : '',
+      updatedAt: Date.now()
+    });
+  }
+  function readStudentStateCache() {
+    var cached = cacheRead(studentStateKey());
+    if (!cacheFresh(cached, STUDENT_CACHE_TTL)) return null;
+    if (cached && cached.closeAt && new Date(cached.closeAt).getTime() < Date.now()) return null;
+    return cached;
+  }
+  function renderStudentStatusMessage(body, title, message, kind, showRetry) {
+    var cls = kind === 'good' ? 'good' : kind === 'warn' ? 'warn' : '';
+    body.innerHTML = '<div class="hint-box ' + cls + '"><b>' + esc(title) + '</b><br>' + esc(message) +
+      (showRetry ? '<div style="margin-top:10px"><button type="button" class="btn btn-secondary" data-kpi-student-retry>重新確認</button></div>' : '') +
+      '</div>';
+  }
   async function renderStudentKpi() {
     var card = el('studentKpiCard'), body = el('studentKpiBody');
     if (!card || !body) return;
@@ -415,34 +621,97 @@
       if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
       return;
     }
+    card.style.display = 'block';
+    body.innerHTML = '<div class="hint-box">正在確認本週 KPI 開放狀態…</div>';
     try {
-      var res = await api({
+      var res = await withTimeout(api({
         action: 'getStudentKpiSession',
         studentName: r.name || '',
         studentId: r.studentId || ''
-      });
-      if (!res || !res.ok) {
+      }), STUDENT_LOAD_TIMEOUT, 'KPI 開放狀態');
+      if (!res || !res.ok) throw new Error((res && res.error) || '無法確認 KPI 狀態');
+      if (res.state === 'open') {
+        state.studentOpen = true;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        writeStudentStateCache(true, res.session, { state: 'open', closeAt: res.session && res.session.closeAt });
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, res.session);
+        renderStudentKpiOpen(body, res.session, res.message || '');
+      } else if (res.state === 'done') {
+        state.studentOpen = true;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        writeStudentStateCache(true, res.session, { state: 'done', closeAt: res.session && res.session.closeAt, message: res.message });
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, res.session);
+        renderStudentStatusMessage(body, '本週 KPI 已完成', res.message || '你已完成本次 KPI 回報，可以查看本週成長報告。', 'good', false);
+      } else if (res.state === 'scheduled') {
         state.studentOpen = false;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        writeStudentStateCache(false, res.session, { state: 'scheduled', closeAt: res.session && res.session.closeAt, message: res.message });
         if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
-        if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
-        return;
+        renderStudentStatusMessage(body, '本週 KPI 尚未開放', res.message || '請依照教練通知時間再回來確認。', '', false);
+      } else if (res.state === 'closed' || res.state === 'none') {
+        state.studentOpen = false;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        writeStudentStateCache(false, res.session, { state: res.state, closeAt: res.session && res.session.closeAt, message: res.message });
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
+        renderStudentStatusMessage(body, '本週 KPI 尚未開放', res.message || '請等待教練開放後再填寫。', '', false);
+      } else {
+        throw new Error('非預期回傳');
       }
-      var open = res.state === 'open';
-      state.studentOpen = open;
-      if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(open, open ? res.session : null);
-      if (open) renderStudentKpiOpen(body, res.session);
       if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
     } catch (e) {
-      state.studentOpen = false;
-      if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(false, null);
+      var cached = readStudentStateCache();
+      if (cached && cached.state === 'open' && cached.session) {
+        state.studentOpen = true;
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, cached.session);
+        renderStudentKpiOpen(body, cached.session, '已顯示最近成功狀態，正在背景確認最新資料…');
+        if (!_studentRetryTimer && !state.studentRetryUsed) {
+          _studentRetryTimer = setTimeout(function () {
+            _studentRetryTimer = null;
+            state.studentRetryUsed = true;
+            renderStudentKpi();
+          }, 10000);
+        }
+      } else if (cached && cached.state === 'done' && cached.session) {
+        state.studentOpen = true;
+        state.studentRetryUsed = false;
+        if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
+        if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, cached.session);
+        renderStudentStatusMessage(body, '本週 KPI 已完成', cached.message || '已使用最近成功狀態。', 'good', true);
+      } else {
+        state.studentOpen = false;
+        state.studentRetryUsed = false;
+        if (typeof window.setDailyKpiAvailability === 'function') {
+          // 網路錯誤不等於未開放；先維持既有狀態，由使用者手動重試。
+        }
+        renderStudentStatusMessage(
+          body,
+          '目前無法確認 KPI 開放狀態',
+          '可能是網路不穩或伺服器暫時延遲。請點擊重新確認，不代表教練尚未開放。',
+          'warn',
+          true
+        );
+        if (!_studentRetryTimer && !state.studentRetryUsed) {
+          _studentRetryTimer = setTimeout(function () {
+            _studentRetryTimer = null;
+            state.studentRetryUsed = true;
+            renderStudentKpi();
+          }, 10000);
+        }
+      }
       if (typeof window.renderTodayGuide === 'function') window.renderTodayGuide();
+      body.querySelector('[data-kpi-student-retry]')?.addEventListener('click', function () { renderStudentKpi(); });
     }
   }
-  function renderStudentKpiOpen(body, session) {
+  function renderStudentKpiOpen(body, session, extraMessage) {
     var card = el('studentKpiCard');
     if (card) card.style.display = 'block';
     body.innerHTML =
       '<div class="hint-box good"><b>本週 KPI 回報</b><br>這是教練本週開放的完整 KPI 回報，請依照最近一週訓練狀態填寫。</div>' +
+      (extraMessage ? '<div class="hint-box">' + esc(extraMessage) + '</div>' : '') +
       '<button type="button" class="btn btn-primary" id="studentKpiStart">開始填寫 KPI</button>' +
       '<div id="studentKpiForm" style="display:none;"></div>';
     el('studentKpiStart').addEventListener('click', function () {
@@ -492,6 +761,8 @@
     if (r.role === 'student' || r.role === 'coach') renderStudentKpi();
   }
   function init() {
+    if (_initBound) return;
+    _initBound = true;
     document.querySelectorAll('.tab-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         if (btn.dataset.tab === 'coach') loadCoachData();
@@ -508,6 +779,7 @@
     refresh: refreshForRole,
     isStudentOpen: function () { return !!state.studentOpen; }
   };
+  window.addEventListener('teampro:role-changed', refreshForRole);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
