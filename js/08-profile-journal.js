@@ -249,6 +249,37 @@ function journalCoachReplyText(rec) {
   ).trim();
 }
 
+async function attachJournalCoachReplies(name, recs) {
+  const rows = (recs || []).map(r => Object.assign({}, r));
+  if (!name || !rows.length) return rows;
+  if (rows.every(r => journalCoachReplyText(r))) return rows;
+
+  let replies = [];
+  if (typeof fetchCoachRepliesForStudent === 'function') {
+    try {
+      replies = await fetchCoachRepliesForStudent(name, '', 50);
+    } catch (e) { replies = []; }
+  }
+  if (!replies.length) {
+    try {
+      replies = JSON.parse(localStorage.getItem('teampro_coach_replies') || '[]');
+    } catch (e) { replies = []; }
+  }
+  replies = (Array.isArray(replies) ? replies : [])
+    .filter(r => String(r.studentName || '').trim() === String(name || '').trim())
+    .filter(r => String(r.replyText || r.coachReply || '').trim());
+
+  rows.forEach(rec => {
+    if (journalCoachReplyText(rec)) return;
+    const match = replies.find(r =>
+      (r.sourceRecordId && rec.recordId && String(r.sourceRecordId) === String(rec.recordId)) ||
+      (r.recordDate && normDate(r.recordDate) === normDate(rec.date))
+    );
+    if (match) rec.coachReply = String(match.replyText || match.coachReply || '').trim();
+  });
+  return rows;
+}
+
 /* 日誌趨勢圖：純 SVG（屬性內聯，html2canvas 友善，不會空白）。
    series：[{ name, color, vals:[數值|null] }]；vals 與 xLabels 對齊。 */
 function jrShortDate(d) {
@@ -723,13 +754,14 @@ async function loadPersonalJournal() {
   toast('讀取個人訓練日誌中...');
   const all = await fetchRecentRecords(name, 9999);
   const filtered = (all || []).filter(r => journalInRange(r.date, fromMonth, toMonth));
-  const recs = dedupeLatestByDate(filtered || []).slice().reverse(); // 舊→新
+  let recs = dedupeLatestByDate(filtered || []).slice().reverse(); // 舊→新
   if (!recs.length) {
     clearPersonalJournalPreview(true);
     if (card) card.style.display = 'block';
     toast('這個區間沒有資料');
     return;
   }
+  recs = await attachJournalCoachReplies(name, recs);
   _currentJournalReport = buildPersonalJournalReport(name, recs, fromMonth, toMonth);
   const fileNoEl = $id('journalFileNo');
   if (fileNoEl) fileNoEl.value = _currentJournalReport.fileNo || journalFileNo(name, fromMonth, toMonth);
@@ -759,7 +791,9 @@ async function loadPersonalJournalBatch() {
     const names = roster.filter(n => grouped[n] && grouped[n].length);
     Object.keys(grouped).forEach(n => { if (names.indexOf(n) === -1) names.push(n); });
     if (!names.length) { clearPersonalJournalPreview(true); toast('這個區間沒有可匯出的全隊資料'); return; }
-    names.forEach(n => { grouped[n] = dedupeLatestByDate(grouped[n]); });
+    for (const n of names) {
+      grouped[n] = await attachJournalCoachReplies(n, dedupeLatestByDate(grouped[n]));
+    }
     _currentJournalReport = buildBatchJournalReport(names, grouped, fromMonth, toMonth);
     const fileNoEl = $id('journalFileNo');
     if (fileNoEl) fileNoEl.value = _currentJournalReport.fileNo || journalFileNo('batch', fromMonth, toMonth);

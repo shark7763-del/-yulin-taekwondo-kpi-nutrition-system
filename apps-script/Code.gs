@@ -1056,7 +1056,7 @@ function getCoachReplies(data) {
   if (!name) return { ok: false, error: '缺少 studentName' };
 
   var recordDate = data.recordDate ? formatDateCell(data.recordDate) : '';
-  var limit = Math.max(1, Math.min(20, Number(data.limit || 1)));
+  var limit = Math.max(1, Math.min(200, Number(data.limit || 1)));
   var rows = readSheetObjects(getCoachRepliesSheet(), COACH_REPLY_HEADERS).filter(function (r) {
     if (normalizeName(r.studentName) !== normalizeName(name)) return false;
     if (!boolLike(r.confirmedByCoach)) return false;
@@ -1078,6 +1078,7 @@ function getCoachReplies(data) {
         timestamp: r.timestamp,
         studentName: r.studentName,
         recordDate: r.recordDate,
+        sourceRecordId: r.sourceRecordId,
         replyText: r.replyText,
         summaryText: r.summaryText,
         generatedByAI: boolLike(r.generatedByAI),
