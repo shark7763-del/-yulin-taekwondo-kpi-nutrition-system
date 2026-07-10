@@ -237,6 +237,18 @@ function journalText(v, fallback) {
   return text ? escapeHtml(text).replace(/\n/g, '<br>') : (fallback || '—');
 }
 
+function journalCoachReplyText(rec) {
+  if (!rec) return '';
+  return String(
+    rec.coachReply ||
+    rec.coachReplyText ||
+    rec.replyText ||
+    rec.coachComment ||
+    rec.coachPublicNote ||
+    ''
+  ).trim();
+}
+
 /* 日誌趨勢圖：純 SVG（屬性內聯，html2canvas 友善，不會空白）。
    series：[{ name, color, vals:[數值|null] }]；vals 與 xLabels 對齊。 */
 function jrShortDate(d) {
@@ -499,12 +511,19 @@ function buildPersonalJournalReport(name, recs, fromMonth, toMonth) {
       `<li>飲食風險：${escapeHtml(current.nutritionRisks || '無')}</li>` +
       `<li>恢復提醒：${escapeHtml(current.recoveryState || '—')}</li>` +
       `</ul></div>`;
-    html += `<div class="mr-panel green"><div class="mr-panel-h">教練回饋（AI 草稿）</div>` +
-      `<div class="jr-longtext">【今日狀態】${escapeHtml(coach.affirm).replace(/\n/g, '<br>')}</div>` +
-      `<div class="jr-summary-note">【觀察】${escapeHtml(coach.watch).replace(/\n/g, '<br>')}</div>` +
-      `<div class="jr-summary-note">【任務】${escapeHtml(coach.oneThing).replace(/\n/g, '<br>')}</div>` +
-      `<div class="jr-summary-note">【提醒】${escapeHtml(coach.quote).replace(/\n/g, '<br>')}</div>` +
-      `</div>`;
+    const dailyCoachReply = journalCoachReplyText(current);
+    if (dailyCoachReply) {
+      html += `<div class="mr-panel green"><div class="mr-panel-h">教練每日回覆</div>` +
+        `<div class="jr-longtext">${journalText(dailyCoachReply)}</div>` +
+        `</div>`;
+    } else {
+      html += `<div class="mr-panel green"><div class="mr-panel-h">教練回饋（AI 草稿）</div>` +
+        `<div class="jr-longtext">【今日狀態】${escapeHtml(coach.affirm).replace(/\n/g, '<br>')}</div>` +
+        `<div class="jr-summary-note">【觀察】${escapeHtml(coach.watch).replace(/\n/g, '<br>')}</div>` +
+        `<div class="jr-summary-note">【任務】${escapeHtml(coach.oneThing).replace(/\n/g, '<br>')}</div>` +
+        `<div class="jr-summary-note">【提醒】${escapeHtml(coach.quote).replace(/\n/g, '<br>')}</div>` +
+        `</div>`;
+    }
     html += `</div>`;
     html += `<div class="mr-sign"><div class="mr-sign-box"><div class="mr-sign-label">教練簽核</div><div class="mr-sign-line"></div><div class="mr-sign-date">簽名：${escapeHtml(coachName)}</div></div><div class="mr-sign-box"><div class="mr-sign-label">文件編號</div><div class="mr-sign-line"></div><div class="mr-sign-date">${escapeHtml(fileNo)}</div></div></div>`;
     html += `<div class="mr-privacy">本頁由系統自動整理，教練可在送出紀錄後直接核對與調整後再正式輸出。</div>`;
@@ -816,10 +835,15 @@ function buildPdfRecordsFromOrderedRecords(ordered, athleteName, fileNo) {
     if (current.waterIntake) recoveryParts.push(`水分：${current.waterIntake}`);
 
     const suggestionParts = [];
-    if (coach.affirm) suggestionParts.push(`今日狀態：${coach.affirm}`);
-    if (coach.watch) suggestionParts.push(`觀察：${coach.watch}`);
-    if (coach.oneThing) suggestionParts.push(`任務：${coach.oneThing}`);
-    if (coach.quote) suggestionParts.push(`提醒：${coach.quote}`);
+    const dailyCoachReply = journalCoachReplyText(current);
+    if (dailyCoachReply) {
+      suggestionParts.push(dailyCoachReply);
+    } else {
+      if (coach.affirm) suggestionParts.push(`今日狀態：${coach.affirm}`);
+      if (coach.watch) suggestionParts.push(`觀察：${coach.watch}`);
+      if (coach.oneThing) suggestionParts.push(`任務：${coach.oneThing}`);
+      if (coach.quote) suggestionParts.push(`提醒：${coach.quote}`);
+    }
 
     return {
       date: dateSlash(current.date),
@@ -832,6 +856,7 @@ function buildPdfRecordsFromOrderedRecords(ordered, athleteName, fileNo) {
       bodyStatus: bodyParts.join('\n') || '-',
       nutritionRecovery: recoveryParts.join('\n') || '-',
       aiSuggestion: suggestionParts.join('\n') || '-',
+      feedbackTitle: dailyCoachReply ? '教練每日回覆' : '教練回饋 / AI 建議',
       fileNo: fileNo || ''
     };
   });
@@ -898,7 +923,7 @@ function buildPdfReportPages(records) {
         </section>
 
         <section class="pdf-card pdf-card-wide">
-          <h2>教練回饋 / AI 建議</h2>
+          <h2>${pdfEsc(record.feedbackTitle || '教練回饋 / AI 建議')}</h2>
           <p>${pdfEsc(truncateText(record.aiSuggestion))}</p>
         </section>
       </div>
