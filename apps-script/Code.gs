@@ -292,6 +292,10 @@ function handleAction(action, data) {
       return jsonOut(getAiConfig(data));
     case 'aiCoachFeedback':
       return jsonOut(aiCoachFeedback(data));
+    case 'aiCoachPerformanceReply':   // 教練：依選手近期表現產生一則教練回覆
+      return jsonOut(aiCoachPerformanceReply(data));
+    case 'aiMonthlyCoachFeedback':    // 月報：教練本月回饋（觀察／重點／鼓勵）
+      return jsonOut(aiMonthlyCoachFeedback(data));
 
     /* ===== Phase 2：KPI 回報手動開啟（教練）＋學生 KPI 狀態 ===== */
     case 'createKpiSession':      // 手動開啟 KPI
@@ -1929,6 +1933,105 @@ function aiCoachFeedback(data) {
   } catch (e) {
     return { ok: false, error: '呼叫失敗：' + String(e) };
   }
+}
+
+/* 共用：呼叫 OpenAI 產生 JSON 物件（含每日/單人上限、內容快取、成功才計次）
+   - auth：requireRole 的回傳（用 session 當計次身分）
+   - 回傳 { ok:true, obj:<解析後物件>, model, cached } 或 { ok:false, ... } */
+function aiJsonCompletion_(auth, systemPrompt, userPrompt, cacheSeed) {
+  var p = aiProps_();
+  if (p.getProperty('AI_ENABLED') !== '1') return { ok: false, disabled: true, error: 'AI 回饋未啟用' };
+  var key = p.getProperty('OPENAI_API_KEY');
+  if (!key) return { ok: false, disabled: true, error: '尚未設定 API Key' };
+  var model = p.getProperty('AI_MODEL') || 'gpt-4o-mini';
+
+  // 內容快取：相同 model + 系統設定 + 輸入 → 直接回，不扣費
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'aijson:' + Utilities.base64Encode(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, model + '|' + systemPrompt + '|' + cacheSeed));
+  var hit = cache.get(cacheKey);
+  if (hit) { try { return { ok: true, obj: JSON.parse(hit), model: model, cached: true }; } catch (e) {} }
+
+  // 每日上限（全隊 + 單一使用者）→ 超過就回 capped，前端自動退回內建文字
+  var identity = (auth && auth.session && (auth.session.studentId || auth.session.studentName || auth.session.role)) || 'coach';
+  var usage = aiReadUsage_();
+  if ((usage.n || 0) >= aiDailyCap_()) return { ok: false, capped: true, scope: 'daily', error: '今日 AI 回饋已達全隊上限，已改用系統內建回饋。' };
+  if ((usage.u[identity] || 0) >= aiUserCap_()) return { ok: false, capped: true, scope: 'user', error: '你今日的 AI 回饋次數已達上限，已改用系統內建回饋。' };
+
+  try {
+    var resp = UrlFetchApp.fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + key },
+      muteHttpExceptions: true,
+      payload: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.8,
+        max_tokens: 700
+      })
+    });
+    var code = resp.getResponseCode();
+    var body = resp.getContentText();
+    if (code !== 200) return { ok: false, error: 'OpenAI 回應 ' + code + '：' + body.slice(0, 300) };
+    var json = JSON.parse(body);
+    var content = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
+    if (!content) return { ok: false, error: 'OpenAI 無回傳內容' };
+    var obj;
+    try { obj = JSON.parse(content); } catch (e) { return { ok: false, error: 'AI 回傳格式不符' }; }
+    aiBumpUsage_(identity);                                       // 成功才計次
+    try { cache.put(cacheKey, JSON.stringify(obj), 21600); } catch (e) {} // 6 小時
+    return { ok: true, obj: obj, model: model };
+  } catch (e) {
+    return { ok: false, error: '呼叫失敗：' + String(e) };
+  }
+}
+
+/* 教練：依選手近期(數天)表現產生一則「教練→選手」回覆文字
+   前端：js/07-coach-dashboard.js generateCoachReplyFromPerformance()，期待 { ok, replyText } */
+function aiCoachPerformanceReply(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var ctx = data.context || {};
+  var mode = data.mode || 'default';
+  var modeHint = mode === 'rewrite' ? '請換一個角度、用不同措辭重新寫一則。'
+    : (mode === 'coachStyle' ? '請更口語、更像教練當面對選手說話的語氣。' : '');
+  var sys = '你是「育林國中技擊隊」的跆拳道／武術教練，要根據選手近期(數天)的訓練表現數據，寫一則「教練對選手」的回覆訊息，會直接傳給選手看。\n' +
+    '要具體點出近期趨勢、做得好的地方與要補強的重點，並給一個明確可執行的下一步；語氣自然像真人教練、正向但誠實，避免醫療診斷字眼。\n' +
+    (modeHint ? modeHint + '\n' : '') +
+    '請只輸出 JSON（不要多餘文字）：{"replyText":"整段回覆文字（約 3～5 句，可含換行）"}';
+  var user = '以下是這位選手近期的表現資料（JSON）：\n' + JSON.stringify(ctx) + '\n請據此產生教練回覆。';
+  var r = aiJsonCompletion_(auth, sys, user, JSON.stringify(ctx) + '|' + mode);
+  if (!r.ok) return r;
+  var text = r.obj && (r.obj.replyText || r.obj.text || r.obj.reply);
+  if (!text || !String(text).trim()) return { ok: false, error: 'AI 回傳格式不符' };
+  return { ok: true, replyText: String(text).trim(), model: r.model, cached: !!r.cached };
+}
+
+/* 月報：教練本月回饋（觀察／接下來重點／鼓勵）
+   前端：monthly-report.js generateMonthlyCoachFeedback()，期待 { ok, data:{ observation, improvement, encouragement } } */
+function aiMonthlyCoachFeedback(data) {
+  var auth = requireRole(data, ['student', 'parent', 'coach']);
+  if (!auth.ok) return auth;
+  var ctx = data.context || {};
+  var sys = '你是「育林國中技擊隊」的跆拳道／武術教練，要根據選手「整個月」的訓練數據，寫一段「教練本月回饋」。\n' +
+    '分成三面向：① 本月觀察（具體看見的狀態與變化）② 接下來的重點（可執行的改善方向）③ 給選手的鼓勵。\n' +
+    '要針對這個月的實際數據客製、語氣自然像真人教練、正向誠實，避免醫療診斷字眼；若 reportType 為 parent(家長版) 則語氣要對家長說、且不要直接露出分數。\n' +
+    '請只輸出 JSON（不要多餘文字）：{"observation":"本月觀察 2～4 句","improvement":"接下來重點 2～4 句","encouragement":"鼓勵 1～3 句"}';
+  var user = '以下是這位選手本月的資料（JSON）：\n' + JSON.stringify(ctx);
+  var r = aiJsonCompletion_(auth, sys, user, JSON.stringify(ctx));
+  if (!r.ok) return r;
+  var o = r.obj || {};
+  if (!o.observation && !o.improvement && !o.encouragement) return { ok: false, error: 'AI 回傳格式不符' };
+  return { ok: true, data: {
+    observation: String(o.observation || ''),
+    improvement: String(o.improvement || ''),
+    encouragement: String(o.encouragement || '')
+  }, model: r.model, cached: !!r.cached };
 }
 
 /* ============================================================
