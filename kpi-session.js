@@ -81,8 +81,9 @@
   var COACH_CACHE_TTL = 5 * 60 * 1000;
   var COACH_SESSION_BG_TTL = 60 * 1000;
   var STUDENT_CACHE_TTL = 5 * 60 * 1000;
-  var COACH_LOAD_TIMEOUT = 10000;
-  var STUDENT_LOAD_TIMEOUT = 9000;
+  // GAS 冷啟動＋整表讀取可能到 15s 以上，10s 太緊會誤判逾時。
+  var COACH_LOAD_TIMEOUT = 25000;
+  var STUDENT_LOAD_TIMEOUT = 20000;
   var BULK_CONFIRM_DELAY = 800;
   var _coachBgTimer = null;
   var _studentRetryTimer = null;
@@ -287,7 +288,8 @@
     if (!box) return;
     var r = role();
     if (!r || r.role !== 'coach') { box.innerHTML = '<div class="hint-box">此區僅教練可操作。</div>'; return; }
-    if (!state.loaded) { loadCoachData(); return; }
+    // 已在讀取中就不要再開一輪，否則每次重繪都會疊一個新請求。
+    if (!state.loaded) { if (!state.loadingCoach) loadCoachData(); return; }
 
     var wk = weekKey();
     var enabled = enabledStudents();

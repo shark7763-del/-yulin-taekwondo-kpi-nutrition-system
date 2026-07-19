@@ -620,21 +620,34 @@ function dedupeStudentAccounts() {
   return rowsToDelete.length;
 }
 
+var _rosterSynced_ = false;
 function syncStudentAccountsFromRoster() {
+  // 一次請求內只跑一次（activeStudentAccounts 與 loadKpiStudentsLight_ 都會呼叫）。
+  if (_rosterSynced_) return 0;
+  _rosterSynced_ = true;
   dedupeStudentAccounts();  // 先清掉同名重複列，再補建缺少的帳號
   var names = getRoster();
   var sh = getStudentAccountsSheet();
-  var created = 0;
+  // 一次讀進現有姓名建索引；原本逐名 findStudentAccountByName 會整表掃兩次（O(n²) 讀取）。
+  var existing = {};
+  readSheetObjects(sh, STUDENT_ACCOUNT_HEADERS).forEach(function (a) {
+    var key = normalizeName(a.studentName);
+    if (key) existing[key] = true;
+  });
+  var now = nowIso();
+  var rows = [];
   for (var i = 0; i < names.length; i++) {
-    if (findStudentAccountByName(names[i])) continue;
-    var now = nowIso();
-    sh.appendRow([
+    var key = normalizeName(names[i]);
+    if (!key || existing[key]) continue;
+    existing[key] = true;  // 名單內自身重複也只建一筆
+    rows.push([
       Utilities.getUuid(), names[i], TEAM_ID_DEFAULT, '', '', 'pending', '', '', true,
       '', '', 0, '', '', now, now
     ]);
-    created++;
   }
-  return created;
+  // 一次寫入，取代逐列 appendRow。
+  if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, STUDENT_ACCOUNT_HEADERS.length).setValues(rows);
+  return rows.length;
 }
 
 function getCoachSetting() {
@@ -2106,10 +2119,15 @@ function buildKpiSessionRow_(session) {
   return KPI_SESSION_HEADERS.map(function (h) { return session[h] == null ? '' : session[h]; });
 }
 
+var _friKpiEnsured_ = false;
 function ensureFridayWeeklyKpiSession_() {
+  // 一次請求內只跑一次（getKpiManageData 與 loadKpiSessionsLight_ 都會呼叫）。
+  if (_friKpiEnsured_) return null;
+  _friKpiEnsured_ = true;
+  // 便宜的日期檢查先做，非週五～日直接省掉整張 kpi_sessions 的讀取。
+  if (!isWeeklyAutoKpiWindow_()) return null;
   var currentWeek = isoWeekId(new Date());
   var sessions = listKpiSessions().filter(function (s) { return String(s.weekId || '') === currentWeek; });
-  if (!isWeeklyAutoKpiWindow_()) return null;
   var hasActive = sessions.some(function (s) {
     var es = effectiveSessionStatus(s);
     return es === 'open' || es === 'scheduled';
@@ -2405,9 +2423,22 @@ function clearKpiRequestCache_(requestId) {
   if (!requestId) return;
   try { kpiCache_().remove(KPI_REQUEST_CACHE_PREFIX + String(requestId)); } catch (e) {}
 }
+// groupMap 可傳「值」或「延遲取值的函式」；沒傳就自己算。
+function resolveGroupMap_(groupMap) {
+  if (typeof groupMap === 'function') return groupMap();
+  return groupMap || latestGroupByName();
+}
+// 同一次請求內只掃一次 records。
+function memoGroupMap_() {
+  var cached = null;
+  return function () {
+    if (!cached) cached = latestGroupByName();
+    return cached;
+  };
+}
 function loadKpiStudentsLight_(groupMap) {
   syncStudentAccountsFromRoster();
-  groupMap = groupMap || latestGroupByName();
+  groupMap = resolveGroupMap_(groupMap);
   return readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS).map(function (r) {
     return {
       studentId: r.studentId,
@@ -2422,7 +2453,7 @@ function loadKpiSessionsLight_(groupMap) {
   ensureFridayWeeklyKpiSession_();
   var reports = readSheetObjects(getWeeklyKpiReportsSheet(), WEEKLY_KPI_REPORT_HEADERS);
   var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS);
-  groupMap = groupMap || latestGroupByName();
+  groupMap = resolveGroupMap_(groupMap);
   return listKpiSessions().map(function (s) {
     s.effectiveStatus = effectiveSessionStatus(s);
     s.stats = kpiSessionStatsFromData_(s, reports, accounts, groupMap);
@@ -2448,8 +2479,18 @@ function getCachedOrFreshKpiSessions_(forceFresh, groupMap) {
 function getKpiManageData(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
+  // 整包快取先看：命中就直接回，完全不碰 records / student_accounts。
+  var packed = readKpiCache_(KPI_MANAGE_CACHE_KEY);
+  if (packed && packed.updatedAt && (Date.now() - Number(packed.updatedAt) < 60 * 1000)
+      && Array.isArray(packed.sessions) && Array.isArray(packed.students)) {
+    return {
+      ok: true, sessions: packed.sessions, students: packed.students,
+      serverTime: nowIso(), weekKey: isoWeekId(new Date()), fromCache: true
+    };
+  }
   ensureFridayWeeklyKpiSession_();
-  var groupMap = latestGroupByName();
+  // groupMap 要掃整張 records，很貴 → 傳函式進去，真的 cache miss 才算，且一次請求只算一次。
+  var groupMap = memoGroupMap_();
   var sessions = getCachedOrFreshKpiSessions_(false, groupMap);
   var students = getCachedOrFreshKpiStudents_(false, groupMap);
   writeKpiCache_(KPI_MANAGE_CACHE_KEY, {
