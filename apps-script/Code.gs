@@ -559,6 +559,21 @@ function findObjectRow(sh, headers, key, value) {
   return null;
 }
 
+// 「姓名 → 帳號物件」索引，一次請求內只讀一次 student_accounts。
+// 專供唯讀查詢用（studentInTarget 等熱路徑）；要寫回列號請仍用 findStudentAccountByName。
+var _accountIndexByName_ = null;
+function accountIndexByName_() {
+  if (_accountIndexByName_) return _accountIndexByName_;
+  var idx = {};
+  readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS).forEach(function (a) {
+    var key = normalizeName(a.studentName);
+    if (key && !idx[key]) idx[key] = a;
+  });
+  _accountIndexByName_ = idx;
+  return idx;
+}
+function invalidateAccountIndex_() { _accountIndexByName_ = null; }
+
 function findStudentAccountByName(name) {
   var sh = getStudentAccountsSheet();
   var rows = readSheetObjects(sh, STUDENT_ACCOUNT_HEADERS);
@@ -646,7 +661,10 @@ function syncStudentAccountsFromRoster() {
     ]);
   }
   // 一次寫入，取代逐列 appendRow。
-  if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, STUDENT_ACCOUNT_HEADERS.length).setValues(rows);
+  if (rows.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, STUDENT_ACCOUNT_HEADERS.length).setValues(rows);
+    invalidateAccountIndex_();  // 新增帳號後索引失效
+  }
   return rows.length;
 }
 
@@ -2230,7 +2248,8 @@ function studentInTarget(session, studentId, studentName, group) {
     var sid = String(studentId || '').trim();
     var sname = String(studentName || '').trim();
     if (ids.indexOf(sid) !== -1 || ids.indexOf(sname) !== -1) return true;
-    var acc = sname ? findStudentAccountByName(sname) : null;
+    // 熱路徑：這裡會被 (session × 帳號) 次數呼叫，原本每次都整表掃兩次 → 改查索引。
+    var acc = sname ? accountIndexByName_()[normalizeName(sname)] : null;
     return !!(acc && ids.indexOf(String(acc.studentId || '').trim()) !== -1);
   }
   var tg = String(session.targetGroup || '全隊');
