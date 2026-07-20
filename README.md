@@ -32,6 +32,7 @@
 - **選手成長卡**：顯示累積紀錄、連續出席、徽章與個人座右銘
 - **家長後台**：查看孩子今日狀態、最近紀錄、出席統計、補訓任務與教練提醒
 - **教練後台**：今日總覽、狀態名單、團隊心情、訓練分析、飲食管理、建議晤談名單、個人最近 7 筆
+- **心理準備訓練計畫**：賽前 28 天心理任務、自我對話、目標設定、心理計畫、賽後反思、教練管理與家長公開協助建議
 - **交叉辯論**：計算透明化、自評 vs 教練評對照、選手回應與教練回覆
 - **LINE 自動推播**：學生送出後自動推到教練群組（Messaging API）
 - **選手名單管理**：新增 / 修改 / 刪除 / 恢復預設 / 匯入匯出（存 localStorage）
@@ -56,7 +57,10 @@ yulin-taekwondo-kpi-nutrition-system/
 │   ├── 07-coach-dashboard.js    # 教練戰情室、出席、週之星、任務、報告
 │   ├── 08-profile-journal.js    # 個人檔案、訓練日誌、PDF
 │   ├── 09-settings-auth.js  # 設定、登入/角色、帳號管理、品牌
-│   └── 10-init.js           # 初始化、草稿、PWA 安裝
+│   ├── 10-init.js           # 初始化、草稿、PWA 安裝
+│   ├── 11-trait-radar.js    # 學生特質雷達
+│   ├── 12-research-data.js  # 研究資料匯出與匿名化
+│   └── 13-mental-preparation.js # 心理準備訓練計畫
 ├── apps-script/
 │   └── Code.gs              # Google Apps Script Web App 後端
 ├── README.md                # 本說明
@@ -97,7 +101,7 @@ yulin-taekwondo-kpi-nutrition-system/
 
 1. 到 [Google 雲端硬碟](https://drive.google.com) → **新增 → Google 試算表**。
 2. 把試算表命名，例如「育林跆拳道 KPI 資料」。
-3. 不需要手動貼表頭；下一步執行 `setupSheet()` 會自動建立 / 更新 `records`、`roster`、`parents`、`attendance_reports`、`appdata` 工作表。
+3. 不需要手動貼表頭；下一步執行 `setupSheet()` 會自動建立 / 更新 `records`、`roster`、`parents`、`attendance_reports`、`appdata` 與 `mental_*` 心理準備工作表。
 
 > ⚠️ 請不要再把表頭手動貼到 A1。新版為了相容舊資料調整過欄位順序，手動貼表頭容易造成欄位錯位。
 
@@ -109,7 +113,7 @@ yulin-taekwondo-kpi-nutrition-system/
 2. 刪掉預設的 `function myFunction(){}`，把 `apps-script/Code.gs` 全部內容貼上 → 按 💾 儲存。
 3. （建議）在編輯器上方函式下拉選 **`setupSheet`** → 按 **執行**。
    - 第一次會跳授權，依序按 **檢閱權限 → 選擇你的 Google 帳號 → 進階 → 前往專案（不安全）→ 允許**。
-   - 執行成功後 `records`、`roster`、`parents`、`attendance_reports`、`appdata` 工作表會自動建立 / 更新。
+   - 執行成功後 `records`、`roster`、`parents`、`attendance_reports`、`appdata` 與 `mental_*` 心理準備工作表會自動建立 / 更新。
 4. 右上角 **部署 → 新增部署**。
 5. 齒輪 ⚙️ → 類型選 **網頁應用程式（Web app）**。
 6. 設定：
@@ -122,7 +126,7 @@ yulin-taekwondo-kpi-nutrition-system/
    ```
 8. **複製這個以 `/exec` 結尾的 URL。**
 
-> 之後若修改 `Code.gs`，要 **部署 → 管理部署 → 編輯（鉛筆）→ 版本選「新版本」→ 部署**，URL 不變。
+> 之後若修改 `Code.gs`，要 **部署 → 管理部署 → 編輯（鉛筆）→ 版本選「新版本」→ 部署**，URL 不變。心理準備模組新增 Apps Script actions，更新 GitHub Pages 後也必須部署 Apps Script 新版本。
 
 ---
 
@@ -135,12 +139,25 @@ yulin-taekwondo-kpi-nutrition-system/
 5. 出現「**連線成功，可以開始使用。**」就完成串接了 🎉
    - 若顯示「連線失敗」，請看下方[常見錯誤排除](#-常見錯誤排除)。
 
+### D-0. 心理準備模組後端更新
+
+心理準備模組新增 7 張 Google Sheet 與 15 個 Apps Script actions。更新後請務必：
+
+1. 將新版 `apps-script/Code.gs` 貼到 Apps Script。
+2. 執行 `setupSheet()`，自動建立 `mental_competitions`、`mental_participants`、`mental_daily_records`、`mental_self_talk`、`mental_goals`、`mental_scenario_plans`、`mental_reflections`。
+3. 部署 Web App 新版本。
+4. 到 GitHub Pages 重新整理，必要時在手機 PWA 關閉重開，讓 service worker 更新。
+
+新增 actions：`saveMentalCompetition`、`getMentalCompetitions`、`updateMentalCompetition`、`saveMentalParticipants`、`getMentalParticipantPlan`、`saveMentalDailyRecord`、`getMentalDailyRecords`、`saveMentalSelfTalk`、`getMentalSelfTalk`、`saveMentalGoal`、`getMentalGoals`、`saveMentalScenarioPlan`、`getMentalScenarioPlans`、`saveMentalReflection`、`getMentalReflections`、`getMentalCoachDashboard`。
+
+權限規則：選手只能讀寫自己的心理準備資料；教練可查看與管理完整資料；家長只取得本週完成狀態、教練公開提醒、家長協助建議、比賽倒數與鼓勵方式建議，不回傳原始心理文字、負面想法、自我對話、是否需要教練協助或教練私密備註。
+
 ### D-1. 新制帳號與家長驗證遷移
 
 新版採「平行漸進」上線，`LEGACY_LOGIN_ENABLED` 預設開啟，避免現有使用者立即被鎖在外面。
 
 1. 將最新版 `apps-script/Code.gs` 貼到 Apps Script。
-2. 執行一次 `setupSheet()`，建立或更新 `student_accounts`、`parents`、`coach_settings`。
+2. 執行一次 `setupSheet()`，建立或更新 `student_accounts`、`parents`、`coach_settings` 與心理準備 `mental_*` 工作表。
 3. 重新部署 Web App 新版本。只更新 GitHub Pages 不會啟用後端驗證。
 4. 教練用既有 `ADMIN_KEY` 首次登入；後端會將它轉成加鹽雜湊。若原本未設定，請先在 Script Properties 建立 `ADMIN_KEY`。
 5. 到教練後台「帳號與家長管理」為選手產生啟用碼，並建立家長完整手機。

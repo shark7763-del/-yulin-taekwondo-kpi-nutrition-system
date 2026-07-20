@@ -70,6 +70,7 @@
     <button class="tab-btn" data-tab="lastperf">📌 上次表現</button>
     <button class="tab-btn" data-tab="profile">👤 我的檔案</button>
     <button class="tab-btn" data-tab="trait">🎭 學生特質雷達</button>
+    <button class="tab-btn" data-tab="mental-preparation">🧠 心理準備</button>
     <button type="button" class="tab-link psych-pack-nav-btn" id="tabPsychPack" data-open-psych-pack>🎴 我的卡夾</button>
     <button type="button" class="tab-link" id="tabSolace" style="display:none;">💌 解憂信箱</button>
     <button class="tab-btn" data-tab="parent">👨‍👩‍👧 家長後台</button>
@@ -630,6 +631,17 @@
     </section>
 
     <!-- ========================================================= -->
+    <!-- 分頁：心理準備                                            -->
+    <!-- ========================================================= -->
+    <section class="tab-panel" id="tab-mental-preparation">
+      <div id="mentalPreparationRoot">
+        <div class="card">
+          <div class="hint-box">讀取心理準備訓練計畫中...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
     <!-- 分頁：家長後台                                            -->
     <!-- ========================================================= -->
     <section class="tab-panel" id="tab-parent">
@@ -672,6 +684,11 @@
       <div class="card">
         <h3 class="card-title">📣 教練給家長的提醒</h3>
         <div id="parentCoachNotes"></div>
+      </div>
+
+      <div class="card" id="parentMentalAdviceCard">
+        <h3 class="card-title">🧠 心理準備協助建議</h3>
+        <div id="parentMentalAdvice"></div>
       </div>
 
       <div class="card">
@@ -846,6 +863,16 @@
             <div id="preCompResult"></div>
           </details>
 
+          <details class="coach-subdetails" id="mentalCoachCard">
+            <summary>心理準備管理</summary>
+            <p class="review-label">建立比賽、指派選手、追蹤完成率與需要教練關心標誌。完整編輯請進「心理準備」分頁。</p>
+            <div class="btn-group">
+              <button type="button" class="btn btn-secondary" onclick="switchTab('mental-preparation')">開啟心理準備分頁</button>
+              <button type="button" id="btnRefreshMentalCoach" class="btn btn-ghost">重新整理心理總覽</button>
+            </div>
+            <div id="mentalCoachDashboard"><div class="hint-box">讀取中...</div></div>
+          </details>
+
           <details class="coach-subdetails">
             <summary>個人查詢（最近 7 筆）</summary>
             <label class="field-label">選擇選手</label>
@@ -972,14 +999,21 @@
       </div>
 
       <div class="card">
-        <h3 class="card-title">🧾 家長後台新增工作表</h3>
-        <p class="review-label">請在同一份 Google Sheet 新增以下兩個工作表，欄位名稱需完全相同，系統會依這些欄位讀取家長與出席報表。</p>
+        <h3 class="card-title">🧾 Google Sheet 自動工作表</h3>
+        <p class="review-label">請在 Apps Script 執行一次 <code>setupSheet()</code>。系統會自動建立或更新以下工作表，不需要手動貼表頭。</p>
         <div class="table-scroll">
           <table class="record-table">
             <thead><tr><th>工作表</th><th>欄位</th></tr></thead>
             <tbody>
               <tr><td>parents</td><td><code>parentId, parentName, phone, lineId, studentName, loginCode, status</code></td></tr>
               <tr><td>attendance_reports</td><td><code>timestamp, date, studentName, attendanceStatus, checkInTime, checkOutTime, absenceReason, informedCoach, parentConfirmed, kpiSubmitted, makeupTask, makeupStatus, coachPublicNote, coachPrivateNote</code></td></tr>
+              <tr><td>mental_competitions</td><td><code>competitionId, competitionName, competitionDate, sportType, eventName, startDate, status, createdBy, createdAt, updatedAt</code></td></tr>
+              <tr><td>mental_participants</td><td><code>participantId, competitionId, athleteId, studentName, groupName, assignedAt, status</code></td></tr>
+              <tr><td>mental_daily_records</td><td><code>recordId, competitionId, athleteId, studentName, date, phase, taskType, taskName, completed, completedAt, confidenceScore, anxietyScore, focusScore, selfTalkUsed, successNote, reflection, needCoachHelp, createdAt, updatedAt</code></td></tr>
+              <tr><td>mental_self_talk</td><td><code>selfTalkId, competitionId, athleteId, studentName, situationType, negativeThought, replacementPhrase, active, createdAt, updatedAt</code></td></tr>
+              <tr><td>mental_goals</td><td><code>goalId, competitionId, athleteId, studentName, goalType, goalText, targetCount, completedCount, completionRate, startDate, endDate, status, coachComment, createdAt, updatedAt</code></td></tr>
+              <tr><td>mental_scenario_plans</td><td><code>planId, competitionId, athleteId, studentName, scenario, expectedThought, bodyReaction, breathingAction, selfTalkPhrase, copingAction, tacticalAction, status, coachComment, createdAt, updatedAt</code></td></tr>
+              <tr><td>mental_reflections</td><td><code>reflectionId, competitionId, athleteId, studentName, date, matchType, bestPerformance, mostStressfulMoment, selfTalkUsed, effectivePhrase, planEffective, performanceGoalCompleted, processGoalCompleted, recoverySeconds, nextAdjustment, coachPublicComment, coachPrivateComment, createdAt, updatedAt</code></td></tr>
             </tbody>
           </table>
         </div>
@@ -1128,6 +1162,7 @@
   <script src="js/09-settings-auth.js?v=20260708c"></script>
   <script src="js/11-trait-radar.js?v=20260628-trait-fix-01"></script>
   <script src="js/12-research-data.js?v=20260704a"></script>
+  <script src="js/13-mental-preparation.js?v=20260720b"></script>
   <script src="js/10-init.js?v=20260708b"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>

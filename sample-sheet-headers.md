@@ -23,7 +23,7 @@
 ### ✅ 正確做法（只要一步）
 
 在 **Apps Script 編輯器**，函式下拉選 `setupSheet`，按一次「執行」。
-系統會自動建立 / 補齊 `records`、`roster`、`parents`、`attendance_reports`、`appdata` 工作表，
+系統會自動建立 / 補齊 `records`、`roster`、`parents`、`attendance_reports`、`appdata`、帳號管理、KPI、研究與心理準備工作表，
 表頭順序永遠以 `Code.gs` 的 `HEADERS` 為準，新增欄位都接在最後、不影響舊資料。
 
 > 表頭的「唯一真實來源」是 `Code.gs` 裡的 `HEADERS` 陣列。要看欄位順序請直接看那裡，本檔只做欄位說明用。
@@ -123,6 +123,20 @@ records 最後另有 `studentId`，供新制帳號授權與既有姓名資料漸
 - `ai_scores`：`timestamp,date,studentName,selfScore,coachScore,recoveryScore,attendanceScore,riskPenalty,finalReadinessScore,statusLight,aiTags,trainingDirection,athleteFeedback,parentFeedback,coachFeedback`
 - `training_tasks`：`timestamp,date,studentName,taskTitle,taskDescription,taskType,taskStatus,assignedBy,completedAt`
 - `risk_flags`：`timestamp,date,studentName,riskType,riskLevel,riskReason,suggestedAction,isResolved,resolvedAt,coachNote`
+
+## 心理準備工作表
+
+`setupSheet()` 會自動建立下列工作表，不需要手動貼表頭：
+
+- `mental_competitions`：`competitionId, competitionName, competitionDate, sportType, eventName, startDate, status, createdBy, createdAt, updatedAt`
+- `mental_participants`：`participantId, competitionId, athleteId, studentName, groupName, assignedAt, status`
+- `mental_daily_records`：`recordId, competitionId, athleteId, studentName, date, phase, taskType, taskName, completed, completedAt, confidenceScore, anxietyScore, focusScore, selfTalkUsed, successNote, reflection, needCoachHelp, createdAt, updatedAt`
+- `mental_self_talk`：`selfTalkId, competitionId, athleteId, studentName, situationType, negativeThought, replacementPhrase, active, createdAt, updatedAt`
+- `mental_goals`：`goalId, competitionId, athleteId, studentName, goalType, goalText, targetCount, completedCount, completionRate, startDate, endDate, status, coachComment, createdAt, updatedAt`
+- `mental_scenario_plans`：`planId, competitionId, athleteId, studentName, scenario, expectedThought, bodyReaction, breathingAction, selfTalkPhrase, copingAction, tacticalAction, status, coachComment, createdAt, updatedAt`
+- `mental_reflections`：`reflectionId, competitionId, athleteId, studentName, date, matchType, bestPerformance, mostStressfulMoment, selfTalkUsed, effectivePhrase, planEffective, performanceGoalCompleted, processGoalCompleted, recoverySeconds, nextAdjustment, coachPublicComment, coachPrivateComment, createdAt, updatedAt`
+
+家長端不讀取原始心理文字、負面想法、自我對話、是否需要教練協助、教練私密備註或解憂信箱內容；只透過後端摘要取得本週完成狀態、比賽倒數與教練公開提醒。
 
 `setupSheet()` 只補工作表與表頭，不會清除既有 records 資料。選手啟用碼明碼只在教練按下產生時回傳一次，Sheet 僅保存雜湊。
 

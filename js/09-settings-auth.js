@@ -376,6 +376,15 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tabName));
   if (tabName === 'parent') renderParentDashboard();
+  if (tabName === 'parent' && window.MentalPreparation && window.MentalPreparation.renderParentPublicAdvice) {
+    setTimeout(() => window.MentalPreparation.renderParentPublicAdvice(), 0);
+  }
+  if (tabName === 'coach' && window.MentalPreparation && window.MentalPreparation.renderCoachDashboard) {
+    setTimeout(() => window.MentalPreparation.renderCoachDashboard(), 0);
+  }
+  if (tabName === 'mental-preparation' && window.MentalPreparation) {
+    setTimeout(() => window.MentalPreparation.render && window.MentalPreparation.render(), 0);
+  }
   if (tabName === 'lastperf') {
     setTimeout(() => {
       if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
@@ -419,9 +428,9 @@ function clearRole() { localStorage.removeItem(ROLE_KEY); }
 
 // 各角色可看的分頁與預設分頁
 const ROLE_TABS = {
-  student: { allowed: ['student', 'lastperf', 'profile', 'trait'], default: 'student' },
+  student: { allowed: ['student', 'lastperf', 'profile', 'trait', 'mental-preparation'], default: 'student' },
   parent: { allowed: ['parent'], default: 'parent' },
-  coach: { allowed: ['lastperf', 'coach', 'profile', 'trait', 'settings'], default: 'coach' }
+  coach: { allowed: ['lastperf', 'coach', 'profile', 'trait', 'mental-preparation', 'settings'], default: 'coach' }
 };
 const ROLE_LABEL = { student: '🥋 選手', parent: '👨‍👩‍👧 家長', coach: '📊 教練' };
 

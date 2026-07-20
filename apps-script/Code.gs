@@ -41,6 +41,13 @@ var TRAINING_TASKS_SHEET = 'training_tasks';
 var RISK_FLAGS_SHEET = 'risk_flags';
 var COACH_REPLIES_SHEET = 'coach_replies';
 var STUDENT_TRAITS_SHEET = 'student_traits';
+var MENTAL_COMPETITIONS_SHEET = 'mental_competitions';
+var MENTAL_PARTICIPANTS_SHEET = 'mental_participants';
+var MENTAL_DAILY_RECORDS_SHEET = 'mental_daily_records';
+var MENTAL_SELF_TALK_SHEET = 'mental_self_talk';
+var MENTAL_GOALS_SHEET = 'mental_goals';
+var MENTAL_SCENARIO_PLANS_SHEET = 'mental_scenario_plans';
+var MENTAL_REFLECTIONS_SHEET = 'mental_reflections';
 var KPI_SESSION_HEADERS = [
   'sessionId', 'sessionName', 'sessionType', 'weekId', 'openMode', 'targetGroup',
   'targetStudentIds', 'openAt', 'closeAt', 'status', 'includeInWeeklyReport',
@@ -102,6 +109,41 @@ var COACH_REPLY_HEADERS = [
 var STUDENT_TRAIT_HEADERS = [
   'timestamp', 'studentName', 'traitType', 'traitLabel', 'traitScore',
   'traitSummary', 'communicationTips', 'trainingTips', 'updatedAt'
+];
+var MENTAL_COMPETITION_HEADERS = [
+  'competitionId', 'competitionName', 'competitionDate', 'sportType', 'eventName',
+  'startDate', 'status', 'createdBy', 'createdAt', 'updatedAt'
+];
+var MENTAL_PARTICIPANT_HEADERS = [
+  'participantId', 'competitionId', 'athleteId', 'studentName', 'groupName',
+  'assignedAt', 'status'
+];
+var MENTAL_DAILY_RECORD_HEADERS = [
+  'recordId', 'competitionId', 'athleteId', 'studentName', 'date', 'phase',
+  'taskType', 'taskName', 'completed', 'completedAt', 'confidenceScore',
+  'anxietyScore', 'focusScore', 'selfTalkUsed', 'successNote', 'reflection',
+  'needCoachHelp', 'createdAt', 'updatedAt'
+];
+var MENTAL_SELF_TALK_HEADERS = [
+  'selfTalkId', 'competitionId', 'athleteId', 'studentName', 'situationType',
+  'negativeThought', 'replacementPhrase', 'active', 'createdAt', 'updatedAt'
+];
+var MENTAL_GOAL_HEADERS = [
+  'goalId', 'competitionId', 'athleteId', 'studentName', 'goalType', 'goalText',
+  'targetCount', 'completedCount', 'completionRate', 'startDate', 'endDate',
+  'status', 'coachComment', 'createdAt', 'updatedAt'
+];
+var MENTAL_SCENARIO_PLAN_HEADERS = [
+  'planId', 'competitionId', 'athleteId', 'studentName', 'scenario',
+  'expectedThought', 'bodyReaction', 'breathingAction', 'selfTalkPhrase',
+  'copingAction', 'tacticalAction', 'status', 'coachComment', 'createdAt', 'updatedAt'
+];
+var MENTAL_REFLECTION_HEADERS = [
+  'reflectionId', 'competitionId', 'athleteId', 'studentName', 'date', 'matchType',
+  'bestPerformance', 'mostStressfulMoment', 'selfTalkUsed', 'effectivePhrase',
+  'planEffective', 'performanceGoalCompleted', 'processGoalCompleted',
+  'recoverySeconds', 'nextAdjustment', 'coachPublicComment', 'coachPrivateComment',
+  'createdAt', 'updatedAt'
 ];
 
 // Sheet 欄位順序（必須與前端 record 物件對應）
@@ -255,6 +297,39 @@ function handleAction(action, data) {
       return jsonOut(getAllStudentTraits(data));
     case 'updateRecord':
       return jsonOut(updateRecordAuthorized(data));
+    /* ===== 心理準備訓練計畫 ===== */
+    case 'saveMentalCompetition':
+      return jsonOut(saveMentalCompetition(data));
+    case 'getMentalCompetitions':
+      return jsonOut(getMentalCompetitions(data));
+    case 'updateMentalCompetition':
+      return jsonOut(updateMentalCompetition(data));
+    case 'saveMentalParticipants':
+      return jsonOut(saveMentalParticipants(data));
+    case 'getMentalParticipantPlan':
+      return jsonOut(getMentalParticipantPlan(data));
+    case 'saveMentalDailyRecord':
+      return jsonOut(saveMentalDailyRecord(data));
+    case 'getMentalDailyRecords':
+      return jsonOut(getMentalDailyRecords(data));
+    case 'saveMentalSelfTalk':
+      return jsonOut(saveMentalSelfTalk(data));
+    case 'getMentalSelfTalk':
+      return jsonOut(getMentalSelfTalk(data));
+    case 'saveMentalGoal':
+      return jsonOut(saveMentalGoal(data));
+    case 'getMentalGoals':
+      return jsonOut(getMentalGoals(data));
+    case 'saveMentalScenarioPlan':
+      return jsonOut(saveMentalScenarioPlan(data));
+    case 'getMentalScenarioPlans':
+      return jsonOut(getMentalScenarioPlans(data));
+    case 'saveMentalReflection':
+      return jsonOut(saveMentalReflection(data));
+    case 'getMentalReflections':
+      return jsonOut(getMentalReflections(data));
+    case 'getMentalCoachDashboard':
+      return jsonOut(getMentalCoachDashboard(data));
     // ---- 新制角色驗證與帳號管理 ----
     case 'getAuthConfig':
       return jsonOut(getAuthConfig());
@@ -442,8 +517,15 @@ function setupSheet() {
   getRiskFlagsSheet();
   getCoachRepliesSheet();
   getStudentTraitsSheet();
+  getMentalCompetitionsSheet();
+  getMentalParticipantsSheet();
+  getMentalDailyRecordsSheet();
+  getMentalSelfTalkSheet();
+  getMentalGoalsSheet();
+  getMentalScenarioPlansSheet();
+  getMentalReflectionsSheet();
   syncStudentAccountsFromRoster();
-  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings、kpi_sessions、weekly_kpi_reports、coach_scores、ai_scores、training_tasks、risk_flags、coach_replies、student_traits 工作表。';
+  return 'setupSheet 完成，已更新 records 並建立 roster、parents、attendance_reports、appdata、student_accounts、coach_settings、kpi_sessions、weekly_kpi_reports、coach_scores、ai_scores、training_tasks、risk_flags、coach_replies、student_traits、mental_competitions、mental_participants、mental_daily_records、mental_self_talk、mental_goals、mental_scenario_plans、mental_reflections 工作表。';
 }
 
 // 今天日期字串 yyyy-MM-dd
@@ -547,6 +629,13 @@ function getTrainingTasksSheet() { return getSheetWithHeaders(TRAINING_TASKS_SHE
 function getRiskFlagsSheet() { return getSheetWithHeaders(RISK_FLAGS_SHEET, RISK_FLAG_HEADERS); }
 function getCoachRepliesSheet() { return getSheetWithHeaders(COACH_REPLIES_SHEET, COACH_REPLY_HEADERS); }
 function getStudentTraitsSheet() { return getSheetWithHeaders(STUDENT_TRAITS_SHEET, STUDENT_TRAIT_HEADERS); }
+function getMentalCompetitionsSheet() { return getSheetWithHeaders(MENTAL_COMPETITIONS_SHEET, MENTAL_COMPETITION_HEADERS); }
+function getMentalParticipantsSheet() { return getSheetWithHeaders(MENTAL_PARTICIPANTS_SHEET, MENTAL_PARTICIPANT_HEADERS); }
+function getMentalDailyRecordsSheet() { return getSheetWithHeaders(MENTAL_DAILY_RECORDS_SHEET, MENTAL_DAILY_RECORD_HEADERS); }
+function getMentalSelfTalkSheet() { return getSheetWithHeaders(MENTAL_SELF_TALK_SHEET, MENTAL_SELF_TALK_HEADERS); }
+function getMentalGoalsSheet() { return getSheetWithHeaders(MENTAL_GOALS_SHEET, MENTAL_GOAL_HEADERS); }
+function getMentalScenarioPlansSheet() { return getSheetWithHeaders(MENTAL_SCENARIO_PLANS_SHEET, MENTAL_SCENARIO_PLAN_HEADERS); }
+function getMentalReflectionsSheet() { return getSheetWithHeaders(MENTAL_REFLECTIONS_SHEET, MENTAL_REFLECTION_HEADERS); }
 
 function findObjectRow(sh, headers, key, value) {
   if (!sh) throw new Error('工作表不存在，無法查找資料。');
@@ -2928,6 +3017,419 @@ function getAttendanceReportsByName(studentName, limit) {
 }
 
 /* ============================================================
+   心理準備訓練計畫：mental_* 獨立工作表
+   ============================================================ */
+
+function mentalId(prefix) {
+  return prefix + '-' + Utilities.getUuid().slice(0, 8) + '-' + Date.now();
+}
+
+function mentalRowById_(sh, headers, idKey, id) {
+  return findObjectRow(sh, headers, idKey, id);
+}
+
+function mentalUpsert_(sh, headers, idKey, row) {
+  var id = row[idKey] || mentalId(idKey.replace(/Id$/, '').replace(/([A-Z])/g, '-$1').toUpperCase());
+  row[idKey] = id;
+  var now = nowIso();
+  if (!row.createdAt) row.createdAt = now;
+  row.updatedAt = now;
+  var values = headers.map(function (h) { return row[h] == null ? '' : row[h]; });
+  var found = mentalRowById_(sh, headers, idKey, id);
+  if (found && found.row) sh.getRange(found.row, 1, 1, headers.length).setValues([values]);
+  else sh.appendRow(values);
+  return row;
+}
+
+function mentalSession_(data, allowParent) {
+  var session = getAuthSession(data);
+  if (session) {
+    if (session.role === 'parent' && session.consentStatus !== 'agreed') return { ok: false, error: '請先完成家長同意與個資告知。', consentRequired: true };
+    if (session.role === 'parent' && !allowParent) return { ok: false, error: '家長不可讀取原始心理紀錄。', forbidden: true };
+    return { ok: true, session: session };
+  }
+  if (legacyLoginEnabled() && (data.legacyRole === 'student' || (allowParent && data.legacyRole === 'parent'))) {
+    return { ok: true, session: { role: data.legacyRole, studentName: normalizeName(data.legacyName), studentId: '', teamId: TEAM_ID_DEFAULT, consentStatus: 'agreed' }, legacy: true };
+  }
+  return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
+}
+
+function mentalRequestedStudent_(data, allowCoach, allowParent) {
+  var auth = mentalSession_(data, allowParent);
+  if (!auth.ok) return auth;
+  var s = auth.session;
+  if (s.role === 'coach') {
+    if (!allowCoach) return { ok: false, error: '教練不可執行此操作。', forbidden: true };
+    var name = normalizeName(data.studentName || data.name);
+    var athleteId = String(data.athleteId || data.studentId || '');
+    if (!athleteId && name) {
+      var acc = findStudentAccountByName(name);
+      if (acc) athleteId = acc.object.studentId;
+    }
+    return { ok: true, session: s, name: name, athleteId: athleteId };
+  }
+  return { ok: true, session: s, name: normalizeName(s.studentName), athleteId: s.studentId || '' };
+}
+
+function mentalSameStudent_(row, who) {
+  if (!row || !who) return false;
+  if (who.athleteId && row.athleteId) return String(row.athleteId) === String(who.athleteId);
+  return normalizeName(row.studentName) === normalizeName(who.name);
+}
+
+function mentalCanAccessCompetition_(competitionId, who) {
+  if (!competitionId) return true;
+  if (who.session && who.session.role === 'coach') return true;
+  var rows = readSheetObjects(getMentalParticipantsSheet(), MENTAL_PARTICIPANT_HEADERS);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].competitionId) === String(competitionId) && String(rows[i].status || 'active') !== 'inactive' && mentalSameStudent_(rows[i], who)) return true;
+  }
+  return false;
+}
+
+function saveMentalCompetition(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var p = data.payload || data || {};
+  var row = {
+    competitionId: p.competitionId || mentalId('MC'),
+    competitionName: String(p.competitionName || p.name || '').slice(0, 120),
+    competitionDate: formatDateCell(p.competitionDate || p.date || ''),
+    sportType: String(p.sportType || '').slice(0, 60),
+    eventName: String(p.eventName || p.event || '').slice(0, 120),
+    startDate: formatDateCell(p.startDate || ''),
+    status: p.status || 'active',
+    createdBy: 'coach'
+  };
+  if (!row.competitionName || !row.competitionDate) return { ok: false, error: '缺少比賽名稱或日期。' };
+  var saved = mentalUpsert_(getMentalCompetitionsSheet(), MENTAL_COMPETITION_HEADERS, 'competitionId', row);
+  return { ok: true, data: saved };
+}
+
+function getMentalCompetitions(data) {
+  var auth = mentalSession_(data, true);
+  if (!auth.ok) return auth;
+  var rows = readSheetObjects(getMentalCompetitionsSheet(), MENTAL_COMPETITION_HEADERS)
+    .sort(function (a, b) { return String(a.competitionDate).localeCompare(String(b.competitionDate)); });
+  if (auth.session.role === 'coach') return { ok: true, data: rows };
+  var who = mentalRequestedStudent_(data, false, true);
+  var allowed = {};
+  readSheetObjects(getMentalParticipantsSheet(), MENTAL_PARTICIPANT_HEADERS).forEach(function (p) {
+    if (String(p.status || 'active') !== 'inactive' && mentalSameStudent_(p, who)) allowed[String(p.competitionId)] = true;
+  });
+  return { ok: true, data: rows.filter(function (c) { return allowed[String(c.competitionId)] && String(c.status || 'active') !== 'inactive'; }) };
+}
+
+function updateMentalCompetition(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var p = data.payload || data || {};
+  var found = findObjectRow(getMentalCompetitionsSheet(), MENTAL_COMPETITION_HEADERS, 'competitionId', p.competitionId);
+  if (!found) return { ok: false, error: '找不到比賽。' };
+  var row = Object.assign({}, found.object, p);
+  return { ok: true, data: mentalUpsert_(getMentalCompetitionsSheet(), MENTAL_COMPETITION_HEADERS, 'competitionId', row) };
+}
+
+function saveMentalParticipants(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var competitionId = String(data.competitionId || (data.payload && data.payload.competitionId) || '');
+  if (!competitionId) return { ok: false, error: '缺少 competitionId' };
+  var list = data.participants || (data.payload && data.payload.participants) || [];
+  var sh = getMentalParticipantsSheet();
+  var saved = [];
+  list.forEach(function (p) {
+    var name = normalizeName(p.studentName || p.name);
+    if (!name) return;
+    var athleteId = String(p.athleteId || p.studentId || '');
+    if (!athleteId) {
+      var acc = findStudentAccountByName(name);
+      if (acc) athleteId = acc.object.studentId;
+    }
+    var row = {
+      participantId: p.participantId || mentalId('MP'),
+      competitionId: competitionId,
+      athleteId: athleteId,
+      studentName: name,
+      groupName: String(p.groupName || p.group || '').slice(0, 80),
+      assignedAt: p.assignedAt || nowIso(),
+      status: p.status || 'active'
+    };
+    saved.push(mentalUpsert_(sh, MENTAL_PARTICIPANT_HEADERS, 'participantId', row));
+  });
+  return { ok: true, data: saved };
+}
+
+function mentalFilterRows_(rows, who, competitionId) {
+  return rows.filter(function (r) {
+    if (competitionId && String(r.competitionId) !== String(competitionId)) return false;
+    if (who.session.role === 'coach') return !who.name || mentalSameStudent_(r, who);
+    return mentalSameStudent_(r, who);
+  });
+}
+
+function getMentalParticipantPlan(data) {
+  var who = mentalRequestedStudent_(data, true, true);
+  if (!who.ok) return who;
+  var competitionId = data.competitionId || '';
+  if (!mentalCanAccessCompetition_(competitionId, who)) return { ok: false, error: '你沒有權限讀取此心理準備資料。', forbidden: true };
+  var comps = getMentalCompetitions(data).data || [];
+  if (competitionId) comps = comps.filter(function (c) { return String(c.competitionId) === String(competitionId); });
+  var daily = mentalFilterRows_(readSheetObjects(getMentalDailyRecordsSheet(), MENTAL_DAILY_RECORD_HEADERS), who, competitionId);
+  var goals = mentalFilterRows_(readSheetObjects(getMentalGoalsSheet(), MENTAL_GOAL_HEADERS), who, competitionId);
+  var plans = mentalFilterRows_(readSheetObjects(getMentalScenarioPlansSheet(), MENTAL_SCENARIO_PLAN_HEADERS), who, competitionId);
+  var selfTalk = mentalFilterRows_(readSheetObjects(getMentalSelfTalkSheet(), MENTAL_SELF_TALK_HEADERS), who, competitionId);
+  var reflections = mentalFilterRows_(readSheetObjects(getMentalReflectionsSheet(), MENTAL_REFLECTION_HEADERS), who, competitionId);
+  var completion = mentalCompletion_(daily, selfTalk, goals, plans, reflections);
+  var publicAdvice = latestPublicMentalAdvice_(reflections, plans);
+  if (who.session.role === 'parent') {
+    return { ok: true, data: {
+      competitions: comps,
+      weeklyTaskStatus: weeklyMentalRate_(daily),
+      completion: completion,
+      coachPublicAdvice: publicAdvice,
+      parentHelp: parentMentalHelp_(comps[0], publicAdvice),
+      encouragementAdvice: '用穩定作息、具體肯定與簡短提醒協助孩子，不追問私人心理內容。'
+    } };
+  }
+  return { ok: true, data: { competitions: comps, dailyRecords: daily, goals: goals, scenarioPlans: plans, selfTalk: selfTalk, reflections: reflections, completion: completion, alerts: mentalAlerts_(daily, selfTalk, goals, plans, comps[0]) } };
+}
+
+function saveMentalDailyRecord(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  var p = data.payload || data || {};
+  if (who.session.role !== 'coach') {
+    p.studentName = who.name;
+    p.athleteId = who.athleteId;
+  }
+  if (!mentalCanAccessCompetition_(p.competitionId, who)) return { ok: false, error: '你沒有權限寫入此心理準備資料。', forbidden: true };
+  var now = nowIso();
+  var row = {
+    recordId: p.recordId || mentalId('MDR'), competitionId: p.competitionId || '',
+    athleteId: p.athleteId || who.athleteId || '', studentName: normalizeName(p.studentName || who.name),
+    date: formatDateCell(p.date || todayStr()), phase: String(p.phase || '').slice(0, 40),
+    taskType: String(p.taskType || '').slice(0, 60), taskName: String(p.taskName || '').slice(0, 160),
+    completed: boolLike(p.completed) ? 'true' : 'false', completedAt: p.completedAt || now,
+    confidenceScore: p.confidenceScore || '', anxietyScore: p.anxietyScore || '', focusScore: p.focusScore || '',
+    selfTalkUsed: String(p.selfTalkUsed || '').slice(0, 500), successNote: String(p.successNote || '').slice(0, 1000),
+    reflection: String(p.reflection || '').slice(0, 2000), needCoachHelp: boolLike(p.needCoachHelp) ? 'true' : 'false',
+    createdAt: p.createdAt || now
+  };
+  return { ok: true, data: mentalUpsert_(getMentalDailyRecordsSheet(), MENTAL_DAILY_RECORD_HEADERS, 'recordId', row) };
+}
+
+function getMentalDailyRecords(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  return { ok: true, data: mentalFilterRows_(readSheetObjects(getMentalDailyRecordsSheet(), MENTAL_DAILY_RECORD_HEADERS), who, data.competitionId || '') };
+}
+
+function saveMentalSelfTalk(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  var p = data.payload || data || {};
+  if (who.session.role !== 'coach') { p.studentName = who.name; p.athleteId = who.athleteId; }
+  if (!mentalCanAccessCompetition_(p.competitionId, who)) return { ok: false, error: '你沒有權限寫入此心理口令。', forbidden: true };
+  var row = {
+    selfTalkId: p.selfTalkId || mentalId('MST'), competitionId: p.competitionId || '',
+    athleteId: p.athleteId || who.athleteId || '', studentName: normalizeName(p.studentName || who.name),
+    situationType: String(p.situationType || '').slice(0, 80),
+    negativeThought: String(p.negativeThought || '').slice(0, 1000),
+    replacementPhrase: String(p.replacementPhrase || '').slice(0, 500),
+    active: Object.prototype.hasOwnProperty.call(p, 'active') ? (boolLike(p.active) ? 'true' : 'false') : 'true',
+    createdAt: p.createdAt || nowIso()
+  };
+  return { ok: true, data: mentalUpsert_(getMentalSelfTalkSheet(), MENTAL_SELF_TALK_HEADERS, 'selfTalkId', row) };
+}
+
+function getMentalSelfTalk(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  return { ok: true, data: mentalFilterRows_(readSheetObjects(getMentalSelfTalkSheet(), MENTAL_SELF_TALK_HEADERS), who, data.competitionId || '') };
+}
+
+function saveMentalGoal(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  var p = data.payload || data || {};
+  if (who.session.role !== 'coach') { p.studentName = who.name; p.athleteId = who.athleteId; }
+  if (!mentalCanAccessCompetition_(p.competitionId, who)) return { ok: false, error: '你沒有權限寫入此目標。', forbidden: true };
+  var target = Number(p.targetCount || 0), done = Number(p.completedCount || 0);
+  var row = {
+    goalId: p.goalId || mentalId('MG'), competitionId: p.competitionId || '',
+    athleteId: p.athleteId || who.athleteId || '', studentName: normalizeName(p.studentName || who.name),
+    goalType: String(p.goalType || '').slice(0, 40), goalText: String(p.goalText || '').slice(0, 1000),
+    targetCount: target || '', completedCount: done || '', completionRate: target ? Math.min(100, Math.round(done / target * 100)) : (p.completionRate || ''),
+    startDate: formatDateCell(p.startDate || ''), endDate: formatDateCell(p.endDate || ''),
+    status: p.status || 'active', coachComment: String(p.coachComment || '').slice(0, 1000),
+    createdAt: p.createdAt || nowIso()
+  };
+  return { ok: true, data: mentalUpsert_(getMentalGoalsSheet(), MENTAL_GOAL_HEADERS, 'goalId', row) };
+}
+
+function getMentalGoals(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  return { ok: true, data: mentalFilterRows_(readSheetObjects(getMentalGoalsSheet(), MENTAL_GOAL_HEADERS), who, data.competitionId || '') };
+}
+
+function saveMentalScenarioPlan(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  var p = data.payload || data || {};
+  if (who.session.role !== 'coach') { p.studentName = who.name; p.athleteId = who.athleteId; }
+  if (!mentalCanAccessCompetition_(p.competitionId, who)) return { ok: false, error: '你沒有權限寫入此心理計畫。', forbidden: true };
+  var row = {
+    planId: p.planId || mentalId('MSP'), competitionId: p.competitionId || '',
+    athleteId: p.athleteId || who.athleteId || '', studentName: normalizeName(p.studentName || who.name),
+    scenario: String(p.scenario || '').slice(0, 120), expectedThought: String(p.expectedThought || '').slice(0, 1000),
+    bodyReaction: String(p.bodyReaction || '').slice(0, 600), breathingAction: String(p.breathingAction || '').slice(0, 600),
+    selfTalkPhrase: String(p.selfTalkPhrase || '').slice(0, 600), copingAction: String(p.copingAction || '').slice(0, 1000),
+    tacticalAction: String(p.tacticalAction || '').slice(0, 1000), status: p.status || '已建立',
+    coachComment: String(p.coachComment || '').slice(0, 1000), createdAt: p.createdAt || nowIso()
+  };
+  return { ok: true, data: mentalUpsert_(getMentalScenarioPlansSheet(), MENTAL_SCENARIO_PLAN_HEADERS, 'planId', row) };
+}
+
+function getMentalScenarioPlans(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  return { ok: true, data: mentalFilterRows_(readSheetObjects(getMentalScenarioPlansSheet(), MENTAL_SCENARIO_PLAN_HEADERS), who, data.competitionId || '') };
+}
+
+function saveMentalReflection(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  var p = data.payload || data || {};
+  if (who.session.role !== 'coach') { p.studentName = who.name; p.athleteId = who.athleteId; delete p.coachPrivateComment; }
+  if (!mentalCanAccessCompetition_(p.competitionId, who)) return { ok: false, error: '你沒有權限寫入此賽後反思。', forbidden: true };
+  var row = {
+    reflectionId: p.reflectionId || mentalId('MR'), competitionId: p.competitionId || '',
+    athleteId: p.athleteId || who.athleteId || '', studentName: normalizeName(p.studentName || who.name),
+    date: formatDateCell(p.date || todayStr()), matchType: String(p.matchType || '').slice(0, 60),
+    bestPerformance: String(p.bestPerformance || '').slice(0, 1200),
+    mostStressfulMoment: String(p.mostStressfulMoment || '').slice(0, 1200),
+    selfTalkUsed: String(p.selfTalkUsed || '').slice(0, 200), effectivePhrase: String(p.effectivePhrase || '').slice(0, 500),
+    planEffective: String(p.planEffective || '').slice(0, 100), performanceGoalCompleted: String(p.performanceGoalCompleted || '').slice(0, 100),
+    processGoalCompleted: String(p.processGoalCompleted || '').slice(0, 100), recoverySeconds: p.recoverySeconds || '',
+    nextAdjustment: String(p.nextAdjustment || '').slice(0, 1000),
+    coachPublicComment: String(p.coachPublicComment || '').slice(0, 1000),
+    coachPrivateComment: String(p.coachPrivateComment || '').slice(0, 2000),
+    createdAt: p.createdAt || nowIso()
+  };
+  return { ok: true, data: mentalUpsert_(getMentalReflectionsSheet(), MENTAL_REFLECTION_HEADERS, 'reflectionId', row) };
+}
+
+function getMentalReflections(data) {
+  var who = mentalRequestedStudent_(data, true, false);
+  if (!who.ok) return who;
+  var rows = mentalFilterRows_(readSheetObjects(getMentalReflectionsSheet(), MENTAL_REFLECTION_HEADERS), who, data.competitionId || '');
+  if (who.session.role !== 'coach') rows = rows.map(function (r) { var c = Object.assign({}, r); delete c.coachPrivateComment; return c; });
+  return { ok: true, data: rows };
+}
+
+function mentalCompletion_(daily, selfTalk, goals, plans, reflections) {
+  var dailyRate = weeklyMentalRate_(daily).overall28Rate;
+  var talkRate = selfTalk && selfTalk.length ? Math.min(100, 50 + Math.min(50, daily.filter(function (r) { return String(r.selfTalkUsed || '').trim(); }).length * 10)) : 0;
+  var process = (goals || []).filter(function (g) { return String(g.goalType) === 'process' || String(g.goalType) === '過程目標'; });
+  var processRate = process.length ? Math.round(process.reduce(function (sum, g) { return sum + Number(g.completionRate || 0); }, 0) / process.length) : 0;
+  var planRate = plans && plans.length ? Math.round(plans.reduce(function (sum, p) {
+    var st = String(p.status || '');
+    return sum + (st === '能獨立執行' ? 100 : st === '教練確認' ? 85 : st === '已模擬' ? 70 : st === '已建立' ? 45 : 0);
+  }, 0) / plans.length) : 0;
+  var reflectRate = reflections && reflections.length ? 100 : 0;
+  var total = Math.round(dailyRate * 0.25 + talkRate * 0.20 + processRate * 0.25 + planRate * 0.20 + reflectRate * 0.10);
+  return { total: total, trainingRate: dailyRate, selfTalkRate: talkRate, processGoalRate: processRate, scenarioPlanRate: planRate, reflectionRate: reflectRate };
+}
+
+function weeklyMentalRate_(daily) {
+  var today = new Date(todayStr() + 'T00:00:00').getTime();
+  var weekDone = 0, all28Done = 0;
+  (daily || []).forEach(function (r) {
+    if (!boolLike(r.completed)) return;
+    var t = new Date(formatDateCell(r.date) + 'T00:00:00').getTime();
+    var diff = Math.floor((today - t) / 86400000);
+    if (diff >= 0 && diff < 7) weekDone++;
+    if (diff >= 0 && diff < 28) all28Done++;
+  });
+  return { weekRate: Math.min(100, Math.round(weekDone / 7 * 100)), overall28Rate: Math.min(100, Math.round(all28Done / 28 * 100)) };
+}
+
+function latestPublicMentalAdvice_(reflections, plans) {
+  var refs = (reflections || []).filter(function (r) { return String(r.coachPublicComment || '').trim(); })
+    .sort(function (a, b) { return String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)); });
+  if (refs.length) return refs[0].coachPublicComment;
+  var ps = (plans || []).filter(function (p) { return String(p.coachComment || '').trim(); });
+  return ps.length ? ps[ps.length - 1].coachComment : '';
+}
+
+function parentMentalHelp_(comp, advice) {
+  if (advice) return '照教練公開提醒，協助孩子把任務變短、變固定。';
+  if (comp && comp.competitionDate) return '協助孩子維持睡眠、飲食與出門準備，不追問私人心理文字。';
+  return '每天用一句具體肯定回應孩子今天完成的任務。';
+}
+
+function mentalAlerts_(daily, selfTalk, goals, plans, comp) {
+  daily = (daily || []).slice().sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+  var alerts = [];
+  function lastNBad(n, fn) { return daily.length >= n && daily.slice(0, n).every(fn); }
+  if (lastNBad(3, function (r) { return Number(r.confidenceScore || 0) > 0 && Number(r.confidenceScore) < 4; })) alerts.push('自信心連續三次低於4分');
+  if (lastNBad(2, function (r) { return Number(r.anxietyScore || 0) > 8; })) alerts.push('緊張程度連續兩次高於8分');
+  if (lastNBad(3, function (r) { return Number(r.focusScore || 0) > 0 && Number(r.focusScore) < 4; })) alerts.push('專注程度連續三次低於4分');
+  if (weeklyMentalRate_(daily).weekRate < 60) alerts.push('一週任務完成率低於60%');
+  var days = comp && comp.competitionDate ? Math.ceil((new Date(formatDateCell(comp.competitionDate) + 'T00:00:00').getTime() - new Date(todayStr() + 'T00:00:00').getTime()) / 86400000) : null;
+  if (days !== null && days >= 0 && days <= 7 && !(plans || []).length) alerts.push('比賽前七天仍未建立心理計畫');
+  if (days !== null && days >= 0 && days <= 7 && !(selfTalk || []).length) alerts.push('比賽前七天仍未建立自我對話');
+  if (daily.some(function (r) { return boolLike(r.needCoachHelp); })) alerts.push('選手主動勾選需要教練協助');
+  var text = daily.map(function (r) { return [r.selfTalkUsed, r.successNote, r.reflection].join(' '); }).join(' ');
+  if (/(不敢|害怕|想放棄|睡不好)/.test(text)) alerts.push('多次出現需要關心的文字');
+  return alerts.map(function (a) { return { label: '需要教練關心', reason: a }; });
+}
+
+function getMentalCoachDashboard(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var comps = readSheetObjects(getMentalCompetitionsSheet(), MENTAL_COMPETITION_HEADERS);
+  var participants = readSheetObjects(getMentalParticipantsSheet(), MENTAL_PARTICIPANT_HEADERS).filter(function (p) { return String(p.status || 'active') !== 'inactive'; });
+  var daily = readSheetObjects(getMentalDailyRecordsSheet(), MENTAL_DAILY_RECORD_HEADERS);
+  var selfTalk = readSheetObjects(getMentalSelfTalkSheet(), MENTAL_SELF_TALK_HEADERS);
+  var goals = readSheetObjects(getMentalGoalsSheet(), MENTAL_GOAL_HEADERS);
+  var plans = readSheetObjects(getMentalScenarioPlansSheet(), MENTAL_SCENARIO_PLAN_HEADERS);
+  var refs = readSheetObjects(getMentalReflectionsSheet(), MENTAL_REFLECTION_HEADERS);
+  var compMap = {};
+  comps.forEach(function (c) { compMap[String(c.competitionId)] = c; });
+  var rows = participants.map(function (p) {
+    var who = { session: auth.session, name: p.studentName, athleteId: p.athleteId };
+    var c = compMap[String(p.competitionId)] || {};
+    var dr = mentalFilterRows_(daily, who, p.competitionId);
+    var st = mentalFilterRows_(selfTalk, who, p.competitionId);
+    var gs = mentalFilterRows_(goals, who, p.competitionId);
+    var ps = mentalFilterRows_(plans, who, p.competitionId);
+    var rf = mentalFilterRows_(refs, who, p.competitionId);
+    var completion = mentalCompletion_(dr, st, gs, ps, rf);
+    var weekly = weeklyMentalRate_(dr);
+    var sorted = dr.slice().sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+    var avg = function (key) {
+      var xs = sorted.slice(0, 5).map(function (r) { return Number(r[key] || 0); }).filter(function (n) { return n > 0; });
+      return xs.length ? Math.round(xs.reduce(function (a, b) { return a + b; }, 0) / xs.length * 10) / 10 : '';
+    };
+    var alerts = mentalAlerts_(dr, st, gs, ps, c);
+    var days = c.competitionDate ? Math.ceil((new Date(formatDateCell(c.competitionDate) + 'T00:00:00').getTime() - new Date(todayStr() + 'T00:00:00').getTime()) / 86400000) : '';
+    return {
+      studentName: p.studentName, athleteId: p.athleteId, competitionId: p.competitionId,
+      competitionName: c.competitionName || '', countdownDays: days,
+      weekRate: weekly.weekRate, overallRate: completion.total,
+      confidenceTrend: avg('confidenceScore'), anxietyTrend: avg('anxietyScore'), focusTrend: avg('focusScore'),
+      scenarioPlanStatus: ps.length ? ps.filter(function (x) { return String(x.status || '') !== '尚未建立'; }).length + '/' + ps.length : '尚未建立',
+      lastRecordDate: sorted[0] ? sorted[0].date : '',
+      needCare: alerts.length > 0, careReasons: alerts
+    };
+  });
+  return { ok: true, data: { competitions: comps, rows: rows } };
+}
+
+/* ============================================================
    通用同步儲存（appdata 工作表：A=key、B=value(JSON 字串)）
    ------------------------------------------------------------
    給教練指定任務、個人檔案目標/備註等新功能用。
@@ -2982,7 +3484,7 @@ function appDataKeyAllowedForSession(key, session) {
   key = String(key || '');
   if (session.role === 'coach') return true;
   var name = normalizeName(session.studentName);
-  return key === 'profile:' + name || key === 'motto:' + name || key.indexOf('task:' + name + ':') === 0 || key === 'trait:' + name || key === 'trait:' + normalizeTraitName(name);
+  return key === 'profile:' + name || key === 'motto:' + name || key.indexOf('task:' + name + ':') === 0 || key === 'trait:' + name || key === 'trait:' + normalizeTraitName(name) || key === 'mental-prep:' + name;
 }
 
 function getAppDataAuthorized(data) {
@@ -2992,7 +3494,15 @@ function getAppDataAuthorized(data) {
     var value = getAppData(data.key);
     if (value && typeof value === 'object' && session.role !== 'coach') {
       value = JSON.parse(JSON.stringify(value));
+      if (String(data.key || '').indexOf('mental-prep:') === 0 && session.role === 'parent') {
+        return { ok: true, data: {
+          studentName: value.studentName || session.studentName || '',
+          coachPublicAdvice: value.coachPublicAdvice || '',
+          updatedAt: value.updatedAt || ''
+        } };
+      }
       delete value.coachNote;
+      if (String(data.key || '').indexOf('mental-prep:') === 0) delete value.coachPrivateNote;
       if (session.role === 'parent') delete value.studentNote;
     }
     return { ok: true, data: value };
@@ -3003,7 +3513,15 @@ function getAppDataAuthorized(data) {
       var legacyValue = getAppData(data.key);
       if (legacyValue && typeof legacyValue === 'object') {
         legacyValue = JSON.parse(JSON.stringify(legacyValue));
+        if (String(data.key || '').indexOf('mental-prep:') === 0 && legacySession.role === 'parent') {
+          return { ok: true, data: {
+            studentName: legacyValue.studentName || legacySession.studentName || '',
+            coachPublicAdvice: legacyValue.coachPublicAdvice || '',
+            updatedAt: legacyValue.updatedAt || ''
+          }, legacy: true };
+        }
         delete legacyValue.coachNote;
+        if (String(data.key || '').indexOf('mental-prep:') === 0) delete legacyValue.coachPrivateNote;
         if (legacySession.role === 'parent') delete legacyValue.studentNote;
       }
       return { ok: true, data: legacyValue, legacy: true };
@@ -3059,6 +3577,16 @@ function setAppDataAuthorized(data) {
         trait.version = incoming.version || trait.version || 1;
         return writeAppData(key, trait);
       }
+      if (key.indexOf('mental-prep:') === 0) {
+        var mental = data.value || {};
+        var currentMental = getAppData(key) || {};
+        mental.studentName = normalizeName(session.studentName);
+        mental.coachPublicAdvice = currentMental.coachPublicAdvice || '';
+        mental.coachPrivateNote = currentMental.coachPrivateNote || '';
+        mental.updatedAt = nowIso();
+        mental.updatedBy = 'student';
+        return writeAppData(key, mental);
+      }
       return { ok: false, error: '選手不可修改此資料。', forbidden: true };
     }
     return writeAppData(data.key, data.value);
@@ -3096,6 +3624,16 @@ function setAppDataAuthorized(data) {
         trait.updatedBy = 'student';
         trait.version = incoming.version || trait.version || 1;
         return writeAppData(key, trait);
+      }
+      if (key.indexOf('mental-prep:') === 0) {
+        var mental = data.value || {};
+        var currentMental = getAppData(key) || {};
+        mental.studentName = normalizeName(legacySession.studentName);
+        mental.coachPublicAdvice = currentMental.coachPublicAdvice || '';
+        mental.coachPrivateNote = currentMental.coachPrivateNote || '';
+        mental.updatedAt = nowIso();
+        mental.updatedBy = 'student';
+        return writeAppData(key, mental);
       }
     }
   }
