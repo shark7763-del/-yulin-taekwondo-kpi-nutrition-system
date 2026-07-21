@@ -327,6 +327,10 @@
   async function renderCoachDashboard() {
     const box = document.getElementById('mentalCoachDashboard');
     if (!box) return;
+    if (role().role !== 'coach') {
+      box.innerHTML = '';
+      return;
+    }
     try {
       const data = await api('getMentalCoachDashboard', {});
       const rows = data.rows || [];
@@ -406,6 +410,11 @@
   function csv(s) { return '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"'; }
   function bindCoachCard() { document.getElementById('btnRefreshMentalCoach')?.addEventListener('click', renderCoachDashboard); renderCoachDashboard(); }
   window.MentalPreparation = { render, refresh: render, renderParentPublicAdvice, renderCoachDashboard };
-  window.addEventListener('teampro:role-changed', () => { const p = document.getElementById('tab-mental-preparation'); if (p && p.classList.contains('active')) render(); renderParentPublicAdvice(); renderCoachDashboard(); });
+  window.addEventListener('teampro:role-changed', () => {
+    const p = document.getElementById('tab-mental-preparation');
+    if (p && p.classList.contains('active')) render();
+    renderParentPublicAdvice();
+    if (role().role === 'coach') renderCoachDashboard();
+  });
   document.addEventListener('DOMContentLoaded', () => setTimeout(bindCoachCard, 0));
 })();

@@ -287,11 +287,17 @@ function setupLineHandlers() {
   // 讀取目前狀態
   $id('btnRefreshLine').addEventListener('click', loadLineStatus);
 
-  // 啟動時若已設定 URL，自動帶出目前 LINE 狀態
-  if (getWebAppUrl()) loadLineStatus();
+  // 啟動時若已設定 URL，自動帶出目前 LINE 狀態。LINE 設定是教練權限，避免選手登入時背景 API 觸發登出。
+  if (getWebAppUrl() && isCoachRoleActive()) loadLineStatus();
+}
+
+function isCoachRoleActive() {
+  const r = getRole();
+  return !!(r && r.role === 'coach');
 }
 
 async function loadLineStatus() {
+  if (!isCoachRoleActive()) return;
   if (!getWebAppUrl()) { showLineStatus('info', '尚未設定 Web App URL，無法讀取 LINE 狀態。'); return; }
   try {
     const res = await postToWebApp({ action: 'getLineStatus' });
@@ -814,6 +820,7 @@ function applyRole() {
     loadRosterFromServer().then(() => refreshAccountAdmin());
     refreshCoach();
     loadAiConfig();
+    loadLineStatus();
     if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
   }
   if (window.TraitRadar && typeof window.TraitRadar.onRoleApplied === 'function') {

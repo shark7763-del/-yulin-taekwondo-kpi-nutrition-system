@@ -619,6 +619,13 @@ async function renderWeeklyStars() {
   const card = $id('weeklyStarCard');
   const box = $id('weeklyStarContent');
   if (!card || !box) return;
+  const currentRole = (typeof getRole === 'function' && getRole()) || null;
+  // 全隊本週之星需要讀取 getAllRecords；正式雲端模式下只有教練有權限讀全隊資料。
+  // 選手/家長或尚未登入時不可在背景呼叫，否則舊制登入會被 authRequired 清掉角色。
+  if (getWebAppUrl() && (!currentRole || currentRole.role !== 'coach')) {
+    card.style.display = 'none';
+    return;
+  }
 
   // 開關（後端 STAR_ENABLED，預設開；讀不到也預設開）
   let enabled = true;
