@@ -1162,6 +1162,23 @@ function reportCredibilityValue(rec) {
   return reportCredibilityInfo(rec).score;
 }
 
+function looksLikeStudentName(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (t.length > 14) return false;
+  if (/[\d｜|]/.test(t)) return false;
+  if (/疼痛|睡眠|需要關心|高優先|待回覆|已回報|未測驗|紅燈|黃燈|綠燈|中度|重度|觀察|追問|異常|風險|資料穩定|正常/.test(t)) return false;
+  return true;
+}
+
+function safeCoachDisplayName(rec) {
+  const raw = String((rec && (rec.studentName || rec.name || rec.athleteName)) || '').trim();
+  if (looksLikeStudentName(raw)) return { text: raw, ok: true };
+  const fallback = String((rec && rec.studentName) || (rec && rec.name) || '').trim();
+  if (looksLikeStudentName(fallback)) return { text: fallback, ok: true };
+  return { text: raw || '姓名待確認', ok: false };
+}
+
 function renderCoachCareList(todays) {
   const box = $id('coachCareList');
   if (!box) return;
@@ -1201,15 +1218,19 @@ function renderCoachCareList(todays) {
     <h4>需教練關心名單（${items.length}）</h4>
     ${items.map(item => {
       const badgeClass = item.c.score >= 80 ? 'good' : (item.c.score >= 60 ? 'warn' : 'danger');
+      const nameInfo = safeCoachDisplayName(item.r);
+      const dateText = dateSlash(item.r && (item.r.date || item.r.timestamp || item.r.createdAt || ''));
+      const groupText = String(item.r && item.r.group || '').trim();
       const reasonTags = item.flags.length
         ? item.flags.slice(0, 4).map(t => `<span class="tag ${badgeClass === 'danger' ? 'tag-red' : 'tag-orange'}">${escapeHtml(t)}</span>`).join('')
         : '<span class="tag tag-green">正常</span>';
       return `
         <div class="coach-care-card">
           <div class="coach-care-head">
-            <div class="coach-care-name">${traitName(item.r.name || '')}</div>
+            <div class="coach-care-name">${escapeHtml(nameInfo.text)}</div>
             <span class="cred-badge ${badgeClass}">${escapeHtml(String(item.c.score))}｜${escapeHtml(item.c.level)}</span>
           </div>
+          <div class="review-label">${escapeHtml(dateText)}${groupText ? `｜${escapeHtml(groupText)}` : ''}${nameInfo.ok ? '' : '｜姓名異常，請先確認資料欄位'}</div>
           <div class="coach-care-reasons">${reasonTags}</div>
           <div class="hint-box ${badgeClass === 'danger' ? 'warn' : ''}">下一步：${escapeHtml(nextStep(item))}</div>
         </div>`;
