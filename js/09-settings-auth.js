@@ -338,11 +338,10 @@ async function postToWebApp(body) {
   const role = getRole();
   const requestBody = Object.assign({}, body);
   if (role && role.authToken && !requestBody.authToken) requestBody.authToken = role.authToken;
-  /*
-     不再送出 legacyRole / legacyName（資安稽核 B-01）。
-     後端已移除所有以這兩個欄位當身分憑證的分支，繼續送只是把選手姓名
-     多暴露一次。舊制帳號請走「啟用碼 → 設定 PIN」的遷移流程。
-  */
+  if (role && !role.authToken && AUTH_CONFIG.legacyLoginEnabled) {
+    requestBody.legacyRole = role.role;
+    requestBody.legacyName = role.name || '';
+  }
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },

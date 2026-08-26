@@ -5,55 +5,6 @@
 一套**純前端**（HTML + CSS + JavaScript）的跆拳道選手每日紀錄系統，可直接部署到 **GitHub Pages**，並透過 **Google Apps Script Web App** 把資料寫入 **Google Sheet**。
 
 不需要 React / Vue / Node.js / npm / 外部資料庫 / CDN，複製即用。
-（`package.json` 與 `node_modules/` 只服務測試，不參與部署。）
-
----
-
-## 🚨 2026-08-12 安全性重大變更 — 部署前必讀
-
-一次完整稽核（QA／資安／資料／UX／架構 五組平行）後修復了 7 個 P0。
-**其中有需要你手動設定、否則功能會停擺的項目，請務必看完這節。**
-完整清單見 [`AUDIT_REPORT.md`](AUDIT_REPORT.md)。
-
-### 已修的重大漏洞
-
-| 原本 | 現在 |
-|---|---|
-| 舊制登入只要送 `legacyRole` + `legacyName`（**姓名當密碼**）就能讀取任一選手的體重、疼痛、傷勢、心情與心理紀錄，且可用一條 GET 網址觸發 | 已移除全部 7 條旁路。舊制登入只能用於帳號遷移，**不再換取任何資料** |
-| `LEGACY_LOGIN_ENABLED` 預設**開啟** | 預設**關閉**（需明確設為 `'true'` 才啟用） |
-| `ADMIN_KEY` 未設定時 `checkAdminKey()` 回傳 `true`（誰都是管理員，可覆寫全隊名單） | 未設定一律**拒絕**（fail closed） |
-| 選手自由文字直接寫入 Sheet，`=IMPORTXML(...)` 會被當公式執行並可外洩整張表 | 所有寫入經 `sanitizeCellValue_()` 強制轉文字 |
-| 教練一開後台就可能**永久刪除**同名選手的帳號列 | 移出自動路徑，只刪可證明的空殼帳號，其餘交人工複核 |
-| `addRecord` 無鎖，連點可產生同人同日重複列 | 加上 `LockService`，並把比對讀取從 157 欄縮到 2 欄 |
-| 所有動作都能用 GET 網址觸發 | GET 僅開放 `ping` / `getAuthConfig` |
-
-### ⚠️ 你必須做的事（否則會有功能停擺）
-
-1. **重新部署 Apps Script**（編輯現有部署 → 新版本，網址不變）。
-2. **若你有在用 ADMIN_KEY 流程**：現在必須真的到 Script Properties 設定 `ADMIN_KEY`，否則 `pushLineText` / `setRoster` / `setLineConfigFromRequest` 會開始回報無權限。
-3. **舊制登入的選手會需要 PIN**：沒有設過 PIN 的選手將無法讀取資料。請用教練後台的「批次產生待啟用碼」發給他們完成啟用。這是刻意的取捨——姓名不能當認證。
-4. **確認時區**（兩個獨立設定，都要查）：
-   - Apps Script 編輯器 → 專案設定 → 時區 = `(GMT+08:00) Taipei`
-   - Google Sheet → 檔案 → 設定 → 地區與時區 = 台灣
-5. **檢查歷史資料是否已中過公式注入**：在 Sheet 用「尋找」搜 `=IMPORTXML`、`=HYPERLINK`、`=IMPORT`。防護只對**未來**的寫入生效。
-6. **確認沒有選手帳號已被誤刪**：比對 `student_accounts` 列數與實際選手數；若有人反應「PIN 突然失效」，優先懷疑此項。
-
----
-
-## 🧪 測試
-
-```bash
-npm test              # 45 個單元測試（node 內建 test runner，零相依）
-npm run check:syntax  # 部署前語法檢查：所有 JS ＋ index.html 引用的腳本是否存在
-npx playwright test   # 14 個 E2E（桌面 Chrome ＋ 行動 Chromium）
-```
-
-`npm test` 涵蓋日期／時區、KPI 評分與燈號、疲勞恢復指數、睡眠時數、疼痛分級、
-XSS 跳脫、Sheet 公式注入防護。E2E 涵蓋載入無未捕捉例外、腳本無 404、
-`init()` 完整執行、375/390/430px 無橫向溢出。
-
-> ⚠️ **真實 iOS Safari 未被自動測試涵蓋**（未安裝 WebKit）。
-> iOS 的 PWA standalone、localStorage 配額、日期輸入元件行為與 Chromium 不同，仍需人工驗證。
 
 ---
 
@@ -200,8 +151,6 @@ yulin-taekwondo-kpi-nutrition-system/
 新增 actions：`saveMentalCompetition`、`getMentalCompetitions`、`updateMentalCompetition`、`saveMentalParticipants`、`getMentalParticipantPlan`、`saveMentalDailyRecord`、`getMentalDailyRecords`、`saveMentalSelfTalk`、`getMentalSelfTalk`、`saveMentalGoal`、`getMentalGoals`、`saveMentalScenarioPlan`、`getMentalScenarioPlans`、`saveMentalReflection`、`getMentalReflections`、`getMentalCoachDashboard`。
 
 權限規則：選手只能讀寫自己的心理準備資料；教練可查看與管理完整資料；家長只取得本週完成狀態、教練公開提醒、家長協助建議、比賽倒數與鼓勵方式建議，不回傳原始心理文字、負面想法、自我對話、是否需要教練協助或教練私密備註。
-
-簡化版「今天練心」不新增工作表或 action，沿用 `mental_daily_records`：選手心理狀況寫入 `taskType`、任務名稱寫入 `taskName`、完成狀態寫入 `completed/completedAt`、口令寫入 `selfTalkUsed`、使用後感受寫入 `reflection`、額外想告訴教練的內容寫入 `successNote`。
 
 ### D-1. 新制帳號與家長驗證遷移
 

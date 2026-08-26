@@ -186,38 +186,6 @@ function buildRecord() {
 
   const improveTargets = getCheckedImproveTargets().join('｜');
   const mainGoalToday = $id('mainGoalToday') ? $id('mainGoalToday').value : '';
-  const reflectionParts = typeof getReflectionParts === 'function' ? getReflectionParts() : {
-    good: $id('reflectionGood') ? $id('reflectionGood').value.trim() : '',
-    problem: $id('reflectionProblem') ? $id('reflectionProblem').value.trim() : '',
-    reason: $id('reflectionReason') ? $id('reflectionReason').value.trim() : '',
-    fix: $id('reflectionFix') ? $id('reflectionFix').value.trim() : ''
-  };
-  const reflectionText = typeof composeReflectionText === 'function'
-    ? composeReflectionText(reflectionParts)
-    : [
-        reflectionParts.good ? `今天我做得好的地方是：${reflectionParts.good}` : '',
-        reflectionParts.problem ? `今天我遇到的問題是：${reflectionParts.problem}` : '',
-        reflectionParts.reason ? `我覺得原因可能是：${reflectionParts.reason}` : '',
-        reflectionParts.fix ? `明天我想改進的是：${reflectionParts.fix}` : ''
-      ].filter(Boolean).join('\n');
-  if ($id('reflection')) $id('reflection').value = reflectionText;
-  const credibility = typeof computeReportCredibility === 'function'
-    ? computeReportCredibility(Object.assign({}, {
-        reflectionGood: reflectionParts.good,
-        reflectionProblem: reflectionParts.problem,
-        reflectionReason: reflectionParts.reason,
-        reflectionFix: reflectionParts.fix,
-        tomorrowGoal: $id('tomorrowGoal') ? $id('tomorrowGoal').value : '',
-        painScore: painScore,
-        painTrigger: $id('painTrigger') ? $id('painTrigger').value : '',
-        painToldCoach: $id('painToldCoach') ? $id('painToldCoach').value : '',
-        painNeedAdjust: $id('painNeedAdjust') ? $id('painNeedAdjust').value : '',
-        encouragementToTeammate: $id('encouragementToTeammate') ? $id('encouragementToTeammate').value : '',
-        lowItems: lowItemsStr,
-        rawScoresJson: JSON.stringify(scores),
-        _aspectAvg: aspectAvg
-      }))
-    : { score: '', level: '', flags: [], text: '' };
 
   const rec = {
     recordId: 'r' + Date.now() + '_' + Math.floor(Math.random() * 100000),
@@ -284,25 +252,15 @@ function buildRecord() {
     lowItems: lowItemsStr,
     improveTargets: improveTargets,
     mainGoalToday: mainGoalToday,
-    reflectionGood: reflectionParts.good,
-    reflectionProblem: reflectionParts.problem,
-    reflectionReason: reflectionParts.reason,
-    reflectionFix: reflectionParts.fix,
-    reflection: reflectionText,
+    reflection: $id('reflection').value,
     tomorrowGoal: $id('tomorrowGoal').value,
     gratitude: $id('gratitude') ? $id('gratitude').value : '',
     encourageTeammateName: $id('encourageTeammate') ? $id('encourageTeammate').value : '',
     encouragementToTeammate: $id('encouragementToTeammate').value,
-    painTrigger: $id('painTrigger') ? $id('painTrigger').value : '',
-    painToldCoach: $id('painToldCoach') ? $id('painToldCoach').value : '',
-    painNeedAdjust: $id('painNeedAdjust') ? $id('painNeedAdjust').value : '',
     nutritionRisks: nutritionRisks,
     nutritionAdviceStudent: nutrition.student,
     nutritionAdviceParent: nutrition.parent,
     nutritionAdviceCoach: JSON.stringify(nutrition.coach),
-    reportCredibility: credibility.score,
-    reportCredibilityLevel: credibility.level,
-    reportCredibilityFlags: credibility.flags.join('｜'),
     rawScoresJson: JSON.stringify(scores),
     rawNutritionJson: JSON.stringify(nutrition)
   };
@@ -325,7 +283,6 @@ function buildRecord() {
   rec._nutrition = nutrition;
   rec._recovery = recovery;
   rec._redCats = redCats;
-  rec._credibility = credibility;
   return rec;
 }
 
@@ -364,32 +321,6 @@ async function alreadySubmittedToday(name, date) {
   return false;
 }
 
-/*
-   送出失敗時的畫面（稽核 D-08）。
-   規則：給教練與國中生看得懂的話，不出現任何技術訊息；
-   明確說出「資料在哪」與「下一步做什麼」，並提供重試。
-*/
-function renderSubmitFailureNotice() {
-  const card = $id('coachFeedbackCard');
-  if (!card) return;
-  card.style.display = '';
-  card.innerHTML = `
-    <div class="submit-failed-notice">
-      <h3 class="card-title">⚠️ 今天這筆還沒有送出去</h3>
-      <p>你填的內容已經<strong>暫存在這台裝置</strong>，不會不見。<br>
-         沒送出去的原因通常是網路不穩，或訓練場地訊號不好。</p>
-      <ol class="sf-steps">
-        <li>確認手機有連上網路</li>
-        <li>按下方「再送出一次」</li>
-        <li>如果連續兩次都失敗，先繼續訓練，回家有 Wi-Fi 再送一次就好</li>
-      </ol>
-      <button type="button" class="btn-primary" id="btnRetrySubmit">🔁 再送出一次</button>
-    </div>`;
-  const retry = $id('btnRetrySubmit');
-  if (retry) retry.addEventListener('click', () => doSubmit('official'));
-  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
 // 主送出函式
 async function doSubmit(mode) {
   if (_submitting) return false;      // 正在送出，忽略重複點擊
@@ -417,20 +348,6 @@ async function doSubmit(mode) {
       }
     }
     return await doSubmitInner(mode);
-  } catch (err) {
-    /*
-       頂層防線（稽核 A-02，P1）。
-       原本只有 finally 沒有 catch：送出流程中任何一個 render 函式丟出例外，
-       都會變成沒人接的 promise rejection —— 按鈕解鎖了、但畫面什麼都沒發生，
-       使用者只知道「按了沒反應」。這是「閃退」回報的主要來源之一。
-
-       注意：這裡不能宣稱資料沒送出。例外可能發生在寫入成功之後的畫面渲染階段，
-       所以訊息必須誠實地讓使用者「去確認」，而不是叫他無腦重送。
-    */
-    if (window.TeamProDiag) window.TeamProDiag.log('submit-error', (err && err.stack) || String(err));
-    console.error('[doSubmit] 未預期的例外：', err);
-    toast('⚠️ 送出過程發生問題，請到「上次表現」確認今天這筆是否已經存入，再決定要不要重送。');
-    return false;
   } finally {
     _submitting = false;
     submitBtns.forEach(b => b.disabled = false);
@@ -500,17 +417,6 @@ async function doSubmitInner(mode) {
     toast('💾 已存入本機測試資料');
   }
 
-  /*
-     送出失敗就不要演成功（稽核 D-08，P1）。
-     原本無論 saved 是 true 還是 false，底下都照樣渲染 AI 回饋卡、LINE 文案、
-     成長卡 —— 學生看到一整套「完成了」的畫面，實際上資料根本沒進 Google Sheet，
-     隔天教練後台顯示他未回報。這是會直接造成資料遺失認知落差的問題。
-  */
-  if (!saved) {
-    renderSubmitFailureNotice();
-    return false;
-  }
-
   // 顯示回饋卡（AI 教練回饋卡為主，其餘維持原樣）
   renderCoachFeedbackCard(feedback);
   // 若教練已啟用 OpenAI，背景用 GPT 依語氣＋三明治法重寫三版回饋（失敗自動沿用上面的模板）
@@ -525,12 +431,9 @@ async function doSubmitInner(mode) {
 
   // 回報完成 → 抽 TeamPro 心理成長能量卡（psych-cards.js 未載入時安全略過）
   if (window.PsychCards) try { window.PsychCards.onReportSubmitted(rec.name); } catch (e) {}
-  if (saved && window.MentalPreparation && typeof window.MentalPreparation.openSimpleDailyFromReport === 'function') {
-    try { window.MentalPreparation.openSimpleDailyFromReport(rec); } catch (e) {}
-  }
 
   // 捲動到 AI 教練回饋卡
-  { const _fb = $id('coachFeedbackCard'); if (_fb) _fb.scrollIntoView({ behavior: 'smooth' }); }  // 防 null：送出流程最後一步，這裡丟例外會吃掉整個回饋畫面
+  $id('coachFeedbackCard').scrollIntoView({ behavior: 'smooth' });
 
   return saved;
 }
@@ -579,10 +482,7 @@ async function doSubmitAbsence(mode, rec) {
   renderLineCard(lineTexts);
   renderPlayerCard(rec.name);
   if (window.PsychCards) try { window.PsychCards.onReportSubmitted(rec.name); } catch (e) {}
-  if (saved && window.MentalPreparation && typeof window.MentalPreparation.openSimpleDailyFromReport === 'function') {
-    try { window.MentalPreparation.openSimpleDailyFromReport(rec); } catch (e) {}
-  }
-  { const _fb = $id('coachFeedbackCard'); if (_fb) _fb.scrollIntoView({ behavior: 'smooth' }); }  // 防 null：送出流程最後一步，這裡丟例外會吃掉整個回饋畫面
+  $id('coachFeedbackCard').scrollIntoView({ behavior: 'smooth' });
   return saved;
 }
 

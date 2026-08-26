@@ -407,124 +407,6 @@ function redLightCategories(scores, nutritionRisks, recoveryState) {
   return cats;
 }
 
-function getReflectionParts() {
-  return {
-    good: String($id('reflectionGood') ? $id('reflectionGood').value : '').trim(),
-    problem: String($id('reflectionProblem') ? $id('reflectionProblem').value : '').trim(),
-    reason: String($id('reflectionReason') ? $id('reflectionReason').value : '').trim(),
-    fix: String($id('reflectionFix') ? $id('reflectionFix').value : '').trim()
-  };
-}
-
-function composeReflectionText(parts) {
-  const p = parts || {};
-  const lines = [
-    p.good ? `今天我做得好的地方是：${p.good}` : '',
-    p.problem ? `今天我遇到的問題是：${p.problem}` : '',
-    p.reason ? `我覺得原因可能是：${p.reason}` : '',
-    p.fix ? `明天我想改進的是：${p.fix}` : ''
-  ].filter(Boolean);
-  return lines.join('\n');
-}
-
-function syncReflectionHidden() {
-  const el = $id('reflection');
-  if (!el) return '';
-  const text = composeReflectionText(getReflectionParts());
-  el.value = text;
-  return text;
-}
-
-function isVagueTomorrowGoal(text) {
-  const t = String(text || '').trim();
-  if (!t) return true;
-  if (t.length < 8) return true;
-  return /^(加油|努力|變強|認真|好好練|繼續努力|再努力|更好|盡力|沒事|沒有|無)$/i.test(t);
-}
-
-function computeReportCredibility(rec) {
-  const flags = [];
-  let score = 100;
-  const parts = {
-    good: String(rec && rec.reflectionGood || '').trim(),
-    problem: String(rec && rec.reflectionProblem || '').trim(),
-    reason: String(rec && rec.reflectionReason || '').trim(),
-    fix: String(rec && rec.reflectionFix || '').trim()
-  };
-  const partNames = {
-    good: '心得四格：好的地方',
-    problem: '心得四格：問題',
-    reason: '心得四格：原因',
-    fix: '心得四格：修正'
-  };
-  Object.keys(parts).forEach(key => {
-    if (!parts[key]) {
-      score -= 12;
-      flags.push(partNames[key] + '未填');
-    } else if (parts[key].length < 6) {
-      score -= 6;
-      flags.push(partNames[key] + '太短');
-    }
-  });
-  const reflectionText = composeReflectionText(parts);
-  if (!reflectionText || reflectionText.length < 35) {
-    score -= 10;
-    flags.push('心得內容偏短');
-  }
-  const goal = String(rec && rec.tomorrowGoal || '').trim();
-  if (isVagueTomorrowGoal(goal)) {
-    score -= 18;
-    flags.push('明日目標過於空泛');
-  }
-  const pain = Number(rec && rec.painScore);
-  if (Number.isFinite(pain) && pain >= 5) {
-    if (!String(rec && rec.painTrigger || '').trim()) { score -= 8; flags.push('疼痛原因未補'); }
-    if (!String(rec && rec.painToldCoach || '').trim()) { score -= 8; flags.push('未回報教練'); }
-    if (!String(rec && rec.painNeedAdjust || '').trim()) { score -= 8; flags.push('未填訓練調整'); }
-  }
-  const encouragement = String(rec && rec.encouragementToTeammate || '').trim();
-  if (!encouragement) {
-    score -= 6;
-    flags.push('未填隊友鼓勵');
-  } else if (encouragement.length < 8 || /^(加油|很棒|棒|努力)$/i.test(encouragement)) {
-    score -= 4;
-    flags.push('隊友鼓勵過於簡短');
-  }
-  const lowItems = String(rec && rec.lowItems || '').trim();
-  if (!lowItems) {
-    score -= 4;
-    flags.push('最低項未說明');
-  }
-  if (rec && rec.rawScoresJson) {
-    try {
-      const raw = JSON.parse(rec.rawScoresJson);
-      const aspectMeans = Object.keys(raw || {}).map(k => {
-        const values = Object.values(raw[k] || {});
-        if (!values.length) return null;
-        const nums = values.map(v => Number(v)).filter(v => Number.isFinite(v));
-        if (!nums.length) return null;
-        return round1(nums.reduce((a, b) => a + b, 0) / nums.length);
-      }).filter(v => v != null);
-      if (aspectMeans.length >= 5 && aspectMeans.every(v => v === aspectMeans[0])) {
-        score -= 10;
-        flags.push('六大面向分數過於一致');
-      }
-    } catch (e) { /* ignore */ }
-  } else if (rec && rec._aspectAvg) {
-    const aspectMeans = Object.keys(rec._aspectAvg).map(k => Number(rec._aspectAvg[k])).filter(v => Number.isFinite(v));
-    if (aspectMeans.length >= 5 && aspectMeans.every(v => v === aspectMeans[0])) {
-      score -= 10;
-      flags.push('六大面向分數過於一致');
-    }
-  }
-  if (Number.isFinite(pain) && pain >= 7 && flags.indexOf('疼痛原因未補') === -1) {
-    score += 4;
-  }
-  score = Math.max(0, Math.min(100, Math.round(score)));
-  const level = score >= 80 ? '🟢 真實' : (score >= 60 ? '🟡 需補充' : '🔴 可信度低');
-  return { score, level, flags, text: flags.join('｜') };
-}
-
 // 找出所有低於 3 分的細項，取最低三項（同分依出現順序）
 function findLowItems(scores) {
   const list = [];
@@ -1506,7 +1388,6 @@ function focusField(id) {
 function validateForm() {
   if (typeof syncGradeClassFields === 'function') syncGradeClassFields();
   if (typeof syncPainAreaField === 'function') syncPainAreaField();
-  const reflectionText = syncReflectionHidden();
   const group = $id('group').value;
   if (isAbsenceGroup(group)) {
     const required = [
@@ -1520,8 +1401,7 @@ function validateForm() {
   }
   const required = [
     ['name', '選手姓名'], ['schoolLevel', '學制'], ['grade', '年級'], ['classCode', '班級代碼'], ['group', '組別'], ['trainingMinutes', '今日訓練分鐘數'],
-    ['trainingTopic', '今日訓練主題'], ['reflectionGood', '今日心得：好的地方'], ['reflectionProblem', '今日心得：問題'],
-    ['reflectionReason', '今日心得：原因'], ['reflectionFix', '今日心得：修正'], ['tomorrowGoal', '明日目標'],
+    ['trainingTopic', '今日訓練主題'], ['reflection', '今日心得'], ['tomorrowGoal', '明日目標'],
     ['heightCm', '身高'], ['weightKg', '今日體重'],
     ['breakfast', '早餐'], ['lunch', '午餐'], ['dinner', '晚餐'],
     ['waterIntake', '今日水量'], ['trainingIntensity', '今日訓練強度']
@@ -1530,28 +1410,10 @@ function validateForm() {
     const v = $id(id).value;
     if (!v || !String(v).trim()) { toast(`請填寫：${label}`); $id(id).focus(); return false; }
   }
-  if (isVagueTomorrowGoal($id('tomorrowGoal').value)) {
-    toast('明日目標請寫成可檢查的動作，例如「實戰主動進攻 5 次」');
-    focusField('tomorrowGoal');
-    return false;
-  }
   const h = parseFloat($id('heightCm').value);
   if (h < 100 || h > 220) { toast('身高似乎不合理，請確認（100–220 cm）'); $id('heightCm').focus(); return false; }
   const w = parseFloat($id('weightKg').value);
   if (w < 25 || w > 150) { toast('體重似乎不合理，請確認（25–150 kg）'); $id('weightKg').focus(); return false; }
-  /*
-     睡眠時數是由「就寢／起床」兩個時間欄位推算出來的 hidden input（index.html:237）。
-     修正（稽核 A-03，P1）：原本直接把 sleepHours 丟進 numericChecks，兩個時間都沒填時
-     會跳「請填寫：睡眠時數」，然後 focusField('sleepHours') 作用在隱藏欄位上等於沒作用 ——
-     學生看到一個指不到任何欄位、也無從解決的錯誤，只能放棄。
-     改成先檢查學生真正要操作的那兩個欄位，訊息也指名道姓。
-  */
-  const bedEl = $id('bedTime'), wakeEl = $id('wakeTime');
-  if (bedEl && wakeEl) {
-    if (!String(bedEl.value).trim()) { toast('請填寫：昨晚幾點就寢'); focusField('bedTime'); return false; }
-    if (!String(wakeEl.value).trim()) { toast('請填寫：今天幾點起床'); focusField('wakeTime'); return false; }
-  }
-
   const numericChecks = [
     ['trainingMinutes', '今日訓練分鐘數', 0, 360],
     ['sleepHours', '睡眠時數', 3, 14],
@@ -1578,26 +1440,6 @@ function validateForm() {
   if (Number($id('painScore').value) > 0 && !$id('painArea').value) {
     toast('疼痛指數大於 0 時，請選擇受傷／不適部位');
     focusField('painArea');
-    return false;
-  }
-  if (Number($id('painScore').value) >= 5) {
-    const followupChecks = [
-      ['painTrigger', '什麼動作會痛'],
-      ['painToldCoach', '是否告訴教練'],
-      ['painNeedAdjust', '是否需要調整訓練']
-    ];
-    for (const [id, label] of followupChecks) {
-      const v = $id(id) ? $id(id).value : '';
-      if (!v || !String(v).trim()) {
-        toast(`疼痛 5 分以上請補寫：${label}`);
-        focusField(id);
-        return false;
-      }
-    }
-  }
-  if (!reflectionText.trim()) {
-    toast('請完成今日心得四格');
-    focusField('reflectionGood');
     return false;
   }
 

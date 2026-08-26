@@ -973,76 +973,16 @@ function renderCoachQuickScores(todays, coachScores) {
   });
 }
 
-/*
-   教練看得懂的載入失敗畫面（稽核 D-09）。
-   三種常見狀況分開給不同的下一步，而不是一律「請重試」。
-*/
-function showCoachLoadError(err) {
-  const msg = String((err && err.message) || err || '');
-  let title, body;
-  if (/登入|session|authRequired|重新登入/i.test(msg)) {
-    title = '你的登入已經過期';
-    body = '為了保護選手資料，登入一段時間後會自動失效。請重新登入一次就可以繼續。';
-  } else if (/fetch|network|timeout|逾時|連線/i.test(msg)) {
-    title = 'Google Sheet 連線失敗';
-    body = '資料沒有讀到（<b>不是資料不見</b>，是這次連不上）。請確認網路後再按一次重新整理。';
-  } else {
-    title = '讀取資料時發生問題';
-    body = '資料沒有讀到，選手已回報的內容仍然保存在 Google Sheet 裡。請稍後再試一次。';
-  }
-  toast('⚠️ ' + title);
-  const box = $id('coachOverview') || $id('coachContent');
-  if (!box) return;
-  box.innerHTML = `
-    <div class="coach-load-error">
-      <h3 class="card-title">⚠️ ${escapeHtml(title)}</h3>
-      <p>${body}</p>
-      <button type="button" class="btn-primary" id="btnCoachRetry">🔁 重新整理</button>
-      <p class="review-label">若連續失敗，可到「系統設定」確認 Web App URL 是否正確。</p>
-    </div>`;
-  const retry = $id('btnCoachRetry');
-  if (retry) retry.addEventListener('click', () => refreshCoach());
-}
-
-/* 教練後台重新整理是否正在進行中。
-   稽核 A-05：原本沒有 in-flight 保護，教練連點重整鈕會對已知偏慢的 GAS 後端
-   同時發出多個 getAllRecords（每次都要讀整張 records 表），彼此拖慢還可能
-   讓晚回來的舊回應覆蓋新畫面。 */
-let _coachRefreshing = false;
-
 async function refreshCoach() {
-  if (_coachRefreshing) { toast('資料還在讀取中，請稍候…'); return; }
-  _coachRefreshing = true;
-  const refreshBtn = $id('btnRefreshCoach');
-  const btnLabel = refreshBtn ? refreshBtn.textContent : '';
-  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = '讀取中…'; }
-
-  try {
-    return await refreshCoachInner();
-  } finally {
-    _coachRefreshing = false;
-    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = btnLabel; }
-  }
-}
-
-async function refreshCoachInner() {
   toast('讀取資料中...');
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
-  await ensureCoachStudentDirectory(true);
 
   // 雲端讀取失敗／session 過期 → 顯示提示並中止，不再誤判「全隊未回報」
   let all;
   try {
     all = await fetchAllRecords({ strict: true, force: true });
   } catch (e) {
-    /*
-       稽核 D-09：原本直接把 e.message 丟給教練，會出現
-       「TypeError: Failed to fetch」這種完全無法行動的訊息。
-       技術細節留在 console 與診斷紀錄，畫面上給教練看得懂的話與下一步。
-    */
-    console.error('[refreshCoach] 讀取失敗：', e);
-    if (window.TeamProDiag) window.TeamProDiag.log('coach-load-error', (e && e.stack) || String(e));
-    showCoachLoadError(e);
+    toast('⚠️ ' + (e && e.message ? e.message : '讀取資料失敗，請重新登入'));
     return;
   }
 
@@ -1083,7 +1023,6 @@ async function refreshCoachInner() {
 
   // 這三個一定要用完整今日資料 todaysAll，狀態篩選不能影響「已回報／未回報」
   renderOverview(todaysAll);
-  renderCoachCareList(todaysAll);
   renderSubmitStatus(todaysAll);
   renderCoachAttendanceReports(todaysAll);
 
@@ -1123,7 +1062,6 @@ function renderOverview(todays) {
   const rpeHigh = todays.filter(r => nval(r.rpe) !== null && nval(r.rpe) >= 8).length;
   const sleepBad = todays.filter(r => String(r.sleepQuality || '') === '差' || (nval(r.sleepHours) !== null && nval(r.sleepHours) < 6)).length;
   const moodLow = todays.filter(r => nval(r.moodIndex) !== null && nval(r.moodIndex) <= 2).length;
-  const credLow = todays.filter(r => reportCredibilityValue(r) < 70).length;
   const parentNotify = todays.filter(r => painScoreValue(r) >= 7 || /受傷風險|需要關心|脫水風險|高風險/.test(String(r.aiTags || ''))).length;
   const highRisk = todays.filter(r =>
     painScoreValue(r) >= 7 ||
@@ -1138,190 +1076,10 @@ function renderOverview(todays) {
     ['RPE 8 以上', rpeHigh],
     ['睡眠差', sleepBad],
     ['心情低落', moodLow],
-    ['可信度低', credLow],
     ['需家長通知', parentNotify]
   ];
   box.innerHTML = (highRisk.length ? `<div class="hint-box warn" style="grid-column:1/-1"><b>高風險未處理提醒</b>：${highRisk.map(r => escapeHtml(r.name || '')).join('、')}。請先確認疼痛、訓練調整、家長通知或復健/就醫建議。</div>` : '') +
     cells.map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
-}
-
-function reportCredibilityInfo(rec) {
-  if (typeof computeReportCredibility === 'function') {
-    try { return computeReportCredibility(rec || {}); } catch (e) {}
-  }
-  const score = nval(rec && rec.reportCredibility);
-  const flags = String(rec && rec.reportCredibilityFlags || '').split(/[｜|]/).map(s => s.trim()).filter(Boolean);
-  return {
-    score: Number.isFinite(score) ? score : 100,
-    level: String(rec && rec.reportCredibilityLevel || (Number.isFinite(score) ? (score >= 80 ? '🟢 真實' : score >= 60 ? '🟡 需補充' : '🔴 可信度低') : '🟢 真實')),
-    flags: flags,
-    text: flags.join('｜')
-  };
-}
-
-function reportCredibilityValue(rec) {
-  return reportCredibilityInfo(rec).score;
-}
-
-let COACH_STUDENT_DIRECTORY = {
-  ts: 0,
-  loading: null,
-  byId: {},
-  byName: {}
-};
-
-function buildCoachStudentDirectory(data) {
-  const byId = {};
-  const byName = {};
-  const students = Array.isArray(data && data.students) ? data.students : [];
-  students.forEach(s => {
-    const id = String(s && s.studentId || '').trim();
-    const name = String(s && s.studentName || '').trim();
-    if (id && name) byId[id] = name;
-    if (name) byName[normalizeNameKey(name)] = name;
-  });
-  const parents = Array.isArray(data && data.parents) ? data.parents : [];
-  parents.forEach(p => {
-    const id = String(p && p.studentId || '').trim();
-    const name = String(p && p.studentName || '').trim();
-    if (id && name && !byId[id]) byId[id] = name;
-    if (name && !byName[normalizeNameKey(name)]) byName[normalizeNameKey(name)] = name;
-  });
-  return { byId, byName };
-}
-
-function getCoachStudentDirectorySnapshot() {
-  try {
-    if (typeof ACCOUNT_ADMIN_DATA !== 'undefined' && ACCOUNT_ADMIN_DATA) return ACCOUNT_ADMIN_DATA;
-  } catch (e) {}
-  return null;
-}
-
-async function ensureCoachStudentDirectory(force) {
-  const snapshot = getCoachStudentDirectorySnapshot();
-  if (!force && snapshot && Array.isArray(snapshot.students) && snapshot.students.length) {
-    const built = buildCoachStudentDirectory(snapshot);
-    COACH_STUDENT_DIRECTORY = {
-      ts: Date.now(),
-      loading: null,
-      byId: built.byId,
-      byName: built.byName
-    };
-    return COACH_STUDENT_DIRECTORY;
-  }
-  if (!force && Date.now() - COACH_STUDENT_DIRECTORY.ts < 10 * 60 * 1000 && Object.keys(COACH_STUDENT_DIRECTORY.byId || {}).length) {
-    return COACH_STUDENT_DIRECTORY;
-  }
-  if (COACH_STUDENT_DIRECTORY.loading) return COACH_STUDENT_DIRECTORY.loading;
-  COACH_STUDENT_DIRECTORY.loading = (async () => {
-    try {
-      if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
-      const res = await postToWebApp({ action: 'getAccountAdminData' });
-      if (res && res.ok && res.data) {
-        const built = buildCoachStudentDirectory(res.data);
-        COACH_STUDENT_DIRECTORY = {
-          ts: Date.now(),
-          loading: null,
-          byId: built.byId,
-          byName: built.byName
-        };
-        return COACH_STUDENT_DIRECTORY;
-      }
-    } catch (e) {}
-    COACH_STUDENT_DIRECTORY.loading = null;
-    return COACH_STUDENT_DIRECTORY;
-  })();
-  return COACH_STUDENT_DIRECTORY.loading;
-}
-
-function coachDisplayNameFromRecord(rec) {
-  const rawName = String((rec && (rec.studentName || rec.name || rec.athleteName)) || '').trim();
-  const id = String((rec && (rec.studentId || rec.athleteId)) || '').trim();
-  const directory = COACH_STUDENT_DIRECTORY || {};
-  const mapped = (id && directory.byId && directory.byId[id]) || (rawName && directory.byName && directory.byName[normalizeNameKey(rawName)]);
-  const display = String(mapped || rawName || '').trim();
-  return {
-    text: display || '姓名待確認',
-    ok: looksLikeStudentName(display),
-    raw: rawName,
-    id: id
-  };
-}
-
-function looksLikeStudentName(text) {
-  const t = String(text || '').trim();
-  if (!t) return false;
-  if (t.length > 14) return false;
-  if (/[\d｜|]/.test(t)) return false;
-  if (/疼痛|睡眠|需要關心|高優先|待回覆|已回報|未測驗|紅燈|黃燈|綠燈|中度|重度|觀察|追問|異常|風險|資料穩定|正常/.test(t)) return false;
-  return true;
-}
-
-function safeCoachDisplayName(rec) {
-  const resolved = coachDisplayNameFromRecord(rec);
-  if (resolved.ok) return resolved;
-  const raw = String((rec && (rec.studentName || rec.name || rec.athleteName)) || '').trim();
-  if (looksLikeStudentName(raw)) return { text: raw, ok: true, raw: raw, id: resolved.id };
-  return resolved;
-}
-
-function renderCoachCareList(todays) {
-  const box = $id('coachCareList');
-  if (!box) return;
-  const items = (todays || []).map(r => {
-    const c = reportCredibilityInfo(r);
-    const pain = painScoreValue(r);
-    const flags = c.flags.slice();
-    if (pain >= 7) flags.push('疼痛 7 分以上');
-    if (pain >= 5 && (!String(r.painTrigger || '').trim() || !String(r.painToldCoach || '').trim() || !String(r.painNeedAdjust || '').trim())) {
-      flags.push('疼痛追問未補齊');
-    }
-    return {
-      r: r,
-      c: c,
-      flags: flags,
-      pain: pain
-    };
-  }).filter(item => item.c.score < 80 || item.flags.length || item.pain >= 5)
-    .sort((a, b) => a.c.score - b.c.score || b.pain - a.pain)
-    .slice(0, 8);
-
-  if (!items.length) {
-    box.innerHTML = '<div class="hint-box good">今日暫時沒有需要特別關心的回報，可信度與內容都還算穩定。</div>';
-    return;
-  }
-
-  const nextStep = item => {
-    if (/明日目標過於空泛/.test(item.c.text)) return '請改成可檢查的明日目標。';
-    if (/心得四格/.test(item.c.text)) return '請補完心得四格。';
-    if (/疼痛/.test(item.c.text)) return '先補疼痛追問，再決定明天訓練。';
-    if (/未填隊友鼓勵/.test(item.c.text)) return '請補一句具體鼓勵隊友的內容。';
-    if (item.pain >= 7) return '先確認傷況與恢復。';
-    return '可先私下問一下今天的狀況。';
-  };
-
-  box.innerHTML = `
-    <h4>需教練關心名單（${items.length}）</h4>
-    ${items.map(item => {
-      const badgeClass = item.c.score >= 80 ? 'good' : (item.c.score >= 60 ? 'warn' : 'danger');
-      const nameInfo = safeCoachDisplayName(item.r);
-      const dateText = dateSlash(item.r && (item.r.date || item.r.timestamp || item.r.createdAt || ''));
-      const groupText = String(item.r && item.r.group || '').trim();
-      const reasonTags = item.flags.length
-        ? item.flags.slice(0, 4).map(t => `<span class="tag ${badgeClass === 'danger' ? 'tag-red' : 'tag-orange'}">${escapeHtml(t)}</span>`).join('')
-        : '<span class="tag tag-green">正常</span>';
-      return `
-        <div class="coach-care-card">
-          <div class="coach-care-head">
-            <div class="coach-care-name">${escapeHtml(nameInfo.text)}</div>
-            <span class="cred-badge ${badgeClass}">${escapeHtml(String(item.c.score))}｜${escapeHtml(item.c.level)}</span>
-          </div>
-          <div class="review-label">${escapeHtml(dateText)}${groupText ? `｜${escapeHtml(groupText)}` : ''}${nameInfo.ok ? '' : '｜姓名異常，請先確認資料欄位'}</div>
-          <div class="coach-care-reasons">${reasonTags}</div>
-          <div class="hint-box ${badgeClass === 'danger' ? 'warn' : ''}">下一步：${escapeHtml(nextStep(item))}</div>
-        </div>`;
-    }).join('')}
-  `;
 }
 
 function cleanLightForCoach(v) {
@@ -1629,8 +1387,7 @@ function renderStatusLists(todays) {
     html += `<div class="list-block"><h4>${title}（${list.length}）</h4><div class="name-list">`;
     if (list.length) list.forEach(r => {
       const cls = title.indexOf('紅') !== -1 ? 'tag-red' : (title.indexOf('黃') !== -1 ? 'tag-yellow' : 'tag-green');
-      // 選手姓名一律跳脫：本檔其餘 77 處都有做，這裡原本漏了（資安稽核 B-03）
-      html += `<span class="tag ${cls}">${escapeHtml(r.name)} (${escapeHtml(r.averageScore)})</span>`;
+      html += `<span class="tag ${cls}">${r.name} (${r.averageScore})</span>`;
     });
     else html += '<span class="review-label">無</span>';
     html += `</div></div>`;
@@ -1680,8 +1437,7 @@ function renderRedLightCoaching(todays) {
 
     if (canTarget) {
       html += `<div class="redcare-divider"></div>`;
-      // placeholder 是 HTML 屬性值，姓名含引號時會脫逃屬性 → 必須跳脫（資安稽核 B-03）
-      html += `<textarea class="text-input" id="redmsg-${escapeHtml(r.recordId)}" rows="2" placeholder="給 ${escapeHtml(r.name)} 的方向與鼓勵…（可用下方快捷語帶入）">${escapeHtml(r.coachReply || '')}</textarea>`;
+      html += `<textarea class="text-input" id="redmsg-${r.recordId}" rows="2" placeholder="給 ${r.name} 的方向與鼓勵…（可用下方快捷語帶入）">${escapeHtml(r.coachReply || '')}</textarea>`;
       html += `<div class="quick-chips redcare-chips" id="redchips-${r.recordId}" style="display:none;"></div>`;
       html += `<div class="redcare-actions">
         <button type="button" class="btn btn-ai btn-sm" data-redai="${r.recordId}">✨ AI 代擬</button>
@@ -2129,10 +1885,8 @@ async function renderCoachTasks() {
     if (!btn) return;
     btn.addEventListener('click', async () => {
       const merged = Object.assign({}, r.data, {
-        // 元素 id 在產生時是用 escapeHtml(r.name)（見上方 renderTaskCards），
-        // 查詢時必須用同樣的字串，否則姓名含 & < > " ' 的選手會查不到元素而丟例外。
-        coachObservation: ($id(`tobs-${escapeHtml(r.name)}`) || {}).value?.trim() || '',
-        coachNextStep: ($id(`tnext-${escapeHtml(r.name)}`) || {}).value?.trim() || ''
+        coachObservation: $id(`tobs-${r.name}`).value.trim(),
+        coachNextStep: $id(`tnext-${r.name}`).value.trim()
       });
       btn.disabled = true; btn.textContent = '儲存中...';
       await appSet(appKeyTask(r.name, date), merged);
@@ -2466,18 +2220,11 @@ const LASTPERF_TODAY_STATE = {
   summary: { reported: 0, pending: 0, priority: 0 },
   filter: 'all',
   selected: '',
-  selectedKey: '',
   date: ''
 };
 
 function lastPerfRecordName(rec) {
-  // 歷史資料的 studentName 可能因欄位位移而被 AI 標籤污染。
-  // records.name 是主要姓名欄位；只有 name 空白時才 fallback。
-  return String(recordName(rec) || '').trim();
-}
-function lastPerfRecordIdentity(rec) {
-  if (!rec || typeof rec !== 'object') return '';
-  return String(rec.studentId || rec.athleteId || '').trim();
+  return String((rec && (rec.studentName || rec.name)) || '').trim();
 }
 function lastPerfNum(v) {
   const n = parseFloat(v);
@@ -2496,14 +2243,6 @@ function getLastPerfSelectedDate() {
 function lastPerfDateLabel(date) {
   const d = normDate(date || todayStr());
   return d === todayStr() ? '今日' : dateSlash(d);
-}
-function collectRecordDates(records) {
-  const seen = {};
-  (records || []).forEach(r => {
-    const d = normDate(r && (r.date || r.timestamp || r.createdAt));
-    if (d) seen[d] = true;
-  });
-  return Object.keys(seen).sort((a, b) => b.localeCompare(a));
 }
 function latestRecordForNameDate(records, name, date) {
   const key = normalizeNameKey(name);
@@ -2556,60 +2295,29 @@ function lastPerfHasPriority(rec, history) {
 
 async function loadTodayReportedStudents(opts) {
   const targetDate = getLastPerfSelectedDate();
-  await ensureCoachStudentDirectory(false);
-  let records = [];
-  try {
-    records = await fetchAllRecords(Object.assign({ strict: true, force: true }, opts || {}));
-  } catch (e) {
-    return {
-      items: [],
-      summary: { reported: 0, pending: 0, priority: 0 },
-      meta: {
-        targetDate: targetDate,
-        error: String(e && e.message ? e.message : e || ''),
-        authRequired: /AUTH_REQUIRED/i.test(String(e && e.message ? e.message : e || '')),
-        fetchFailed: /FETCH_FAILED/i.test(String(e && e.message ? e.message : e || ''))
-      }
-    };
-  }
+  const records = await fetchAllRecords(opts || {});
   const todays = {};
   (records || []).forEach(rec => {
-    const key = lastPerfRecordIdentity(rec) || normalizeNameKey(lastPerfRecordName(rec));
-    if (!key || normDate(rec.date || rec.timestamp || rec.createdAt) !== targetDate) return;
-    const prev = todays[key];
+    const name = lastPerfRecordName(rec);
+    if (!name || normDate(rec.date || rec.timestamp || rec.createdAt) !== targetDate) return;
+    const prev = todays[name];
     const t = String(rec.timestamp || rec.createdAt || rec.updatedAt || '');
-    if (!prev || t >= String(prev.timestamp || prev.createdAt || prev.updatedAt || '')) todays[key] = rec;
+    if (!prev || t >= String(prev.timestamp || prev.createdAt || prev.updatedAt || '')) todays[name] = rec;
   });
   // 「待回覆／已回報」標籤改用已抓回的 record（其 coachReply 欄位）＋本機回覆暫存判斷，
   // 不再為每位今日回報選手各發一個 getCoachReplies 請求（原本的 N+1，是開分頁最大的延遲來源）。
   // lastPerfHasCoachReply 會優先看 rec.coachReply，教練透過本系統回覆時已寫回該欄位，狀態仍準確。
   const replies = getCoachReplyStore();
-  const status = buildTodayReportStatus(Object.values(todays), replies, records || []);
-  return {
-    items: status.items,
-    summary: status.summary,
-    meta: {
-      targetDate: targetDate,
-      availableDates: collectRecordDates(records),
-      emptyDate: !Object.keys(todays).length && (records || []).length > 0,
-      hasRecords: !!(records || []).length
-    }
-  };
+  return buildTodayReportStatus(Object.values(todays), replies, records || []);
 }
 
 function buildTodayReportStatus(records, replies, allRecords) {
   const items = (records || []).map(rec => {
-    const resolved = coachDisplayNameFromRecord(rec);
-    const rawName = lastPerfRecordName(rec);
-    const key = lastPerfRecordIdentity(rec) || normalizeNameKey(rawName);
+    const name = lastPerfRecordName(rec);
     const hasReply = lastPerfHasCoachReply(rec, replies);
     const priority = lastPerfHasPriority(rec, allRecords);
     return {
-      studentName: resolved.text || rawName,
-      rawStudentName: rawName,
-      studentKey: key,
-      studentId: String(rec && rec.studentId || '').trim(),
-      athleteId: String(rec && rec.athleteId || '').trim(),
+      studentName: name,
       record: rec,
       hasReply: hasReply,
       pending: !hasReply,
@@ -2643,7 +2351,7 @@ function renderTodayReportSummary(summary) {
   `;
 }
 
-function renderTodayReportedList(items, filter, meta) {
+function renderTodayReportedList(items, filter) {
   const box = $id('todayReportedList');
   if (!box) return;
   const key = filter || LASTPERF_TODAY_STATE.filter || 'all';
@@ -2652,38 +2360,20 @@ function renderTodayReportedList(items, filter, meta) {
   if (key === 'pending') list = list.filter(x => x.pending);
   if (key === 'priority') list = list.filter(x => x.priority);
   if (!list.length) {
-    if (meta && meta.authRequired) {
-      box.innerHTML = `<div class="hint-box warn">教練登入已過期，請重新登入後再讀取回報名單。</div>`;
-      return;
-    }
-    if (meta && meta.fetchFailed) {
-      box.innerHTML = `<div class="hint-box warn">後端讀取失敗，請確認 Web App URL、部署權限，或重新整理後再試一次。</div>`;
-      return;
-    }
-    if (meta && meta.emptyDate) {
-      const dates = (meta.availableDates || []).slice(0, 3).map(dateSlash).join('、');
-      box.innerHTML = `<div class="hint-box warn">${escapeHtml(label)}沒有回報資料。最近有資料的日期：${dates || '目前沒有可用紀錄'}</div>`;
-      return;
-    }
     box.innerHTML = `<div class="hint-box">${key === 'all' ? `${escapeHtml(label)}還沒有選手回報。` : '目前沒有符合此篩選的選手。'}</div>`;
     return;
   }
   box.innerHTML = list.map(item => {
     const cls = item.priority ? 'priority' : (item.pending ? 'pending' : 'reported');
-    const active = LASTPERF_TODAY_STATE.selectedKey === item.studentKey ? ' active' : '';
-    return `<button type="button" class="today-reported-card ${cls}${active}" data-lastperf-student="${escapeHtml(item.studentName)}" data-lastperf-student-id="${escapeHtml(item.studentId || '')}" data-lastperf-athlete-id="${escapeHtml(item.athleteId || '')}" data-lastperf-student-key="${escapeHtml(item.studentKey || '')}">
+    const active = LASTPERF_TODAY_STATE.selected === item.studentName ? ' active' : '';
+    return `<button type="button" class="today-reported-card ${cls}${active}" data-lastperf-student="${escapeHtml(item.studentName)}">
       <span class="today-reported-name">${(window.TraitRadar && typeof window.TraitRadar.nameInlineHtml === 'function') ? window.TraitRadar.nameInlineHtml(item.studentName) : escapeHtml(item.studentName)}</span>
       <span class="today-reported-status">${escapeHtml(item.status)}</span>
       <span class="today-reported-arrow">›</span>
     </button>`;
   }).join('');
   box.querySelectorAll('[data-lastperf-student]').forEach(btn => {
-    btn.addEventListener('click', () => selectStudentFromQuickList({
-      name: btn.dataset.lastperfStudent,
-      studentId: btn.dataset.lastperfStudentId,
-      athleteId: btn.dataset.lastperfAthleteId,
-      key: btn.dataset.lastperfStudentKey
-    }));
+    btn.addEventListener('click', () => selectStudentFromQuickList(btn.dataset.lastperfStudent));
   });
 }
 
@@ -2695,11 +2385,10 @@ function applyTodayReportFilter(filterKey) {
   renderTodayReportedList(LASTPERF_TODAY_STATE.items, LASTPERF_TODAY_STATE.filter);
 }
 
-function selectStudentFromQuickList(student) {
-  const name = String(student && student.name || student || '').trim();
+function selectStudentFromQuickList(studentName) {
+  const name = String(studentName || '').trim();
   if (!name) return;
   LASTPERF_TODAY_STATE.selected = name;
-  LASTPERF_TODAY_STATE.selectedKey = String(student && student.key || student && student.studentId || student && student.athleteId || '').trim();
   const input = $id('lastPerfName');
   if (input) input.value = name;
   renderTodayReportedList(LASTPERF_TODAY_STATE.items, LASTPERF_TODAY_STATE.filter);
@@ -2721,13 +2410,12 @@ async function refreshTodayReportedList(opts) {
   const title = $id('todayReportedTitle');
   if (title) title.textContent = `${lastPerfDateLabel(selectedDate)}已回報名單`;
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
-  await ensureCoachStudentDirectory(false);
   const list = $id('todayReportedList');
   if (list) list.innerHTML = `<div class="hint-box">讀取${escapeHtml(lastPerfDateLabel(selectedDate))}回報名單中...</div>`;
   try {
     const data = await loadTodayReportedStudents(opts || {});
     renderTodayReportSummary(data.summary);
-    renderTodayReportedList(data.items, LASTPERF_TODAY_STATE.filter, data.meta);
+    renderTodayReportedList(data.items, LASTPERF_TODAY_STATE.filter);
   } catch (e) {
     if (list) list.innerHTML = `<div class="hint-box warn">名單讀取失敗，請稍後再試。</div>`;
   }
@@ -3095,23 +2783,16 @@ async function loadLastPerfPage() {
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') {
     await window.TraitRadar.loadCache();
   }
-  await ensureCoachStudentDirectory(false);
   const role = (getRole() || {}).role;
   const selectedDate = role === 'coach' ? getLastPerfSelectedDate() : '';
-  const selectedKey = String(LASTPERF_TODAY_STATE.selectedKey || '').trim();
   let rec = null;
   let history = [];
   if (role === 'coach' && selectedDate) {
     const allRecords = await fetchAllRecords();
-    history = (allRecords || []).filter(r => {
-      const rowKey = lastPerfRecordIdentity(r);
-      const rowName = normalizeNameKey(lastPerfRecordName(r) || recordName(r));
-      if (selectedKey && rowKey && rowKey === selectedKey) return true;
-      return rowName === normalizeNameKey(name);
-    }).sort((a, b) => normDate(b.date || b.timestamp).localeCompare(normDate(a.date || a.timestamp)));
-    rec = (selectedKey
-      ? history.find(r => lastPerfRecordIdentity(r) === selectedKey && normDate(r.date || r.timestamp || r.createdAt) === selectedDate)
-      : null) || latestRecordForNameDate(history, name, selectedDate);
+    history = (allRecords || [])
+      .filter(r => normalizeNameKey(lastPerfRecordName(r) || recordName(r)) === normalizeNameKey(name))
+      .sort((a, b) => normDate(b.date || b.timestamp).localeCompare(normDate(a.date || a.timestamp)));
+    rec = latestRecordForNameDate(history, name, selectedDate);
   } else {
     [rec, history] = await Promise.all([
       fetchLastRecord(name),
