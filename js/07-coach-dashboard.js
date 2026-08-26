@@ -2471,7 +2471,9 @@ const LASTPERF_TODAY_STATE = {
 };
 
 function lastPerfRecordName(rec) {
-  return String((rec && (rec.studentName || rec.name)) || '').trim();
+  // 歷史資料的 studentName 可能因欄位位移而被 AI 標籤污染。
+  // records.name 是主要姓名欄位；只有 name 空白時才 fallback。
+  return String(recordName(rec) || '').trim();
 }
 function lastPerfRecordIdentity(rec) {
   if (!rec || typeof rec !== 'object') return '';
