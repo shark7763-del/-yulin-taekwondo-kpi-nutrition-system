@@ -2383,6 +2383,14 @@ function lastPerfDateLabel(date) {
   const d = normDate(date || todayStr());
   return d === todayStr() ? '今日' : dateSlash(d);
 }
+function collectRecordDates(records) {
+  const seen = {};
+  (records || []).forEach(r => {
+    const d = normDate(r && (r.date || r.timestamp || r.createdAt));
+    if (d) seen[d] = true;
+  });
+  return Object.keys(seen).sort((a, b) => b.localeCompare(a));
+}
 function latestRecordForNameDate(records, name, date) {
   const key = normalizeNameKey(name);
   const targetDate = normDate(date);
@@ -2434,7 +2442,21 @@ function lastPerfHasPriority(rec, history) {
 
 async function loadTodayReportedStudents(opts) {
   const targetDate = getLastPerfSelectedDate();
-  const records = await fetchAllRecords(opts || {});
+  let records = [];
+  try {
+    records = await fetchAllRecords(Object.assign({ strict: true, force: true }, opts || {}));
+  } catch (e) {
+    return {
+      items: [],
+      summary: { reported: 0, pending: 0, priority: 0 },
+      meta: {
+        targetDate: targetDate,
+        error: String(e && e.message ? e.message : e || ''),
+        authRequired: /AUTH_REQUIRED/i.test(String(e && e.message ? e.message : e || '')),
+        fetchFailed: /FETCH_FAILED/i.test(String(e && e.message ? e.message : e || ''))
+      }
+    };
+  }
   const todays = {};
   (records || []).forEach(rec => {
     const name = lastPerfRecordName(rec);
@@ -2447,7 +2469,17 @@ async function loadTodayReportedStudents(opts) {
   // 不再為每位今日回報選手各發一個 getCoachReplies 請求（原本的 N+1，是開分頁最大的延遲來源）。
   // lastPerfHasCoachReply 會優先看 rec.coachReply，教練透過本系統回覆時已寫回該欄位，狀態仍準確。
   const replies = getCoachReplyStore();
-  return buildTodayReportStatus(Object.values(todays), replies, records || []);
+  const status = buildTodayReportStatus(Object.values(todays), replies, records || []);
+  return {
+    items: status.items,
+    summary: status.summary,
+    meta: {
+      targetDate: targetDate,
+      availableDates: collectRecordDates(records),
+      emptyDate: !Object.keys(todays).length && (records || []).length > 0,
+      hasRecords: !!(records || []).length
+    }
+  };
 }
 
 function buildTodayReportStatus(records, replies, allRecords) {
@@ -2490,7 +2522,7 @@ function renderTodayReportSummary(summary) {
   `;
 }
 
-function renderTodayReportedList(items, filter) {
+function renderTodayReportedList(items, filter, meta) {
   const box = $id('todayReportedList');
   if (!box) return;
   const key = filter || LASTPERF_TODAY_STATE.filter || 'all';
@@ -2499,6 +2531,19 @@ function renderTodayReportedList(items, filter) {
   if (key === 'pending') list = list.filter(x => x.pending);
   if (key === 'priority') list = list.filter(x => x.priority);
   if (!list.length) {
+    if (meta && meta.authRequired) {
+      box.innerHTML = `<div class="hint-box warn">教練登入已過期，請重新登入後再讀取回報名單。</div>`;
+      return;
+    }
+    if (meta && meta.fetchFailed) {
+      box.innerHTML = `<div class="hint-box warn">後端讀取失敗，請確認 Web App URL、部署權限，或重新整理後再試一次。</div>`;
+      return;
+    }
+    if (meta && meta.emptyDate) {
+      const dates = (meta.availableDates || []).slice(0, 3).map(dateSlash).join('、');
+      box.innerHTML = `<div class="hint-box warn">${escapeHtml(label)}沒有回報資料。最近有資料的日期：${dates || '目前沒有可用紀錄'}</div>`;
+      return;
+    }
     box.innerHTML = `<div class="hint-box">${key === 'all' ? `${escapeHtml(label)}還沒有選手回報。` : '目前沒有符合此篩選的選手。'}</div>`;
     return;
   }
@@ -2554,7 +2599,7 @@ async function refreshTodayReportedList(opts) {
   try {
     const data = await loadTodayReportedStudents(opts || {});
     renderTodayReportSummary(data.summary);
-    renderTodayReportedList(data.items, LASTPERF_TODAY_STATE.filter);
+    renderTodayReportedList(data.items, LASTPERF_TODAY_STATE.filter, data.meta);
   } catch (e) {
     if (list) list.innerHTML = `<div class="hint-box warn">名單讀取失敗，請稍後再試。</div>`;
   }
