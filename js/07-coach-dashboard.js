@@ -2224,7 +2224,7 @@ const LASTPERF_TODAY_STATE = {
 };
 
 function lastPerfRecordName(rec) {
-  return String((rec && (rec.studentName || rec.name)) || '').trim();
+  return String(recordName(rec) || '').trim();
 }
 function lastPerfNum(v) {
   const n = parseFloat(v);
