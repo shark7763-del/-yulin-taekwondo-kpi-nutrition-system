@@ -135,6 +135,11 @@ function normalizeNameKey(v) {
     .toLowerCase();
 }
 
+function cleanMoodIndex(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 1 && n <= 5 ? n : '';
+}
+
 /*
    把一筆紀錄正規化成教練後台好用的形狀：
    - date：一律 normDate(r.date || r.timestamp)。
@@ -145,10 +150,14 @@ function normalizeNameKey(v) {
 function normalizeCoachRecord(r) {
   if (!r || typeof r !== 'object') return r;
   const name = String(r.name || r.studentName || r.athleteName || '').trim();
+  const moodIndex = cleanMoodIndex(r.moodIndex);
+  const emotionIndex = cleanMoodIndex(r.emotionIndex);
   return Object.assign({}, r, {
     date: normDate(r.date || r.timestamp),
     name: name,
-    studentName: String(r.studentName || r.name || name).trim()
+    studentName: String(r.studentName || r.name || name).trim(),
+    moodIndex: moodIndex || emotionIndex,
+    emotionIndex: emotionIndex || moodIndex
   });
 }
 

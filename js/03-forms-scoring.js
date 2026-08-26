@@ -797,10 +797,10 @@ async function fetchLastRecord(name) {
   if (url) {
     try {
       const res = await postToWebApp({ action: 'getLastRecordByName', name: name });
-      if (res && res.ok) return res.data; // data 可能是 null
+      if (res && res.ok) return normalizeCoachRecord(res.data); // data 可能是 null
     } catch (e) { /* 落回本機 */ }
   }
-  return localLastRecord(name);
+  return normalizeCoachRecord(localLastRecord(name));
 }
 
 // 取得某選手最近 N 筆（正式優先，否則本機）
@@ -809,10 +809,10 @@ async function fetchRecentRecords(name, limit) {
   if (url) {
     try {
       const res = await postToWebApp({ action: 'getRecentRecordsByName', name: name, limit: limit || 60 });
-      if (res && res.ok && Array.isArray(res.data)) return res.data;
+      if (res && res.ok && Array.isArray(res.data)) return res.data.map(normalizeCoachRecord);
     } catch (e) { /* 落回本機 */ }
   }
-  return localRecentRecords(name, limit || 60);
+  return localRecentRecords(name, limit || 60).map(normalizeCoachRecord);
 }
 
 async function fetchParents() {
