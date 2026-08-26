@@ -23,17 +23,32 @@ function getAthleteIdForName(name) {
   return 'S' + String(Math.abs(hash) % 10000).padStart(4, '0');
 }
 
+function looksLikeRosterName(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (t.length > 14) return false;
+  if (/[\d｜|]/.test(t)) return false;
+  if (/疼痛|睡眠|需要關心|高優先|待回覆|已回報|未測驗|紅燈|黃燈|綠燈|中度|重度|觀察|追問|異常|風險|資料穩定|正常/.test(t)) return false;
+  return true;
+}
+
 function getPlayers() {
   try {
     const raw = localStorage.getItem(LS_KEYS.players);
     if (raw) {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr) && arr.length) return arr;
+      if (Array.isArray(arr) && arr.length) {
+        const cleaned = arr.map(v => String(v || '').trim()).filter(looksLikeRosterName);
+        if (cleaned.length) return cleaned;
+      }
     }
   } catch (e) { /* 忽略，回傳預設 */ }
   return DEFAULT_PLAYERS.slice();
 }
-function savePlayers(arr) { localStorage.setItem(LS_KEYS.players, JSON.stringify(arr)); }
+function savePlayers(arr) {
+  const cleaned = Array.isArray(arr) ? arr.map(v => String(v || '').trim()).filter(looksLikeRosterName) : [];
+  localStorage.setItem(LS_KEYS.players, JSON.stringify(cleaned));
+}
 // 內建 CONFIG.WEB_APP_URL 優先（給所有裝置共用）；否則用各裝置自存的網址
 function getWebAppUrl() { return (CONFIG.WEB_APP_URL || '').trim() || localStorage.getItem(LS_KEYS.webAppUrl) || ''; }
 function saveWebAppUrl(url) { localStorage.setItem(LS_KEYS.webAppUrl, url); }
