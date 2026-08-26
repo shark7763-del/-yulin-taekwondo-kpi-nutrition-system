@@ -19,3 +19,12 @@ desktop.ini
 # 若日後加入個人測試資料匯出，可放這裡：
 local-test-data.json
 secrets.txt
+key.txt
+*.key
+.env
+.env.*
+
+# ===== 測試相依（無 build 產物，但 Playwright 會裝套件）=====
+node_modules/
+test-results/
+playwright-report/

@@ -101,6 +101,8 @@ function init() {
   if (studentForm) ['input', 'change'].forEach(ev => studentForm.addEventListener(ev, saveDraftDebounced));
   const mgt = $id('mainGoalToday');
   if (mgt) mgt.addEventListener('input', saveDraftDebounced);
+  ['reflectionGood', 'reflectionProblem', 'reflectionReason', 'reflectionFix', 'tomorrowGoal', 'painTrigger', 'painToldCoach', 'painNeedAdjust']
+    .forEach(id => { const el = $id(id); if (el) el.addEventListener('input', saveDraftDebounced); });
 
   // 送出按鈕
   $id('btnSubmit').addEventListener('click', () => doSubmit('official'));
@@ -277,7 +279,9 @@ function fallbackCopy(text) {
 function clearForm() {
   ['schoolLevel', 'grade', 'classCode', 'gradeClass', 'trainingMinutes', 'trainingTopic', 'absenceReason', 'absenceMiss', 'absenceCatchup', 'heightCm', 'weightKg', 'targetWeightKg',
    'breakfast', 'lunch', 'dinner', 'snacksDrinks',
-   'reflection', 'tomorrowGoal', 'gratitude', 'encouragementToTeammate', 'mainGoalToday'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
+   'reflection', 'reflectionGood', 'reflectionProblem', 'reflectionReason', 'reflectionFix',
+   'tomorrowGoal', 'gratitude', 'encouragementToTeammate', 'mainGoalToday',
+   'painTrigger', 'painToldCoach', 'painNeedAdjust'].forEach(id => { const el = $id(id); if (el) el.value = ''; });
   if ($id('absenceHonesty')) $id('absenceHonesty').selectedIndex = 0;
   document.querySelectorAll('#absenceMissChips .chip, #absenceCatchupChips .chip').forEach(c => c.classList.remove('sel'));
   clearMealTags();
@@ -329,7 +333,9 @@ const DRAFT_FIELDS = [
   'bedTime', 'wakeTime', 'sleepQuality', 'soreness', 'rpe', 'painArea', 'injuryArea', 'painScore', 'trainingSession', 'sweatLevel',
   'heightCm', 'weightKg', 'targetWeightKg',
   'breakfast', 'lunch', 'dinner', 'snacksDrinks', 'waterIntake', 'urineStatus', 'lateNightSnack', 'trainingIntensity',
-  'reflection', 'tomorrowGoal', 'gratitude', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday'
+  'reflection', 'reflectionGood', 'reflectionProblem', 'reflectionReason', 'reflectionFix',
+  'tomorrowGoal', 'gratitude', 'encourageTeammate', 'encouragementToTeammate', 'mainGoalToday',
+  'painTrigger', 'painToldCoach', 'painNeedAdjust'
 ].concat(FREESTYLE_EXTRA_IDS);
 
 function debounce(fn, ms) {

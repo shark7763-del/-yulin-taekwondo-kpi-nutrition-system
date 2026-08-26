@@ -973,7 +973,59 @@ function renderCoachQuickScores(todays, coachScores) {
   });
 }
 
+/*
+   教練看得懂的載入失敗畫面（稽核 D-09）。
+   三種常見狀況分開給不同的下一步，而不是一律「請重試」。
+*/
+function showCoachLoadError(err) {
+  const msg = String((err && err.message) || err || '');
+  let title, body;
+  if (/登入|session|authRequired|重新登入/i.test(msg)) {
+    title = '你的登入已經過期';
+    body = '為了保護選手資料，登入一段時間後會自動失效。請重新登入一次就可以繼續。';
+  } else if (/fetch|network|timeout|逾時|連線/i.test(msg)) {
+    title = 'Google Sheet 連線失敗';
+    body = '資料沒有讀到（<b>不是資料不見</b>，是這次連不上）。請確認網路後再按一次重新整理。';
+  } else {
+    title = '讀取資料時發生問題';
+    body = '資料沒有讀到，選手已回報的內容仍然保存在 Google Sheet 裡。請稍後再試一次。';
+  }
+  toast('⚠️ ' + title);
+  const box = $id('coachOverview') || $id('coachContent');
+  if (!box) return;
+  box.innerHTML = `
+    <div class="coach-load-error">
+      <h3 class="card-title">⚠️ ${escapeHtml(title)}</h3>
+      <p>${body}</p>
+      <button type="button" class="btn-primary" id="btnCoachRetry">🔁 重新整理</button>
+      <p class="review-label">若連續失敗，可到「系統設定」確認 Web App URL 是否正確。</p>
+    </div>`;
+  const retry = $id('btnCoachRetry');
+  if (retry) retry.addEventListener('click', () => refreshCoach());
+}
+
+/* 教練後台重新整理是否正在進行中。
+   稽核 A-05：原本沒有 in-flight 保護，教練連點重整鈕會對已知偏慢的 GAS 後端
+   同時發出多個 getAllRecords（每次都要讀整張 records 表），彼此拖慢還可能
+   讓晚回來的舊回應覆蓋新畫面。 */
+let _coachRefreshing = false;
+
 async function refreshCoach() {
+  if (_coachRefreshing) { toast('資料還在讀取中，請稍候…'); return; }
+  _coachRefreshing = true;
+  const refreshBtn = $id('btnRefreshCoach');
+  const btnLabel = refreshBtn ? refreshBtn.textContent : '';
+  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = '讀取中…'; }
+
+  try {
+    return await refreshCoachInner();
+  } finally {
+    _coachRefreshing = false;
+    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = btnLabel; }
+  }
+}
+
+async function refreshCoachInner() {
   toast('讀取資料中...');
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
 
@@ -982,7 +1034,14 @@ async function refreshCoach() {
   try {
     all = await fetchAllRecords({ strict: true, force: true });
   } catch (e) {
-    toast('⚠️ ' + (e && e.message ? e.message : '讀取資料失敗，請重新登入'));
+    /*
+       稽核 D-09：原本直接把 e.message 丟給教練，會出現
+       「TypeError: Failed to fetch」這種完全無法行動的訊息。
+       技術細節留在 console 與診斷紀錄，畫面上給教練看得懂的話與下一步。
+    */
+    console.error('[refreshCoach] 讀取失敗：', e);
+    if (window.TeamProDiag) window.TeamProDiag.log('coach-load-error', (e && e.stack) || String(e));
+    showCoachLoadError(e);
     return;
   }
 
@@ -1023,6 +1082,7 @@ async function refreshCoach() {
 
   // 這三個一定要用完整今日資料 todaysAll，狀態篩選不能影響「已回報／未回報」
   renderOverview(todaysAll);
+  renderCoachCareList(todaysAll);
   renderSubmitStatus(todaysAll);
   renderCoachAttendanceReports(todaysAll);
 
@@ -1062,6 +1122,7 @@ function renderOverview(todays) {
   const rpeHigh = todays.filter(r => nval(r.rpe) !== null && nval(r.rpe) >= 8).length;
   const sleepBad = todays.filter(r => String(r.sleepQuality || '') === '差' || (nval(r.sleepHours) !== null && nval(r.sleepHours) < 6)).length;
   const moodLow = todays.filter(r => nval(r.moodIndex) !== null && nval(r.moodIndex) <= 2).length;
+  const credLow = todays.filter(r => reportCredibilityValue(r) < 70).length;
   const parentNotify = todays.filter(r => painScoreValue(r) >= 7 || /受傷風險|需要關心|脫水風險|高風險/.test(String(r.aiTags || ''))).length;
   const highRisk = todays.filter(r =>
     painScoreValue(r) >= 7 ||
@@ -1076,10 +1137,84 @@ function renderOverview(todays) {
     ['RPE 8 以上', rpeHigh],
     ['睡眠差', sleepBad],
     ['心情低落', moodLow],
+    ['可信度低', credLow],
     ['需家長通知', parentNotify]
   ];
   box.innerHTML = (highRisk.length ? `<div class="hint-box warn" style="grid-column:1/-1"><b>高風險未處理提醒</b>：${highRisk.map(r => escapeHtml(r.name || '')).join('、')}。請先確認疼痛、訓練調整、家長通知或復健/就醫建議。</div>` : '') +
     cells.map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
+}
+
+function reportCredibilityInfo(rec) {
+  if (typeof computeReportCredibility === 'function') {
+    try { return computeReportCredibility(rec || {}); } catch (e) {}
+  }
+  const score = nval(rec && rec.reportCredibility);
+  const flags = String(rec && rec.reportCredibilityFlags || '').split(/[｜|]/).map(s => s.trim()).filter(Boolean);
+  return {
+    score: Number.isFinite(score) ? score : 100,
+    level: String(rec && rec.reportCredibilityLevel || (Number.isFinite(score) ? (score >= 80 ? '🟢 真實' : score >= 60 ? '🟡 需補充' : '🔴 可信度低') : '🟢 真實')),
+    flags: flags,
+    text: flags.join('｜')
+  };
+}
+
+function reportCredibilityValue(rec) {
+  return reportCredibilityInfo(rec).score;
+}
+
+function renderCoachCareList(todays) {
+  const box = $id('coachCareList');
+  if (!box) return;
+  const items = (todays || []).map(r => {
+    const c = reportCredibilityInfo(r);
+    const pain = painScoreValue(r);
+    const flags = c.flags.slice();
+    if (pain >= 7) flags.push('疼痛 7 分以上');
+    if (pain >= 5 && (!String(r.painTrigger || '').trim() || !String(r.painToldCoach || '').trim() || !String(r.painNeedAdjust || '').trim())) {
+      flags.push('疼痛追問未補齊');
+    }
+    return {
+      r: r,
+      c: c,
+      flags: flags,
+      pain: pain
+    };
+  }).filter(item => item.c.score < 80 || item.flags.length || item.pain >= 5)
+    .sort((a, b) => a.c.score - b.c.score || b.pain - a.pain)
+    .slice(0, 8);
+
+  if (!items.length) {
+    box.innerHTML = '<div class="hint-box good">今日暫時沒有需要特別關心的回報，可信度與內容都還算穩定。</div>';
+    return;
+  }
+
+  const nextStep = item => {
+    if (/明日目標過於空泛/.test(item.c.text)) return '請改成可檢查的明日目標。';
+    if (/心得四格/.test(item.c.text)) return '請補完心得四格。';
+    if (/疼痛/.test(item.c.text)) return '先補疼痛追問，再決定明天訓練。';
+    if (/未填隊友鼓勵/.test(item.c.text)) return '請補一句具體鼓勵隊友的內容。';
+    if (item.pain >= 7) return '先確認傷況與恢復。';
+    return '可先私下問一下今天的狀況。';
+  };
+
+  box.innerHTML = `
+    <h4>需教練關心名單（${items.length}）</h4>
+    ${items.map(item => {
+      const badgeClass = item.c.score >= 80 ? 'good' : (item.c.score >= 60 ? 'warn' : 'danger');
+      const reasonTags = item.flags.length
+        ? item.flags.slice(0, 4).map(t => `<span class="tag ${badgeClass === 'danger' ? 'tag-red' : 'tag-orange'}">${escapeHtml(t)}</span>`).join('')
+        : '<span class="tag tag-green">正常</span>';
+      return `
+        <div class="coach-care-card">
+          <div class="coach-care-head">
+            <div class="coach-care-name">${traitName(item.r.name || '')}</div>
+            <span class="cred-badge ${badgeClass}">${escapeHtml(String(item.c.score))}｜${escapeHtml(item.c.level)}</span>
+          </div>
+          <div class="coach-care-reasons">${reasonTags}</div>
+          <div class="hint-box ${badgeClass === 'danger' ? 'warn' : ''}">下一步：${escapeHtml(nextStep(item))}</div>
+        </div>`;
+    }).join('')}
+  `;
 }
 
 function cleanLightForCoach(v) {
@@ -1387,7 +1522,8 @@ function renderStatusLists(todays) {
     html += `<div class="list-block"><h4>${title}（${list.length}）</h4><div class="name-list">`;
     if (list.length) list.forEach(r => {
       const cls = title.indexOf('紅') !== -1 ? 'tag-red' : (title.indexOf('黃') !== -1 ? 'tag-yellow' : 'tag-green');
-      html += `<span class="tag ${cls}">${r.name} (${r.averageScore})</span>`;
+      // 選手姓名一律跳脫：本檔其餘 77 處都有做，這裡原本漏了（資安稽核 B-03）
+      html += `<span class="tag ${cls}">${escapeHtml(r.name)} (${escapeHtml(r.averageScore)})</span>`;
     });
     else html += '<span class="review-label">無</span>';
     html += `</div></div>`;
@@ -1437,7 +1573,8 @@ function renderRedLightCoaching(todays) {
 
     if (canTarget) {
       html += `<div class="redcare-divider"></div>`;
-      html += `<textarea class="text-input" id="redmsg-${r.recordId}" rows="2" placeholder="給 ${r.name} 的方向與鼓勵…（可用下方快捷語帶入）">${escapeHtml(r.coachReply || '')}</textarea>`;
+      // placeholder 是 HTML 屬性值，姓名含引號時會脫逃屬性 → 必須跳脫（資安稽核 B-03）
+      html += `<textarea class="text-input" id="redmsg-${escapeHtml(r.recordId)}" rows="2" placeholder="給 ${escapeHtml(r.name)} 的方向與鼓勵…（可用下方快捷語帶入）">${escapeHtml(r.coachReply || '')}</textarea>`;
       html += `<div class="quick-chips redcare-chips" id="redchips-${r.recordId}" style="display:none;"></div>`;
       html += `<div class="redcare-actions">
         <button type="button" class="btn btn-ai btn-sm" data-redai="${r.recordId}">✨ AI 代擬</button>
@@ -1885,8 +2022,10 @@ async function renderCoachTasks() {
     if (!btn) return;
     btn.addEventListener('click', async () => {
       const merged = Object.assign({}, r.data, {
-        coachObservation: $id(`tobs-${r.name}`).value.trim(),
-        coachNextStep: $id(`tnext-${r.name}`).value.trim()
+        // 元素 id 在產生時是用 escapeHtml(r.name)（見上方 renderTaskCards），
+        // 查詢時必須用同樣的字串，否則姓名含 & < > " ' 的選手會查不到元素而丟例外。
+        coachObservation: ($id(`tobs-${escapeHtml(r.name)}`) || {}).value?.trim() || '',
+        coachNextStep: ($id(`tnext-${escapeHtml(r.name)}`) || {}).value?.trim() || ''
       });
       btn.disabled = true; btn.textContent = '儲存中...';
       await appSet(appKeyTask(r.name, date), merged);
