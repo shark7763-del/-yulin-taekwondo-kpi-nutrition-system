@@ -1,0 +1,19 @@
+{
+  "name": "yulin-taekwondo-kpi-nutrition-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "育林國中技擊隊｜選手 KPI＋身體狀態＋AI 飲食建議系統。純前端（GitHub Pages）＋ Google Apps Script 後端。此 package.json 只服務測試，不參與部署——網站本身沒有 build 步驟。",
+  "scripts": {
+    "test": "node --test \"tests/unit/*.test.js\"",
+    "test:watch": "node --test --watch \"tests/unit/*.test.js\"",
+    "test:tz": "node --test \"tests/unit/*.test.js\"",
+    "check:syntax": "node tests/check-syntax.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}

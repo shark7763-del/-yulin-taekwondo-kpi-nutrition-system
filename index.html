@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-title" content="TeamPro" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=20260708a" />
+  <link rel="stylesheet" href="style.css?v=20260826a" />
   <link rel="stylesheet" href="monthly-report.css?v=20260627f" />
 </head>
 <body>
@@ -90,6 +90,11 @@
       <div class="card today-guide-card" id="studentTodayGuide" style="display:none;">
         <h3 class="card-title">🧭 今日我該做什麼</h3>
         <ul class="today-guide-list" id="studentTodayGuideList"></ul>
+      </div>
+
+      <div class="card today-guide-card" id="studentMentalTodayCard" style="display:none;">
+        <h3 class="card-title">🧠 今天練心</h3>
+        <div id="studentMentalTodayContent"></div>
       </div>
 
       <!-- 每日教練語錄 -->
@@ -275,6 +280,24 @@
                 </tbody>
               </table>
             </div>
+            <div id="painFollowupBox" class="pain-followup-box" style="display:none;">
+              <div class="hint-box warn"><b>疼痛 5 分以上要補充說明</b><br>這不是要處罰你，是讓教練知道明天該怎麼保護你。</div>
+              <label class="field-label">什麼動作會痛？</label>
+              <input type="text" id="painTrigger" class="text-input" placeholder="例如：後腳旋踢、跳躍落地、被踢到時" />
+              <label class="field-label">今天有沒有告訴教練？</label>
+              <select id="painToldCoach" class="text-input">
+                <option value="">請選擇</option>
+                <option value="有">有</option>
+                <option value="還沒有">還沒有</option>
+              </select>
+              <label class="field-label">明天需要調整訓練嗎？</label>
+              <select id="painNeedAdjust" class="text-input">
+                <option value="">請選擇</option>
+                <option value="需要">需要</option>
+                <option value="不確定，請教練判斷">不確定，請教練判斷</option>
+                <option value="暫時不需要">暫時不需要</option>
+              </select>
+            </div>
           </div>
         </fieldset>
 
@@ -368,10 +391,25 @@
           <legend>今日心得與目標</legend>
 
           <label class="field-label">今日心得 <span class="req">*</span></label>
-          <textarea id="reflection" class="text-input" rows="2" placeholder="今天訓練的感受..."></textarea>
+          <div class="reflection-grid">
+            <label class="reflection-field">今天我做得好的地方是
+              <textarea id="reflectionGood" class="text-input reflection-part" rows="2" placeholder="例如：有主動出前腳、最後一組沒有放棄"></textarea>
+            </label>
+            <label class="reflection-field">今天我遇到的問題是
+              <textarea id="reflectionProblem" class="text-input reflection-part" rows="2" placeholder="例如：後段體力掉很多、被逼到邊線只會退"></textarea>
+            </label>
+            <label class="reflection-field">我覺得原因可能是
+              <textarea id="reflectionReason" class="text-input reflection-part" rows="2" placeholder="例如：昨晚睡太少、距離沒有先看清楚"></textarea>
+            </label>
+            <label class="reflection-field">明天我想改進的是
+              <textarea id="reflectionFix" class="text-input reflection-part" rows="2" placeholder="例如：實戰先側移再反擊、訓練前先補水"></textarea>
+            </label>
+          </div>
+          <textarea id="reflection" class="text-input" rows="2" style="display:none;"></textarea>
 
           <label class="field-label">明日目標 <span class="req">*</span></label>
-          <textarea id="tomorrowGoal" class="text-input" rows="2" placeholder="明天我要做到..."></textarea>
+          <textarea id="tomorrowGoal" class="text-input" rows="2" placeholder="請寫成可檢查目標，例如：實戰主動進攻 5 次、被壓迫時先側移再反擊"></textarea>
+          <div class="field-help">避免只寫「加油、努力、變強」。請寫出明天的場景、動作與標準。</div>
         </fieldset>
 
         <!-- 進階回報（可不填，預設收合）：感謝與鼓勵隊友 -->
@@ -726,6 +764,7 @@
         <summary class="coach-section-summary"><span>📅 今日總覽</span><small>先看核心數字與分組</small></summary>
         <div class="coach-section-body">
           <div id="coachOverview" class="overview-grid coach-compact-overview"></div>
+          <div id="coachCareList" class="coach-care-list"></div>
           <div id="coachTodayGroups" class="readiness-groups coach-simple-groups"></div>
           <details class="coach-subdetails">
             <summary>填寫狀況與催繳</summary>
@@ -1150,20 +1189,22 @@
     <p class="footer-note">訓練不是只看分數，也要看身體狀態、恢復狀況與飲食習慣。</p>
   </footer>
 
+  <!-- 全域錯誤攔截與診斷黑盒子：必須第一支載入，才攔得到後面所有腳本的例外 -->
+  <script src="js/00-error-guard.js?v=20260812a"></script>
   <!-- app.js 已模組化拆檔，依序載入（同享全域作用域，語意與單檔等價）-->
-  <script src="js/01-config-data.js?v=20260625f"></script>
-  <script src="js/02-core-utils.js?v=20260707b"></script>
-  <script src="js/03-forms-scoring.js?v=20260708a"></script>
-  <script src="js/04-daily-submit.js?v=20260625f"></script>
+  <script src="js/01-config-data.js?v=20260826e"></script>
+  <script src="js/02-core-utils.js?v=20260826e"></script>
+  <script src="js/03-forms-scoring.js?v=20260826e"></script>
+  <script src="js/04-daily-submit.js?v=20260826e"></script>
   <script src="js/05-feedback-readiness.js?v=20260628i"></script>
   <script src="js/06-player-line.js?v=20260625f"></script>
-  <script src="js/07-coach-dashboard.js?v=20260721a"></script>
+  <script src="js/07-coach-dashboard.js?v=20260826-name-fix-01"></script>
   <script src="js/08-profile-journal.js?v=20260628i"></script>
-  <script src="js/09-settings-auth.js?v=20260721a"></script>
+  <script src="js/09-settings-auth.js?v=20260826e"></script>
   <script src="js/11-trait-radar.js?v=20260628-trait-fix-01"></script>
   <script src="js/12-research-data.js?v=20260704a"></script>
-  <script src="js/13-mental-preparation.js?v=20260721a"></script>
-  <script src="js/10-init.js?v=20260708b"></script>
+  <script src="js/13-mental-preparation.js?v=20260721b"></script>
+  <script src="js/10-init.js?v=20260826e"></script>
   <!-- 每月訪視報表：PDF 產生元件（html2pdf 內含 jsPDF + html2canvas）-->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260627f"></script>
@@ -1173,14 +1214,59 @@
   <script src="psych-cards.js?v=20260626f"></script>
   <!-- PWA：註冊 Service Worker（離線快取＋可安裝）。失敗不影響任何功能 -->
   <script>
+    /*
+       PWA 註冊。
+
+       ⚠️ 修正（稽核 A-04 / E-13，P2）：原本是無條件的
+           addEventListener('controllerchange', () => location.reload())
+       配上 service-worker.js 的 skipWaiting() + clients.claim()。後果有兩個：
+
+       1. 首次安裝時本來就沒有 controller，claim 會觸發 controllerchange
+          → 使用者第一次開網站、正在登入時整頁重載。
+       2. 瀏覽器會自己定期檢查 SW 更新。只要教練剛推過新版，更新可能在
+          「學生正在填表」時完成 → 當場重載。裝成桌面 PWA 時會重跑啟動畫面，
+          看起來就是「閃退」。時間點隨機，所以症狀是「有時候」。
+
+       現在的作法：
+       - 只有「本來就被舊 SW 控制」的頁面才需要處理版本切換（首次安裝不重載）。
+       - 用 refreshing 旗標確保最多只重載一次。
+       - 不自動重載，改成顯示一條可忽略的提示，由使用者決定何時更新 ——
+         填表中途被重載會丟掉正在輸入的內容，這個決定權應該在使用者手上。
+    */
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('service-worker.js', { scope: './' }).then(function (reg) {
+        var hadController = !!navigator.serviceWorker.controller;
+        var refreshing = false;
+
+        navigator.serviceWorker.register('service-worker.js?v=20260826e', { scope: './' }).then(function (reg) {
           if (reg && reg.update) reg.update().catch(function () {});
         }).catch(function () {});
+
         navigator.serviceWorker.addEventListener('controllerchange', function () {
-          window.location.reload();
+          if (!hadController) return;      // 首次安裝，不是版本切換，不需要動作
+          if (refreshing) return;          // 只處理一次
+          refreshing = true;
+          if (window.TeamProDiag) window.TeamProDiag.log('sw-update', '偵測到新版本，已提示使用者');
+          showUpdateBanner();
         });
+
+        function showUpdateBanner() {
+          try {
+            if (document.getElementById('swUpdateBar')) return;
+            var bar = document.createElement('div');
+            bar.id = 'swUpdateBar';
+            bar.setAttribute('role', 'status');
+            bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99998;background:#1e3a8a;color:#fff;padding:12px 16px;font-size:14px;line-height:1.6;box-shadow:0 -2px 12px rgba(0,0,0,.3)';
+            bar.innerHTML = '<b>有新版本可以用了</b>　你目前填的內容不會受影響，' +
+              '想更新的話按下面的按鈕（建議填完再更新）。' +
+              '<button type="button" style="margin-left:12px;padding:4px 10px;border:0;border-radius:6px;cursor:pointer">立即更新</button>' +
+              '<button type="button" style="margin-left:8px;padding:4px 10px;border:0;border-radius:6px;background:transparent;color:#fff;cursor:pointer">稍後</button>';
+            var btns = bar.getElementsByTagName('button');
+            btns[0].onclick = function () { window.location.reload(); };
+            btns[1].onclick = function () { bar.parentNode.removeChild(bar); };
+            document.body.appendChild(bar);
+          } catch (e) { /* 提示做不出來也不能影響主功能 */ }
+        }
       });
     }
   </script>

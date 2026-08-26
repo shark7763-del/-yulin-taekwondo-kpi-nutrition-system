@@ -23,17 +23,32 @@ function getAthleteIdForName(name) {
   return 'S' + String(Math.abs(hash) % 10000).padStart(4, '0');
 }
 
+function looksLikeRosterName(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (t.length > 14) return false;
+  if (/[\d｜|]/.test(t)) return false;
+  if (/疼痛|睡眠|需要關心|高優先|待回覆|已回報|未測驗|紅燈|黃燈|綠燈|中度|重度|觀察|追問|異常|風險|資料穩定|正常/.test(t)) return false;
+  return true;
+}
+
 function getPlayers() {
   try {
     const raw = localStorage.getItem(LS_KEYS.players);
     if (raw) {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr) && arr.length) return arr;
+      if (Array.isArray(arr) && arr.length) {
+        const cleaned = arr.map(v => String(v || '').trim()).filter(looksLikeRosterName);
+        if (cleaned.length) return cleaned;
+      }
     }
   } catch (e) { /* 忽略，回傳預設 */ }
   return DEFAULT_PLAYERS.slice();
 }
-function savePlayers(arr) { localStorage.setItem(LS_KEYS.players, JSON.stringify(arr)); }
+function savePlayers(arr) {
+  const cleaned = Array.isArray(arr) ? arr.map(v => String(v || '').trim()).filter(looksLikeRosterName) : [];
+  localStorage.setItem(LS_KEYS.players, JSON.stringify(cleaned));
+}
 // 內建 CONFIG.WEB_APP_URL 優先（給所有裝置共用）；否則用各裝置自存的網址
 function getWebAppUrl() { return (CONFIG.WEB_APP_URL || '').trim() || localStorage.getItem(LS_KEYS.webAppUrl) || ''; }
 function saveWebAppUrl(url) { localStorage.setItem(LS_KEYS.webAppUrl, url); }
@@ -42,10 +57,41 @@ function getLocalRecords() {
   try { return JSON.parse(localStorage.getItem(LS_KEYS.localRecords)) || []; }
   catch (e) { return []; }
 }
+/*
+   本機備份紀錄。
+
+   ⚠️ 修正（稽核 E-01 / A-02，P1）：這個函式在「正式送出」路徑上也會被呼叫
+   （js/04-daily-submit.js:410, 472），而且原本
+     (a) 無上限地 push，每筆約 2.5–5KB，永遠不清理；
+     (b) setItem 沒有 try/catch。
+   兩者相加的後果是：localStorage 滿了以後，QuotaExceededError 會從這裡丟進
+   非同步的 doSubmit()，導致後面的 AI 回饋卡、LINE 文案、成長卡全部不執行 ——
+   資料其實已經寫進 Google Sheet 了，但畫面就這樣停住。這正是使用者回報的
+   「送出後就沒反應／閃退」。
+
+   現在：保留最近 MAX_LOCAL_RECORDS 筆，寫入失敗回傳 false 而不丟例外。
+*/
+const MAX_LOCAL_RECORDS = 120;   // 約半年份，足夠離線查看，也不會撐爆配額
+
 function saveLocalRecord(record) {
-  const arr = getLocalRecords();
-  arr.push(record);
-  localStorage.setItem(LS_KEYS.localRecords, JSON.stringify(arr));
+  try {
+    const arr = getLocalRecords();
+    arr.push(record);
+    // 只留最近 N 筆，避免無上限成長
+    const trimmed = arr.length > MAX_LOCAL_RECORDS ? arr.slice(-MAX_LOCAL_RECORDS) : arr;
+    localStorage.setItem(LS_KEYS.localRecords, JSON.stringify(trimmed));
+    return true;
+  } catch (e) {
+    // 配額滿或隱私模式 → 再試一次只留最近 20 筆；仍失敗就放棄本機備份。
+    // 本機備份只是便利功能，絕不能因此中斷送出流程。
+    try {
+      localStorage.setItem(LS_KEYS.localRecords, JSON.stringify([record]));
+      return true;
+    } catch (e2) {
+      if (window.TeamProDiag) window.TeamProDiag.log('storage-quota', 'saveLocalRecord 失敗：' + (e2 && e2.name));
+      return false;
+    }
+  }
 }
 
 function getParentsLocal() {
@@ -81,11 +127,29 @@ function toast(msg) {
   toast._timer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+/* ---- 台灣時區（Asia/Taipei，固定 UTC+8，無日光節約）----
+   使用者全在台灣，所有「今天／昨天／本週」的語意都必須以台灣時間為準。
+   原本 todayStr()／normDate() 用的是 Date 的本地方法，也就是「執行裝置的時區」。
+   在台灣的手機上結果正確，但只要裝置時區不是 +08:00（教練出國、家長手機設錯、
+   或用 UTC 的環境跑報表），整批日期就會差一天 —— 出席率、七天趨勢、月報全部錯開。
+   實測：normDate('2026-06-02T16:00:00.000Z') 在 Asia/Taipei 回 2026-06-03，
+   在 UTC 回 2026-06-02。
+   固定偏移是這裡的正解：台灣自 1980 年起就沒有日光節約時間。 */
+const TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/* 把任一時間點轉成「台灣當地時鐘」的 yyyy-mm-dd。
+   作法：先位移 +8 小時，再一律用 UTC 取值，就完全不碰裝置時區。 */
+function toTaipeiDateStr(dateLike) {
+  const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  if (isNaN(d.getTime())) return '';
+  const tw = new Date(d.getTime() + TAIPEI_OFFSET_MS);
+  const m = String(tw.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(tw.getUTCDate()).padStart(2, '0');
+  return `${tw.getUTCFullYear()}-${m}-${day}`;
+}
+
 function todayStr() {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
+  return toTaipeiDateStr(new Date());
 }
 
 // 將 yyyy-mm-dd 轉成 yyyy/mm/dd 顯示
@@ -105,13 +169,12 @@ function normDate(v) {
   // yyyy/mm/dd（可能後面還有時間）
   const m = s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  // ISO 或其他可被 Date 解析的格式 -> 用本地時區還原日期
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) {
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${d.getFullYear()}-${mm}-${dd}`;
-  }
+  /* ISO 或其他可被 Date 解析的格式 → 一律用台灣時間還原日期。
+     Sheet 上「2026-06-03」這種純日期儲存格序列化後是 2026-06-02T16:00:00Z，
+     必須在 +08:00 下解讀才會還原成 6/3。改用 toTaipeiDateStr 後不再依賴裝置時區
+     （稽核 LEAD-01）。 */
+  const taipei = toTaipeiDateStr(s);
+  if (taipei) return taipei;
   return s;
 }
 
@@ -392,6 +455,7 @@ function updatePainReadout() {
   if ($id('painLabel')) $id('painLabel').textContent = g.label;
   const ro = $id('painReadout'); if (ro) ro.className = 'pain-readout ' + g.cls;
   const care = $id('painCare');
+  const followup = $id('painFollowupBox');
   if (care) {
     // 教練管理提醒（非醫療診斷）：依疼痛分級給訓練處理方向
     if (n >= 10) { care.style.display = ''; care.className = 'pain-care bad'; care.textContent = '🛑 立即停止訓練，馬上告知教練與家長，必要時就醫檢查，先不要再活動該部位。'; }
@@ -400,6 +464,7 @@ function updatePainReadout() {
     else if (n >= 1) { care.style.display = ''; care.className = 'pain-care'; care.textContent = '🟢 可正常訓練，記得確實熱身、收操，並留意該部位是否變化。'; }
     else { care.style.display = 'none'; care.textContent = ''; }
   }
+  if (followup) followup.style.display = n >= 5 ? '' : 'none';
 }
 
 /* ---- 尿液顏色監控：脫水快篩 ---- */

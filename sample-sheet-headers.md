@@ -69,9 +69,12 @@
 | lowItems | 最低三項（以｜分隔） |
 | improveTargets | 舊版「今天我要改善」欄位，保留供舊資料相容 |
 | mainGoalToday | 舊版「今天我最想做到的一件事」欄位，保留供舊資料相容 |
-| reflection | 今日心得 |
+| reflectionGood / reflectionProblem / reflectionReason / reflectionFix | 心得四格：好的地方／問題／原因／修正 |
+| reflection | 今日心得（由四格自動彙整） |
 | tomorrowGoal | 明日目標 |
 | encouragementToTeammate | 隊友鼓勵 |
+| painTrigger / painToldCoach / painNeedAdjust | 疼痛 5 分以上自動追問：什麼動作會痛／是否告訴教練／是否需要調整訓練 |
+| reportCredibility / reportCredibilityLevel / reportCredibilityFlags | 回報可信度分數／等級／標記 |
 | nutritionRisks | 飲食風險（以、分隔） |
 | nutritionAdviceStudent | 選手版飲食建議 |
 | nutritionAdviceParent | 家長版飲食建議 |
@@ -112,7 +115,7 @@
 | unlockedMoves | 解鎖哪些高難度動作 |
 | redLightReason / redLightHandling / redLightNote | 教練後台紅燈處理紀錄：原因、處理方式、備註 |
 
-records 最後另有 `studentId`，供新制帳號授權與既有姓名資料漸進對應。前段為學生基本資料、KPI、飲食與 LINE 文字，後段接交叉辯論／教練複評、隊友鼓勵名／家長留言、自由品勢、紅燈處理、未出席反思、AI 教練回饋與心情紀錄。重新部署後在 Apps Script 編輯器執行一次 `setupSheet()` 即可自動補欄。
+records 最後另有 `studentId`，供新制帳號授權與既有姓名資料漸進對應。前段為學生基本資料、KPI、飲食與 LINE 文字，後段接交叉辯論／教練複評、隊友鼓勵名／家長留言、自由品勢、紅燈處理、未出席反思、AI 教練回饋與心情紀錄；新版還會把心得四格、疼痛追問與回報可信度一起寫入。重新部署後在 Apps Script 編輯器執行一次 `setupSheet()` 即可自動補欄。
 
 ## 新制帳號工作表
 
@@ -135,6 +138,8 @@ records 最後另有 `studentId`，供新制帳號授權與既有姓名資料漸
 - `mental_goals`：`goalId, competitionId, athleteId, studentName, goalType, goalText, targetCount, completedCount, completionRate, startDate, endDate, status, coachComment, createdAt, updatedAt`
 - `mental_scenario_plans`：`planId, competitionId, athleteId, studentName, scenario, expectedThought, bodyReaction, breathingAction, selfTalkPhrase, copingAction, tacticalAction, status, coachComment, createdAt, updatedAt`
 - `mental_reflections`：`reflectionId, competitionId, athleteId, studentName, date, matchType, bestPerformance, mostStressfulMoment, selfTalkUsed, effectivePhrase, planEffective, performanceGoalCompleted, processGoalCompleted, recoverySeconds, nextAdjustment, coachPublicComment, coachPrivateComment, createdAt, updatedAt`
+
+「今天練心」第一版沿用 `mental_daily_records`，不新增工作表：心理狀況對應 `taskType`，任務名稱對應 `taskName`，感受對應 `reflection`，選手主動留言對應 `successNote`，是否要求教練協助對應 `needCoachHelp`。後端會以選手、日期、任務名稱與比賽 ID 防止同一天同任務重複寫入。
 
 家長端不讀取原始心理文字、負面想法、自我對話、是否需要教練協助、教練私密備註或解憂信箱內容；只透過後端摘要取得本週完成狀態、比賽倒數與教練公開提醒。
 

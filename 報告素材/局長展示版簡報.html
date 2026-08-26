@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>基層跆拳道選手科學化監測系統｜體育局展示簡報</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  :root{
+    --bg:#0e1117; --card:#171c26; --line:#2a3140;
+    --ink:#f2f5fa; --sub:#9aa6b8; --muted:#6b7686;
+    --brand:#e63946; --brand2:#ff6b6b;
+    --green:#37d67a; --yellow:#ffc93c; --orange:#ff9f43; --red:#ff5b5b;
+    --accent:#4dabf7; --gold:#ffd479;
+  }
+  html,body{height:100%;}
+  body{font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}
+  .slide{min-height:100vh;width:100%;display:none;flex-direction:column;justify-content:center;padding:6vh 8vw;position:relative;}
+  .slide.active{display:flex;animation:fade .35s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+  .kicker{color:var(--brand2);font-weight:800;letter-spacing:.16em;font-size:clamp(12px,1.4vw,16px);margin-bottom:16px;}
+  h1{font-size:clamp(28px,5vw,58px);line-height:1.14;font-weight:900;letter-spacing:-.01em;}
+  h2{font-size:clamp(23px,3.5vw,40px);line-height:1.16;font-weight:850;margin-bottom:6px;}
+  .lead{color:var(--sub);font-size:clamp(15px,1.9vw,22px);line-height:1.6;margin-top:18px;max-width:62ch;}
+  .em{color:#fff;font-weight:700;} .gold{color:var(--gold);font-weight:800;}
+  .big-quote{font-size:clamp(19px,2.5vw,29px);font-weight:700;line-height:1.5;margin-top:26px;border-left:5px solid var(--brand);padding-left:22px;color:#e9edf4;}
+  .tag{display:inline-block;background:rgba(77,171,247,.14);color:var(--accent);border:1px solid rgba(77,171,247,.35);border-radius:999px;padding:5px 14px;font-size:14px;font-weight:700;margin:5px 6px 0 0;}
+
+  .grid{display:grid;gap:18px;margin-top:30px;}
+  .g2{grid-template-columns:repeat(2,1fr);} .g3{grid-template-columns:repeat(3,1fr);} .g4{grid-template-columns:repeat(4,1fr);}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;}
+  .card h3{font-size:clamp(16px,1.7vw,20px);margin-bottom:8px;display:flex;gap:9px;align-items:center;}
+  .card p{color:var(--sub);font-size:clamp(13px,1.35vw,16px);line-height:1.55;}
+
+  .stat{display:flex;flex-direction:column;gap:6px;text-align:center;}
+  .stat .num{font-size:clamp(30px,4.4vw,52px);font-weight:900;color:var(--brand2);line-height:1;}
+  .stat .lbl{color:var(--sub);font-size:clamp(12px,1.3vw,15px);}
+  .stat.g .num{color:var(--green);} .stat.a .num{color:var(--accent);} .stat.gd .num{color:var(--gold);}
+
+  /* 量化效益 巨型數字 */
+  .heros{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:26px;}
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px 20px;text-align:center;position:relative;}
+  .hero .bignum{font-size:clamp(52px,8.5vw,104px);font-weight:900;line-height:.95;letter-spacing:-.02em;}
+  .hero.h1 .bignum{color:var(--brand2);} .hero.h2 .bignum{color:var(--gold);} .hero.h3 .bignum{color:var(--green);}
+  .hero .unit{font-size:clamp(15px,1.8vw,22px);font-weight:800;color:var(--sub);margin-top:4px;}
+  .hero .cap{font-size:clamp(13px,1.4vw,17px);color:var(--sub);margin-top:10px;line-height:1.4;}
+  .badge2{position:absolute;top:14px;right:14px;font-size:11px;font-weight:800;border-radius:6px;padding:2px 8px;}
+  .badge2.real{color:var(--green);background:rgba(55,214,122,.14);border:1px solid rgba(55,214,122,.4);}
+  .badge2.est{color:var(--gold);background:rgba(255,212,121,.12);border:1px solid rgba(255,212,121,.4);}
+  .basis{margin-top:20px;color:var(--muted);font-size:clamp(11px,1.15vw,13.5px);line-height:1.5;border-left:3px solid var(--line);padding-left:12px;}
+
+  ul.clean{list-style:none;margin-top:22px;display:flex;flex-direction:column;gap:14px;}
+  ul.clean li{display:flex;gap:14px;align-items:flex-start;font-size:clamp(15px,1.75vw,20px);line-height:1.5;}
+  ul.clean li .d{color:var(--brand2);font-weight:900;}
+  .sub{color:var(--sub);}
+
+  table.cmp{width:100%;border-collapse:separate;border-spacing:0;margin-top:26px;font-size:clamp(14px,1.5vw,19px);}
+  table.cmp th{padding:13px 18px;text-align:left;font-weight:850;font-size:clamp(15px,1.6vw,20px);}
+  table.cmp th.h0{color:var(--sub);width:20%;}
+  table.cmp th.h1{color:#e0a06a;background:rgba(224,140,80,.12);border-top-left-radius:12px;}
+  table.cmp th.h2{color:var(--green);background:rgba(55,214,122,.12);border-top-right-radius:12px;}
+  table.cmp td{padding:11px 18px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.45;}
+  table.cmp td.k{color:var(--sub);font-weight:700;} table.cmp td.old{color:#c9a58a;} table.cmp td.neo{color:#d7f5e3;font-weight:600;}
+
+  .chartbox{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 24px 14px;margin-top:20px;}
+  .chartbox .ct{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px;}
+  .chartbox .ct b{font-size:clamp(15px,1.7vw,20px);} .chartbox .ct .real{font-size:13px;color:var(--green);background:rgba(55,214,122,.12);border:1px solid rgba(55,214,122,.4);border-radius:6px;padding:2px 9px;font-weight:700;}
+  .lgd{display:flex;gap:22px;flex-wrap:wrap;margin-top:8px;color:var(--sub);font-size:clamp(12px,1.3vw,15px);}
+  .lgd i{width:14px;height:14px;border-radius:3px;display:inline-block;margin-right:6px;vertical-align:-1px;}
+  .dot{width:13px;height:13px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:-1px;}
+
+  .paper{border:1px solid var(--gold);background:rgba(255,212,121,.06);border-radius:16px;padding:26px 28px;margin-top:24px;}
+  .paper .ttl{font-size:clamp(17px,2vw,24px);font-weight:850;color:var(--gold);line-height:1.4;}
+  .paper .meta{color:var(--sub);font-size:clamp(13px,1.4vw,16px);margin-top:10px;line-height:1.6;}
+
+  .foot{position:fixed;bottom:18px;left:0;right:0;display:flex;justify-content:space-between;padding:0 8vw;color:var(--muted);font-size:13px;pointer-events:none;z-index:5;}
+  .progress{position:fixed;top:0;left:0;height:4px;background:linear-gradient(90deg,var(--brand),var(--brand2));transition:width .3s;z-index:9;}
+  .nav{position:fixed;bottom:14px;right:8vw;display:flex;gap:8px;z-index:6;}
+  .nav button{background:var(--card);border:1px solid var(--line);color:var(--ink);width:44px;height:44px;border-radius:12px;font-size:20px;cursor:pointer;}
+  .nav button:hover{border-color:var(--brand2);}
+  .hint{position:fixed;top:16px;right:8vw;color:var(--muted);font-size:12.5px;z-index:6;}
+  @media print{.nav,.hint,.progress{display:none;}}
+</style>
+</head>
+<body>
+<div class="progress" id="bar"></div>
+<div class="hint">← → 換頁 · F 全螢幕 · P 列印</div>
+
+<!-- 1 封面 -->
+<section class="slide active">
+  <div class="kicker">認識一位基層專任教練</div>
+  <h1>我只是想，<br>把每一個孩子都帶好。</h1>
+  <p class="lead">育林國中技擊隊專任教練，為了看懂選手每天的身心狀態，自己動手做了一套 KPI 回報系統——<span class="em">一天一天，把對孩子的在乎記錄下來</span>。</p>
+  <div style="margin-top:28px">
+    <span class="tag">43 名選手</span>
+    <span class="tag">713 筆真實資料</span>
+    <span class="tag">信度 α=.905</span>
+    <span class="tag">受傷早期示警</span>
+    <span class="tag">已成研究論文</span>
+  </div>
+</section>
+
+<!-- 動機（開場故事） -->
+<section class="slide">
+  <div class="kicker">起心動念 · 我為什麼做這個</div>
+  <h2>一開始，我不是想做系統</h2>
+  <p class="big-quote" style="margin-top:22px">
+    我只是想知道——<span class="em">我的選手今天到底累不累、有沒有帶傷、狀態好不好。</span><br>
+    憑印象不夠，所以我自己動手，把它記下來、追蹤起來。
+  </p>
+  <p class="lead" style="margin-top:26px">做著做著，就變成現在這套系統，還意外做出了一份研究。<br>它的初衷很單純：<span class="gold">把我的孩子帶得更好。</span></p>
+  <p class="lead" style="margin-top:20px;color:var(--muted)">— 育林國中技擊隊專任教練　白天帶訓練，晚上假日一點一點做，實作驗證約一年</p>
+</section>
+
+<!-- 2 為何重要 -->
+<section class="slide">
+  <div class="kicker">01 · 這解決什麼問題</div>
+  <h2>基層選手的身心狀態，往往沒人接得住</h2>
+  <p class="lead">國中選手正值發育與課業壓力並存的關鍵期，但基層「一人帶多人、缺乏運動科學支援」，選手的疲勞、疼痛、睡眠、情緒，多半只能靠教練現場印象判斷。</p>
+  <div class="grid g3">
+    <div class="card"><h3>🤕 傷害風險</h3><p>「說沒事」卻帶傷訓練，等到受傷才發現。</p></div>
+    <div class="card"><h3>😴 恢復與睡眠</h3><p>睡眠不足、疲勞累積的訊號分散、轉瞬即逝。</p></div>
+    <div class="card"><h3>🧠 身心狀態</h3><p>情緒與動機波動，缺乏留存與追蹤的依據。</p></div>
+  </div>
+  <p class="lead" style="margin-top:22px">這套系統，就是要把這些「看不見的狀態」變成<span class="gold">可記錄、可追蹤、可示警</span>的資料。</p>
+</section>
+
+<!-- 3 傳統日誌 vs KPI -->
+<section class="slide">
+  <div class="kicker">02 · 做法的核心差異</div>
+  <h2>從「寫訓練日誌」升級為「可追蹤的數據」</h2>
+  <p class="lead">傳統日誌記「做了什麼」；KPI 系統記「狀態如何、變化怎樣、風險在哪」。</p>
+  <table class="cmp">
+    <tr><th class="h0"></th><th class="h1">📓 傳統訓練日誌</th><th class="h2">📊 KPI 回報系統</th></tr>
+    <tr><td class="k">回報方式</td><td class="old">自由書寫、流水帳</td><td class="neo">結構化評分＋睡眠/疼痛/RPE/情緒</td></tr>
+    <tr><td class="k">客觀性</td><td class="old">主觀、難以比較</td><td class="neo">量化，可跨人、跨日、跨隊比較</td></tr>
+    <tr><td class="k">趨勢預警</td><td class="old">看不出走勢，警訊易漏</td><td class="neo">準備度紅黃綠燈＋受傷風險自動示警</td></tr>
+    <tr><td class="k">留存追蹤</td><td class="old">分散、易遺失</td><td class="neo">雲端留存，可回溯、可做研究</td></tr>
+  </table>
+</section>
+
+<!-- 4 真實成效數據 -->
+<section class="slide">
+  <div class="kicker">03 · 五週的真實運作成果</div>
+  <h2>不是概念，是已經在跑的真實資料</h2>
+  <p class="lead">資料期間 2026/6/1–7/4，約五週，單一基層團隊（校隊＋道館）。</p>
+  <div class="grid g4">
+    <div class="card stat"><div class="num">43</div><div class="lbl">參與選手</div></div>
+    <div class="card stat"><div class="num">713</div><div class="lbl">每日回報筆數</div></div>
+    <div class="card stat g"><div class="num">88</div><div class="lbl">自動風險示警<br>(含 high 11)</div></div>
+    <div class="card stat a"><div class="num">361</div><div class="lbl">AI 準備度評分</div></div>
+  </div>
+  <p class="lead" style="margin-top:20px">選手每天訓練後用手機回報，系統自動運算準備度、標記風險——<span class="em">五週累積出可分析、可驗證的資料庫。</span></p>
+</section>
+
+<!-- 5 科學validation -->
+<section class="slide">
+  <div class="kicker">04 · 這些數據「有訊號」</div>
+  <h2>經統計檢驗，資料具科學可信度</h2>
+  <div class="grid g3">
+    <div class="card stat gd"><div class="num">α=.905</div><div class="lbl">六大構面 KPI 信度<br>（內部一致性「優良」）</div></div>
+    <div class="card stat"><div class="num">ρ=−.51</div><div class="lbl">疼痛越高、準備度越低<br>（中度負相關）</div></div>
+    <div class="card stat a"><div class="num">ρ=+.75</div><div class="lbl">恢復越好、準備度越高<br>（高度正相關）</div></div>
+  </div>
+  <div class="chartbox">
+    <div class="ct"><b>紅黃綠燈分級 vs 實際身心指標</b><span class="real">✓ 真實資料</span></div>
+    <svg viewBox="0 0 980 280" id="gradientChart" style="width:100%;height:auto;display:block"></svg>
+    <div class="lgd">
+      <span><i style="background:var(--brand2)"></i>疼痛分數（0–10，越低越好）</span>
+      <span><i style="background:var(--accent)"></i>AI 準備度（0–100，越高越好）</span>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:14px">燈號越差，疼痛單調上升（0.7→8.5）、準備度單調下降（82→36）——<span class="gold">證明系統的燈號真的反映了選手狀態。</span></p>
+</section>
+
+<!-- 6 真實個案 A12 -->
+<section class="slide">
+  <div class="kicker">05 · 為什麼我在乎每一次疼痛</div>
+  <h2>系統怎麼在受傷前，先舉起手</h2>
+  <div class="chartbox">
+    <div class="ct"><b>🥋 選手 A12（匿名）· 腰部疼痛期間逐日追蹤</b><span class="real">✓ 真實資料 6/25–7/03</span></div>
+    <svg viewBox="0 0 980 300" id="caseChart" style="width:100%;height:auto;display:block"></svg>
+    <div class="lgd">
+      <span><span class="dot" style="background:var(--accent)"></span>AI 準備度（左軸 0–100）</span>
+      <span><span class="dot" style="background:var(--brand2)"></span>疼痛分數（右軸 0–10）</span>
+      <span>🩹 系統發出 high「受傷風險（腰）」示警</span>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:14px">6/26 起腰痛竄升（疼痛 1→9）、準備度崩落（75→35），系統 <span class="em">6/27–7/03 連續多日</span>標記「受傷風險」，我也因此更早介入、調整訓練。</p>
+  <p class="lead" style="margin-top:14px;color:#e9edf4;border-left:4px solid var(--brand);padding-left:16px">會想做這個，是因為<span class="gold">我不想再看到任何一個孩子，帶著傷自己硬撐。</span></p>
+</section>
+
+<!-- 7 價值：對誰好 -->
+<section class="slide">
+  <div class="kicker">06 · 這帶來的價值</div>
+  <h2>對選手照顧、對教練減負、對政策加分</h2>
+  <div class="grid g4">
+    <div class="card"><h3>🥋 選手</h3><p>身心與傷勢被看見，訓練更安全、更被理解。</p></div>
+    <div class="card"><h3>🧑‍🏫 教練</h3><p>把經驗變資料，決策有依據，早一步介入。</p></div>
+    <div class="card"><h3>👨‍👩‍👧 家長</h3><p>自動報告與 LINE，親師生溝通有共同語言。</p></div>
+    <div class="card"><h3>🏫 學校/主管機關</h3><p>基層選手照顧的示範，留下可對外的成果。</p></div>
+  </div>
+  <p class="big-quote" style="margin-top:24px;font-size:clamp(17px,2.1vw,25px)">價值不在於 AI 取代教練，<br>而在把選手狀態變成可記錄、可追蹤、可討論的資料。</p>
+</section>
+
+<!-- 量化效益 大數字 -->
+<section class="slide">
+  <div class="kicker">07 · 這份在乎，也留下了痕跡</div>
+  <h2>多出來的時間，我都還給孩子</h2>
+  <div class="heros">
+    <div class="hero h1"><span class="badge2 est">估算</span><div class="bignum">70</div><div class="unit">分鐘 / 天</div><div class="cap">省下的盤點時間，<br>全拿去多看孩子幾眼</div></div>
+    <div class="hero h2"><span class="badge2 est">估算</span><div class="bignum">80<span style="font-size:.5em">%</span></div><div class="unit">↓ 時間</div><div class="cap">掌握全隊狀態<br>所需時間大幅下降</div></div>
+    <div class="hero h3"><span class="badge2 real">真實</span><div class="bignum">88</div><div class="unit">次示警</div><div class="cap">系統替我多守的<br>含 11 次高風險早期攔截</div></div>
+  </div>
+  <p class="lead" style="margin-top:22px;text-align:center">每週多出的 <span class="gold">約 6 小時</span>，我拿去<span class="em">多陪練、多留意幾個孩子</span>；系統也替我多守了 <span class="gold">88 道</span>我可能會漏看的安全防線。</p>
+  <p class="basis">時間估算基準：過去逐一掌握每位選手狀態（詢問／觀察／記錄）約 2 分鐘 × 約 40 人 ≈ 86 分鐘／日；導入後以選手自主回報＋戰情室彙整約 15 分鐘／日估算，故每日省約 70 分鐘（約 80%）。示警次數為系統五週實際紀錄（88 筆，其中 high 11 筆）。</p>
+</section>
+
+<!-- 8 研究成果 -->
+<section class="slide">
+  <div class="kicker">08 · 從實務走到研究</div>
+  <h2>基層教練，做出了研究成果</h2>
+  <div class="paper">
+    <div class="ttl">《AI 輔助 KPI 回報系統應用於國中跆拳道選手<br>訓練準備度監測之初探》</div>
+    <div class="meta">
+      · 以後台真實資料（713 筆／43 人／五週）完成的研究論文初稿<br>
+      · 含信度分析（α=.905）、相關分析、分級比較與個案追蹤<br>
+      · 全程匿名化（A01–A43）、家長同意、恪守研究倫理<br>
+      · 可延伸投稿運動科學／運動科技／行動研究方向
+    </div>
+  </div>
+  <p class="lead" style="margin-top:20px">為了真的看懂孩子的狀態，我連信度分析、研究倫理都自己弄懂——<span class="gold">因為我想對得起每一個把身體交給我的孩子。</span></p>
+</section>
+
+<!-- 9 結語 -->
+<section class="slide">
+  <div class="kicker">結語</div>
+  <h1 style="font-size:clamp(26px,4.4vw,50px)">我沒有想證明什麼，<br>只是想把孩子帶好。</h1>
+  <p class="big-quote" style="margin-top:30px">
+    一位基層專任教練，用約一年的時間，<br>
+    把對每一個孩子的在乎，變成看得見的紀錄。<br>
+    如果這份用心，也能幫到其他基層的孩子，我很樂意分享。
+  </p>
+  <p class="lead" style="margin-top:24px;color:var(--muted)">育林國中技擊隊　專任教練　報告人：楊復傑</p>
+</section>
+
+<div class="nav">
+  <button onclick="go(-1)">‹</button>
+  <button onclick="go(1)">›</button>
+</div>
+<div class="foot"><span style="font-weight:800;color:var(--sub)">育林國中技擊隊</span><span id="pageno"></span></div>
+
+<script>
+  var slides=[].slice.call(document.querySelectorAll('.slide')),i=0;
+  function render(){slides.forEach(function(s,n){s.classList.toggle('active',n===i);});
+    document.getElementById('bar').style.width=((i+1)/slides.length*100)+'%';
+    document.getElementById('pageno').textContent=(i+1)+' / '+slides.length;}
+  function go(d){i=Math.max(0,Math.min(slides.length-1,i+d));render();}
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){go(1);e.preventDefault();}
+    if(e.key==='ArrowLeft'||e.key==='PageUp'){go(-1);}
+    if(e.key==='Home'){i=0;render();} if(e.key==='End'){i=slides.length-1;render();}
+    if(e.key.toLowerCase()==='f'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}
+    if(e.key.toLowerCase()==='p'){window.print();}
+  });
+  render();
+
+  var NS='http://www.w3.org/2000/svg';
+  function mk(svg,tag,attrs,text){var e=document.createElementNS(NS,tag);for(var k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;svg.appendChild(e);return e;}
+
+  // === 分級梯度圖（真實 Table 6）===
+  (function(){
+    var svg=document.getElementById('gradientChart'); if(!svg)return;
+    var cats=['綠燈','黃燈','橘燈','紅燈'];
+    var pain=[0.69,2.85,5.91,8.50];      // 0-10
+    var ready=[82.14,63.48,49.36,36.00]; // 0-100
+    var W=980,H=280,x0=54,x1=W-54,y0=20,y1=H-40;
+    function bx(k){return x0+(k+0.5)/cats.length*(x1-x0);}
+    function Yp(v){return y1-v/10*(y1-y0);}     // pain axis
+    function Yr(v){return y1-v/100*(y1-y0);}    // readiness axis
+    [0,2,4,6,8,10].forEach(function(v){mk(svg,'line',{x1:x0,y1:Yp(v),x2:x1,y2:Yp(v),stroke:'#2a3140','stroke-width':1});});
+    cats.forEach(function(c,k){mk(svg,'text',{x:bx(k),y:H-14,'text-anchor':'middle','font-size':15,fill:'#9aa6b8','font-weight':'700'},c);});
+    // readiness line
+    mk(svg,'polyline',{points:ready.map(function(v,k){return bx(k)+','+Yr(v);}).join(' '),fill:'none',stroke:'#4dabf7','stroke-width':3});
+    ready.forEach(function(v,k){mk(svg,'circle',{cx:bx(k),cy:Yr(v),r:5,fill:'#4dabf7'});mk(svg,'text',{x:bx(k),y:Yr(v)-12,'text-anchor':'middle','font-size':14,fill:'#4dabf7','font-weight':'800'},v.toFixed(0));});
+    // pain bars
+    var bw=44;
+    pain.forEach(function(v,k){var h=Yp(0)-Yp(v);mk(svg,'rect',{x:bx(k)-bw/2,y:Yp(v),width:bw,height:h,rx:5,fill:'#ff6b6b','opacity':.9});mk(svg,'text',{x:bx(k),y:Yp(v)-8,'text-anchor':'middle','font-size':14,fill:'#ff6b6b','font-weight':'800'},v.toFixed(2));});
+  })();
+
+  // === A12 真實個案 雙軸圖 ===
+  (function(){
+    var svg=document.getElementById('caseChart'); if(!svg)return;
+    var days=['6/25','6/26','6/27','6/28','6/29','6/30','7/1','7/2','7/3'];
+    var ready=[75,53,37,35,48,68,50,45,45];  // 0-100 左軸
+    var pain =[1,6,9,8,8,5,8,7,8];           // 0-10 右軸
+    var flags=[0,0,1,1,1,0,1,1,1];           // high 受傷風險示警
+    var W=980,H=300,x0=48,x1=W-40,y0=24,y1=H-38;
+    function X(k){return x0+k/(days.length-1)*(x1-x0);}
+    function Yr(v){return y1-v/100*(y1-y0);}
+    function Yp(v){return y1-v/10*(y1-y0);}
+    [0,25,50,75,100].forEach(function(v){mk(svg,'line',{x1:x0,y1:Yr(v),x2:x1,y2:Yr(v),stroke:'#2a3140','stroke-width':1});mk(svg,'text',{x:x0-8,y:Yr(v)+4,'text-anchor':'end','font-size':12,fill:'#6b7686'},v);});
+    days.forEach(function(d,k){mk(svg,'text',{x:X(k),y:H-12,'text-anchor':'middle','font-size':13,fill:'#9aa6b8'},d);});
+    // 示警區帶
+    flags.forEach(function(f,k){if(f){mk(svg,'rect',{x:X(k)-16,y:y0,width:32,height:y1-y0,fill:'rgba(255,91,91,.10)'});}});
+    // 準備度線
+    mk(svg,'polyline',{points:ready.map(function(v,k){return X(k)+','+Yr(v);}).join(' '),fill:'none',stroke:'#4dabf7','stroke-width':3.2,'stroke-linejoin':'round'});
+    ready.forEach(function(v,k){mk(svg,'circle',{cx:X(k),cy:Yr(v),r:4.2,fill:'#4dabf7'});});
+    // 疼痛線
+    mk(svg,'polyline',{points:pain.map(function(v,k){return X(k)+','+Yp(v);}).join(' '),fill:'none',stroke:'#ff6b6b','stroke-width':3.2,'stroke-dasharray':'2 0','stroke-linejoin':'round'});
+    pain.forEach(function(v,k){mk(svg,'circle',{cx:X(k),cy:Yp(v),r:4.2,fill:'#ff6b6b'});});
+    // 示警標記
+    flags.forEach(function(f,k){if(f){mk(svg,'text',{x:X(k),y:Yp(pain[k])-12,'text-anchor':'middle','font-size':15},'🩹');}});
+  })();
+</script>
+</body>
+</html>
