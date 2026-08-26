@@ -1028,6 +1028,7 @@ async function refreshCoach() {
 async function refreshCoachInner() {
   toast('讀取資料中...');
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
+  await ensureCoachStudentDirectory(true);
 
   // 雲端讀取失敗／session 過期 → 顯示提示並中止，不再誤判「全隊未回報」
   let all;
@@ -1162,6 +1163,91 @@ function reportCredibilityValue(rec) {
   return reportCredibilityInfo(rec).score;
 }
 
+let COACH_STUDENT_DIRECTORY = {
+  ts: 0,
+  loading: null,
+  byId: {},
+  byName: {}
+};
+
+function buildCoachStudentDirectory(data) {
+  const byId = {};
+  const byName = {};
+  const students = Array.isArray(data && data.students) ? data.students : [];
+  students.forEach(s => {
+    const id = String(s && s.studentId || '').trim();
+    const name = String(s && s.studentName || '').trim();
+    if (id && name) byId[id] = name;
+    if (name) byName[normalizeNameKey(name)] = name;
+  });
+  const parents = Array.isArray(data && data.parents) ? data.parents : [];
+  parents.forEach(p => {
+    const id = String(p && p.studentId || '').trim();
+    const name = String(p && p.studentName || '').trim();
+    if (id && name && !byId[id]) byId[id] = name;
+    if (name && !byName[normalizeNameKey(name)]) byName[normalizeNameKey(name)] = name;
+  });
+  return { byId, byName };
+}
+
+function getCoachStudentDirectorySnapshot() {
+  try {
+    if (typeof ACCOUNT_ADMIN_DATA !== 'undefined' && ACCOUNT_ADMIN_DATA) return ACCOUNT_ADMIN_DATA;
+  } catch (e) {}
+  return null;
+}
+
+async function ensureCoachStudentDirectory(force) {
+  const snapshot = getCoachStudentDirectorySnapshot();
+  if (!force && snapshot && Array.isArray(snapshot.students) && snapshot.students.length) {
+    const built = buildCoachStudentDirectory(snapshot);
+    COACH_STUDENT_DIRECTORY = {
+      ts: Date.now(),
+      loading: null,
+      byId: built.byId,
+      byName: built.byName
+    };
+    return COACH_STUDENT_DIRECTORY;
+  }
+  if (!force && Date.now() - COACH_STUDENT_DIRECTORY.ts < 10 * 60 * 1000 && Object.keys(COACH_STUDENT_DIRECTORY.byId || {}).length) {
+    return COACH_STUDENT_DIRECTORY;
+  }
+  if (COACH_STUDENT_DIRECTORY.loading) return COACH_STUDENT_DIRECTORY.loading;
+  COACH_STUDENT_DIRECTORY.loading = (async () => {
+    try {
+      if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
+      const res = await postToWebApp({ action: 'getAccountAdminData' });
+      if (res && res.ok && res.data) {
+        const built = buildCoachStudentDirectory(res.data);
+        COACH_STUDENT_DIRECTORY = {
+          ts: Date.now(),
+          loading: null,
+          byId: built.byId,
+          byName: built.byName
+        };
+        return COACH_STUDENT_DIRECTORY;
+      }
+    } catch (e) {}
+    COACH_STUDENT_DIRECTORY.loading = null;
+    return COACH_STUDENT_DIRECTORY;
+  })();
+  return COACH_STUDENT_DIRECTORY.loading;
+}
+
+function coachDisplayNameFromRecord(rec) {
+  const rawName = String((rec && (rec.studentName || rec.name || rec.athleteName)) || '').trim();
+  const id = String((rec && (rec.studentId || rec.athleteId)) || '').trim();
+  const directory = COACH_STUDENT_DIRECTORY || {};
+  const mapped = (id && directory.byId && directory.byId[id]) || (rawName && directory.byName && directory.byName[normalizeNameKey(rawName)]);
+  const display = String(mapped || rawName || '').trim();
+  return {
+    text: display || '姓名待確認',
+    ok: looksLikeStudentName(display),
+    raw: rawName,
+    id: id
+  };
+}
+
 function looksLikeStudentName(text) {
   const t = String(text || '').trim();
   if (!t) return false;
@@ -1172,11 +1258,11 @@ function looksLikeStudentName(text) {
 }
 
 function safeCoachDisplayName(rec) {
+  const resolved = coachDisplayNameFromRecord(rec);
+  if (resolved.ok) return resolved;
   const raw = String((rec && (rec.studentName || rec.name || rec.athleteName)) || '').trim();
-  if (looksLikeStudentName(raw)) return { text: raw, ok: true };
-  const fallback = String((rec && rec.studentName) || (rec && rec.name) || '').trim();
-  if (looksLikeStudentName(fallback)) return { text: fallback, ok: true };
-  return { text: raw || '姓名待確認', ok: false };
+  if (looksLikeStudentName(raw)) return { text: raw, ok: true, raw: raw, id: resolved.id };
+  return resolved;
 }
 
 function renderCoachCareList(todays) {
@@ -2380,11 +2466,16 @@ const LASTPERF_TODAY_STATE = {
   summary: { reported: 0, pending: 0, priority: 0 },
   filter: 'all',
   selected: '',
+  selectedKey: '',
   date: ''
 };
 
 function lastPerfRecordName(rec) {
   return String((rec && (rec.studentName || rec.name)) || '').trim();
+}
+function lastPerfRecordIdentity(rec) {
+  if (!rec || typeof rec !== 'object') return '';
+  return String(rec.studentId || rec.athleteId || '').trim();
 }
 function lastPerfNum(v) {
   const n = parseFloat(v);
@@ -2463,6 +2554,7 @@ function lastPerfHasPriority(rec, history) {
 
 async function loadTodayReportedStudents(opts) {
   const targetDate = getLastPerfSelectedDate();
+  await ensureCoachStudentDirectory(false);
   let records = [];
   try {
     records = await fetchAllRecords(Object.assign({ strict: true, force: true }, opts || {}));
@@ -2480,11 +2572,11 @@ async function loadTodayReportedStudents(opts) {
   }
   const todays = {};
   (records || []).forEach(rec => {
-    const name = lastPerfRecordName(rec);
-    if (!name || normDate(rec.date || rec.timestamp || rec.createdAt) !== targetDate) return;
-    const prev = todays[name];
+    const key = lastPerfRecordIdentity(rec) || normalizeNameKey(lastPerfRecordName(rec));
+    if (!key || normDate(rec.date || rec.timestamp || rec.createdAt) !== targetDate) return;
+    const prev = todays[key];
     const t = String(rec.timestamp || rec.createdAt || rec.updatedAt || '');
-    if (!prev || t >= String(prev.timestamp || prev.createdAt || prev.updatedAt || '')) todays[name] = rec;
+    if (!prev || t >= String(prev.timestamp || prev.createdAt || prev.updatedAt || '')) todays[key] = rec;
   });
   // 「待回覆／已回報」標籤改用已抓回的 record（其 coachReply 欄位）＋本機回覆暫存判斷，
   // 不再為每位今日回報選手各發一個 getCoachReplies 請求（原本的 N+1，是開分頁最大的延遲來源）。
@@ -2505,11 +2597,17 @@ async function loadTodayReportedStudents(opts) {
 
 function buildTodayReportStatus(records, replies, allRecords) {
   const items = (records || []).map(rec => {
-    const name = lastPerfRecordName(rec);
+    const resolved = coachDisplayNameFromRecord(rec);
+    const rawName = lastPerfRecordName(rec);
+    const key = lastPerfRecordIdentity(rec) || normalizeNameKey(rawName);
     const hasReply = lastPerfHasCoachReply(rec, replies);
     const priority = lastPerfHasPriority(rec, allRecords);
     return {
-      studentName: name,
+      studentName: resolved.text || rawName,
+      rawStudentName: rawName,
+      studentKey: key,
+      studentId: String(rec && rec.studentId || '').trim(),
+      athleteId: String(rec && rec.athleteId || '').trim(),
       record: rec,
       hasReply: hasReply,
       pending: !hasReply,
@@ -2570,15 +2668,20 @@ function renderTodayReportedList(items, filter, meta) {
   }
   box.innerHTML = list.map(item => {
     const cls = item.priority ? 'priority' : (item.pending ? 'pending' : 'reported');
-    const active = LASTPERF_TODAY_STATE.selected === item.studentName ? ' active' : '';
-    return `<button type="button" class="today-reported-card ${cls}${active}" data-lastperf-student="${escapeHtml(item.studentName)}">
+    const active = LASTPERF_TODAY_STATE.selectedKey === item.studentKey ? ' active' : '';
+    return `<button type="button" class="today-reported-card ${cls}${active}" data-lastperf-student="${escapeHtml(item.studentName)}" data-lastperf-student-id="${escapeHtml(item.studentId || '')}" data-lastperf-athlete-id="${escapeHtml(item.athleteId || '')}" data-lastperf-student-key="${escapeHtml(item.studentKey || '')}">
       <span class="today-reported-name">${(window.TraitRadar && typeof window.TraitRadar.nameInlineHtml === 'function') ? window.TraitRadar.nameInlineHtml(item.studentName) : escapeHtml(item.studentName)}</span>
       <span class="today-reported-status">${escapeHtml(item.status)}</span>
       <span class="today-reported-arrow">›</span>
     </button>`;
   }).join('');
   box.querySelectorAll('[data-lastperf-student]').forEach(btn => {
-    btn.addEventListener('click', () => selectStudentFromQuickList(btn.dataset.lastperfStudent));
+    btn.addEventListener('click', () => selectStudentFromQuickList({
+      name: btn.dataset.lastperfStudent,
+      studentId: btn.dataset.lastperfStudentId,
+      athleteId: btn.dataset.lastperfAthleteId,
+      key: btn.dataset.lastperfStudentKey
+    }));
   });
 }
 
@@ -2590,10 +2693,11 @@ function applyTodayReportFilter(filterKey) {
   renderTodayReportedList(LASTPERF_TODAY_STATE.items, LASTPERF_TODAY_STATE.filter);
 }
 
-function selectStudentFromQuickList(studentName) {
-  const name = String(studentName || '').trim();
+function selectStudentFromQuickList(student) {
+  const name = String(student && student.name || student || '').trim();
   if (!name) return;
   LASTPERF_TODAY_STATE.selected = name;
+  LASTPERF_TODAY_STATE.selectedKey = String(student && student.key || student && student.studentId || student && student.athleteId || '').trim();
   const input = $id('lastPerfName');
   if (input) input.value = name;
   renderTodayReportedList(LASTPERF_TODAY_STATE.items, LASTPERF_TODAY_STATE.filter);
@@ -2615,6 +2719,7 @@ async function refreshTodayReportedList(opts) {
   const title = $id('todayReportedTitle');
   if (title) title.textContent = `${lastPerfDateLabel(selectedDate)}已回報名單`;
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
+  await ensureCoachStudentDirectory(false);
   const list = $id('todayReportedList');
   if (list) list.innerHTML = `<div class="hint-box">讀取${escapeHtml(lastPerfDateLabel(selectedDate))}回報名單中...</div>`;
   try {
@@ -2988,16 +3093,23 @@ async function loadLastPerfPage() {
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') {
     await window.TraitRadar.loadCache();
   }
+  await ensureCoachStudentDirectory(false);
   const role = (getRole() || {}).role;
   const selectedDate = role === 'coach' ? getLastPerfSelectedDate() : '';
+  const selectedKey = String(LASTPERF_TODAY_STATE.selectedKey || '').trim();
   let rec = null;
   let history = [];
   if (role === 'coach' && selectedDate) {
     const allRecords = await fetchAllRecords();
-    history = (allRecords || [])
-      .filter(r => normalizeNameKey(lastPerfRecordName(r) || recordName(r)) === normalizeNameKey(name))
-      .sort((a, b) => normDate(b.date || b.timestamp).localeCompare(normDate(a.date || a.timestamp)));
-    rec = latestRecordForNameDate(history, name, selectedDate);
+    history = (allRecords || []).filter(r => {
+      const rowKey = lastPerfRecordIdentity(r);
+      const rowName = normalizeNameKey(lastPerfRecordName(r) || recordName(r));
+      if (selectedKey && rowKey && rowKey === selectedKey) return true;
+      return rowName === normalizeNameKey(name);
+    }).sort((a, b) => normDate(b.date || b.timestamp).localeCompare(normDate(a.date || a.timestamp)));
+    rec = (selectedKey
+      ? history.find(r => lastPerfRecordIdentity(r) === selectedKey && normDate(r.date || r.timestamp || r.createdAt) === selectedDate)
+      : null) || latestRecordForNameDate(history, name, selectedDate);
   } else {
     [rec, history] = await Promise.all([
       fetchLastRecord(name),
