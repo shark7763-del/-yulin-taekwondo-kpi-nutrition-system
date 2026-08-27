@@ -481,7 +481,12 @@ function switchTab(tabName) {
    ============================================================ */
 
 const ROLE_KEY = 'yulin_role';
-let AUTH_CONFIG = { legacyLoginEnabled: true };
+// 預設關閉，跟後端一致（後端是 getProp('LEGACY_LOGIN_ENABLED') === 'true'，沒設定就是關）。
+// 原本前端預設 true 是 fail-open：只要 getAuthConfig 還沒回來或失敗，登入頁就會冒出
+// 「舊制過渡登入」，但資安稽核 B-01 已把後端的姓名旁路整個移除，
+// 點下去拿不到 authToken，之後每個資料動作都會回 authRequired —— 等於一個看起來
+// 可用、實際走不通的死入口。
+let AUTH_CONFIG = { legacyLoginEnabled: false };
 let ACCOUNT_ADMIN_DATA = { students: [], parents: [] };
 
 function getRole() {
@@ -518,11 +523,12 @@ function showLoginOverlay() {
 }
 
 async function loadAuthConfig() {
-  if (!getWebAppUrl()) return AUTH_CONFIG;
+  // 純本機／示範模式沒有後端可驗證帳號，姓名登入是唯一入口，這時才放行。
+  if (!getWebAppUrl()) { AUTH_CONFIG = { legacyLoginEnabled: true, localOnly: true }; return AUTH_CONFIG; }
   try {
     const res = await postToWebApp({ action: 'getAuthConfig' });
     if (res && res.ok) AUTH_CONFIG = res;
-  } catch (e) { /* 沿用過渡預設 */ }
+  } catch (e) { /* 讀不到設定就維持關閉，不要 fail-open */ }
   return AUTH_CONFIG;
 }
 

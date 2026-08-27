@@ -14,6 +14,14 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   // and every validation assertion below would pass for the wrong reason.
   await page.addInitScript(() => {
     localStorage.setItem('yulin_players', JSON.stringify(['測試選手', '隊友一號', '隊友二號']));
+    // CONFIG.WEB_APP_URL 寫死了正式後端，頁面 init() 會真的打過去（getAuthConfig）。
+    // 測試不該碰線上環境，也不該讓結果隨後端當下的設定而跳動 —— 直接擋掉。
+    const realFetch = window.fetch;
+    window.fetch = function (input, init) {
+      const url = String((input && input.url) ? input.url : (input || ''));
+      if (url.indexOf('script.google.com') !== -1) return Promise.reject(new Error('blocked in tests'));
+      return realFetch.call(window, input, init);
+    };
   });
 
   await page.goto(URL);
@@ -382,6 +390,49 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('viewing an older date brings that period back',
     risk.inJune.includes('停填選手') && !risk.inJune.includes('現役選手'),
     risk.inJune.replace(/\s+/g, ' ').slice(0, 160));
+
+  // 13. the legacy name-only login must be fail-CLOSED. The backend bypass was removed in
+  //     the B-01 audit, so showing the button when the config is unknown offers a dead end.
+  //     AUTH_CONFIG is a module-scoped `let` (not on window), so read it via loadAuthConfig()'s
+  //     return value rather than poking at the global.
+  const legacy = await page.evaluate(async () => {
+    const out = {};
+    const savedUrl = localStorage.getItem('yulin_webapp_url');
+    const savedPost = window.postToWebApp;
+
+    // 後端讀不到設定時，不可以退回成「開啟」（也就是預設必須是關）
+    localStorage.setItem('yulin_webapp_url', 'https://example.invalid/exec');
+    window.postToWebApp = async () => { throw new Error('offline'); };
+    out.afterFailedFetch = (await window.loadAuthConfig()).legacyLoginEnabled;
+
+    // 後端明確說開啟時要跟著開啟
+    window.postToWebApp = async () => ({ ok: true, legacyLoginEnabled: true });
+    out.afterBackendSaysOn = (await window.loadAuthConfig()).legacyLoginEnabled;
+
+    // 後端明確說關閉時要關掉（不能被前一次的 true 黏住）
+    window.postToWebApp = async () => ({ ok: true, legacyLoginEnabled: false });
+    out.afterBackendSaysOff = (await window.loadAuthConfig()).legacyLoginEnabled;
+
+    // 純本機模式沒有後端可驗證，姓名登入是唯一入口，要放行。
+    // 注意：getWebAppUrl() 會優先回寫死在 CONFIG.WEB_APP_URL 的網址，清 localStorage
+    // 進不了本機模式，只有把該常數清空的自架版本才會走到，所以這裡直接覆寫函式。
+    const savedGetUrl = window.getWebAppUrl;
+    window.getWebAppUrl = () => '';
+    out.localOnlyMode = (await window.loadAuthConfig()).legacyLoginEnabled;
+    window.getWebAppUrl = savedGetUrl;
+
+    if (savedUrl) localStorage.setItem('yulin_webapp_url', savedUrl);
+    window.postToWebApp = savedPost;
+    return out;
+  });
+  t('never having loaded the config leaves it closed (default is OFF)',
+    legacy.afterFailedFetch === false, JSON.stringify(legacy));
+  t('backend can still turn it on explicitly',
+    legacy.afterBackendSaysOn === true, JSON.stringify(legacy));
+  t('backend turning it off actually turns it off',
+    legacy.afterBackendSaysOff === false, JSON.stringify(legacy));
+  t('local-only mode still allows name login',
+    legacy.localOnlyMode === true, JSON.stringify(legacy));
 
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
