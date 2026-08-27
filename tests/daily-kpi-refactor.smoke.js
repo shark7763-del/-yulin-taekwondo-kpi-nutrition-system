@@ -352,6 +352,37 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('clearCoachLoadError removes the banner again',
     loadErr.afterClear.every(x => !x.includes('這裡是空的')), JSON.stringify(loadErr.afterClear));
 
+  // 12. streak alerts must respect the selected date. They used to run over every record
+  //     ever, so a student who stopped reporting in June still showed as an active risk.
+  const risk = await page.evaluate(() => {
+    const box = document.getElementById('coachRiskTracking');
+    const mk = (name, date, extra) => Object.assign({
+      name, date, group: '對打', waterIntake: '少於 500ml', lateNightSnack: '無'
+    }, extra || {});
+    // 停填的選手：最後三筆都在兩個月前
+    const stale = ['2026-06-26', '2026-06-27', '2026-06-28'].map(d => mk('停填選手', d));
+    // 仍在回報的選手：最近三天都水量不足
+    const fresh = ['2026-08-26', '2026-08-27', '2026-08-28'].map(d => mk('現役選手', d));
+    const all = stale.concat(fresh);
+
+    window.renderRiskTracking([], all, '2026-08-28');
+    const onDate = box.textContent;
+    // 把日期切回六月，停填選手就應該重新出現
+    window.renderRiskTracking([], all, '2026-06-28');
+    const inJune = box.textContent;
+    return { onDate, inJune };
+  });
+  t('a student who stopped reporting in June is not an active risk today',
+    !risk.onDate.includes('停填選手'), risk.onDate.replace(/\s+/g, ' ').slice(0, 160));
+  t('a currently-reporting student still raises the alert',
+    risk.onDate.includes('現役選手') && risk.onDate.includes('水量不足'),
+    risk.onDate.replace(/\s+/g, ' ').slice(0, 160));
+  t('each alert states which record it is based on',
+    /依 08\/28 紀錄/.test(risk.onDate), risk.onDate.replace(/\s+/g, ' ').slice(0, 160));
+  t('viewing an older date brings that period back',
+    risk.inJune.includes('停填選手') && !risk.inJune.includes('現役選手'),
+    risk.inJune.replace(/\s+/g, ' ').slice(0, 160));
+
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
   console.log('');

@@ -56,9 +56,24 @@ async function fetchAllRecords(opts) {
 
   if (opts.strict) {
     toast('⚠️ 後台讀不到雲端 records，請重新登入或檢查 Apps Script 部署');
-    throw new Error((res && res.error) || '後台讀不到 records 資料');
+    const err = new Error((res && res.error) || '後台讀不到 records 資料');
+    // 只帶回應的「形狀」（鍵名、ok、data 型別與長度），不帶任何紀錄內容，
+    // 好讓畫面上的錯誤橫幅足以判斷是 session、部署還是資料格式問題。
+    err.detail = describeResponseShape(res);
+    throw err;
   }
   return getLocalRecords().map(normalizeCoachRecord);
+}
+
+// 描述後端回應的結構，不外洩任何紀錄內容。
+function describeResponseShape(res) {
+  if (res === null) return 'res=null（後端回了空回應）';
+  if (res === undefined) return 'res=undefined';
+  if (typeof res !== 'object') return 'res 型別=' + typeof res;
+  const keys = Object.keys(res).slice(0, 12).join(',');
+  const d = res.data;
+  const dType = Array.isArray(d) ? ('陣列 長度' + d.length) : (d === undefined ? '無 data 欄' : typeof d);
+  return `ok=${res.ok} data=${dType} keys=[${keys}]`;
 }
 
 function getLocalCoachScores() {
@@ -982,8 +997,9 @@ function coachLoadErrorHint(e) {
   return msg;
 }
 function showCoachLoadError(e) {
+  const detail = (e && e.detail) ? `<br><code style="font-size:.8rem;opacity:.85">診斷：${escapeHtml(String(e.detail))}</code>` : '';
   const html = '<div class="hint-box warn"><b>⚠️ 這裡是空的，因為資料沒讀進來，不是今天沒人回報。</b><br>'
-    + escapeHtml(coachLoadErrorHint(e))
+    + escapeHtml(coachLoadErrorHint(e)) + detail
     + '<br>請按上方「🔄 重新整理資料」再試一次；若持續失敗請重新登入教練。</div>';
   COACH_LOAD_ERROR_BOXES.forEach(id => { const b = $id(id); if (b) b.innerHTML = html; });
 }
@@ -1056,7 +1072,7 @@ async function refreshCoach() {
   renderCoachReadinessOverview(todaysFiltered, all);
   renderCoachQuickScores(todaysFiltered, coachScores);
   renderCoachSimpleGroups(todaysFiltered);
-  renderRiskTracking(todaysFiltered, all);
+  renderRiskTracking(todaysFiltered, all, filterDate);
   renderTeamMood(todaysFiltered);
   renderStatusLists(todaysFiltered);
   renderRedLightCoaching(todaysFiltered);
@@ -1138,7 +1154,20 @@ function riskItem(text, cls) {
 function renderRiskBlock(title, items, empty) {
   return `<div class="risk-block"><h4>${title}（${items.length}）</h4><div class="name-list">${items.length ? items.join('') : `<span class="review-label">${empty || '目前無'}</span>`}</div></div>`;
 }
-function renderRiskTracking(todays, all) {
+// 連續型警示的回溯窗。原本吃的是 all（全部歷史紀錄）且完全不看日期，
+// 停填兩個月的選手會一直掛著六月的「連續 3 天水量不足」，被當成今天的風險。
+// 同一個面板裡，疼痛／睡眠／心情／RPE 只看選定當天，兩邊時間基準不一致更難解讀。
+const ALERT_WINDOW_DAYS = 14;
+function shiftDateStr(dateStr, deltaDays) {
+  const base = normDate(dateStr);
+  if (!base) return '';
+  const d = new Date(base + 'T00:00:00');
+  if (isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + deltaDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function renderRiskTracking(todays, all, filterDate) {
   const box = $id('coachRiskTracking');
   if (!box) return;
   const bodyRisks = [];
@@ -1162,12 +1191,25 @@ function renderRiskTracking(todays, all) {
     if (/需要關心|高風險硬撐|受傷風險|脫水風險/.test(String(r.aiTags || ''))) trainingRisks.push(riskItem(`${r.name || ''}｜${String(r.aiTags || '').split('、').filter(Boolean).slice(0, 2).join('、')}`, 'tag-red'));
   });
 
+  // 只取「選定日期往前 ALERT_WINDOW_DAYS 天」的紀錄，讓警示反映的是當下狀態。
+  const endDate = normDate(filterDate) || todayStr();
+  const startDate = shiftDateStr(endDate, -ALERT_WINDOW_DAYS);
   const byName = {};
-  (all || []).forEach(r => { if (r && r.name) (byName[r.name] = byName[r.name] || []).push(r); });
+  (all || []).forEach(r => {
+    if (!r || !r.name) return;
+    const d = normDate(r.date || r.timestamp);
+    if (!d || d > endDate || (startDate && d < startDate)) return;
+    (byName[r.name] = byName[r.name] || []).push(r);
+  });
   Object.keys(byName).forEach(name => {
-    const alerts = computeAlerts(dedupeLatestByDate(byName[name]));
+    const mine = dedupeLatestByDate(byName[name]);
+    const alerts = computeAlerts(mine);
+    // computeAlerts 的「連續 N 天」其實是「最近 N 筆」，中間可能隔了好幾天。
+    // 標出依據的最後一筆日期，教練才知道這條警示有多新。
+    const basisDate = mine[0] ? dateSlash(mine[0].date || mine[0].timestamp).slice(5) : '';
     alerts.forEach(a => {
-      const item = riskItem(`${name}｜${a.text.replace(/^[^\s]+\s*/, '')}`, a.level === 'watch' ? 'tag-green' : 'tag-orange');
+      const suffix = basisDate ? `｜依 ${basisDate} 紀錄` : '';
+      const item = riskItem(`${name}｜${a.text.replace(/^[^\s]+\s*/, '')}${suffix}`, a.level === 'watch' ? 'tag-green' : 'tag-orange');
       if (/情緒|心情/.test(a.text)) mentalRisks.push(item);
       else if (/睡眠|疼痛|宵夜|水量/.test(a.text)) bodyRisks.push(item);
       else trainingRisks.push(item);
