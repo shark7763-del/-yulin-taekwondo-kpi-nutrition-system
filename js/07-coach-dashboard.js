@@ -2024,7 +2024,7 @@ async function loadPersonRecords() {
   const box = $id('coachPersonResult');
   if (!recs.length) { box.innerHTML = '<div class="hint-box">查無紀錄。</div>'; return; }
 
-  let html = '<h4 style="margin-bottom:8px">📈 七天成長趨勢</h4><div id="personTrendBox"></div>';
+  let html = '<h4 style="margin-bottom:8px">📈 成長趨勢</h4><div id="personTrendBox"></div>';
   html += '<div class="table-scroll"><table class="record-table"><thead><tr>' +
     '<th>日期</th><th>總分</th><th>平均</th><th>狀態</th><th>體重</th><th>BMI</th><th>飲食風險</th><th>最低三項</th>' +
     '</tr></thead><tbody>';
@@ -2075,7 +2075,7 @@ async function loadPersonRecords() {
 
   box.innerHTML = html;
 
-  // 七天成長趨勢圖
+  // 成長趨勢圖
   const ptb = $id('personTrendBox');
   if (ptb) renderTrendSection(ptb, recs);
 
@@ -2804,7 +2804,7 @@ async function loadLastPerfPage() {
   const trendCard = $id('trendCard');
   const trendBox = $id('trendBox');
 
-  // 七天成長趨勢圖
+  // 成長趨勢圖
   if (trendCard && trendBox) {
     if (role === 'coach') {
       renderTrendSection(trendBox, history || []);
@@ -3046,7 +3046,7 @@ function renderLastReviewInto(rec, box) {
       <div class="hint-box">${escapeHtml(buildRemindText(lowItems))}</div>
     </section>
     <section class="lastperf-section">
-      <h3 class="card-title">📈 近 7 天成長趨勢</h3>
+      <h3 class="card-title">📈 成長趨勢</h3>
       <div id="lastPerfTrendInline"></div>
     </section>
     <details class="lastperf-section lastperf-details" open>

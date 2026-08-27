@@ -296,6 +296,38 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
     !weekly.error && weekly.items === 30 && /平均 4/.test(weekly.badge || '') && /1\/30/.test(weekly.summary || ''),
     JSON.stringify(weekly));
 
+  // 10. trend range labels say 筆 (records), not 天 (days) — allRecs.slice(0, n) takes the
+  //     last N *records*, so gaps in reporting don't consume slots. The old 「近 30 天」
+  //     label made a chart ending 06/27 look like a data bug when it was correct.
+  const trend = await page.evaluate(() => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    // 10 scored days spread over 2 months, plus one absence that must be excluded
+    const recs = [
+      { date: '2026-06-01', group: '對打', averageScore: 3.0, totalScore: 90 },
+      { date: '2026-06-02', group: '對打', averageScore: 3.5, totalScore: 105 },
+      { date: '2026-06-03', group: '對打', averageScore: 4.0, totalScore: 120 },
+      { date: '2026-06-10', group: '對打', averageScore: 4.2, totalScore: 126 },
+      { date: '2026-06-27', group: '對打', averageScore: 2.97, totalScore: 89 },
+      { date: '2026-07-03', group: '未出席訓練', status: '未出席訓練' }
+    ];
+    window.renderTrendSection(host, recs, 30, {});
+    const btn = Array.from(host.querySelectorAll('.trend-btn')).find(b => b.dataset.key === 'totalScore');
+    if (btn) btn.click();
+    return {
+      rangeLabels: Array.from(host.querySelectorAll('.trend-range-btn')).map(b => b.textContent),
+      summary: host.querySelector('.trend-summary').textContent,
+      xLabels: Array.from(host.querySelectorAll('.trend-chart-box text')).map(t => t.textContent)
+    };
+  });
+  t('range buttons are labelled 筆, not 天',
+    trend.rangeLabels.every(l => !l.includes('天')), JSON.stringify(trend.rangeLabels));
+  t('summary counts 筆 and shows the real date span',
+    /5 筆（06\/01～06\/27）/.test(trend.summary), trend.summary);
+  t('absence record stays excluded from the curve',
+    !trend.summary.includes('07/03') && !trend.xLabels.includes('07/03'),
+    trend.summary + ' | ' + trend.xLabels.join(','));
+
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
   console.log('');

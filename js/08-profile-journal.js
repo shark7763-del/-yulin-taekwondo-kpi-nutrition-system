@@ -43,9 +43,9 @@ function renderProfile(name, recs) {
   html += `<div class="review-row"><span class="review-label">體重變化</span><span class="review-value">${wChange}</span></div>`;
   html += `<div class="review-row"><span class="review-label">最近狀態</span><span class="review-value">${parentView ? softenForParent(latest.status || '') : (latest.status || '--')}</span></div>`;
 
-  // 7 天 / 30 天趨勢
-  html += `<h4 style="margin:14px 0 6px;color:var(--blue)">📈 最近 7 天趨勢</h4><div id="profileTrend7"></div>`;
-  html += `<h4 style="margin:14px 0 6px;color:var(--blue)">📈 最近 30 天趨勢</h4><div id="profileTrend30"></div>`;
+  // 最近 7 筆 / 30 筆趨勢（取的是有紀錄的日子，不是日期區間）
+  html += `<h4 style="margin:14px 0 6px;color:var(--blue)">📈 最近 7 筆趨勢</h4><div id="profileTrend7"></div>`;
+  html += `<h4 style="margin:14px 0 6px;color:var(--blue)">📈 最近 30 筆趨勢</h4><div id="profileTrend30"></div>`;
 
   // 飲食狀況
   const riskDays = recs.filter(r => r.nutritionRisks && r.nutritionRisks !== '無明顯風險').length;

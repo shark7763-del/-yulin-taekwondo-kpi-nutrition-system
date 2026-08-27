@@ -1077,7 +1077,7 @@ function radarFromRecord(rec) {
 }
 
 /* ============================================================
-   七天成長趨勢折線圖（純 SVG，股票走勢風）
+   成長趨勢折線圖（純 SVG，股票走勢風）
    ============================================================ */
 
 // series: [{label, value}] 由舊到新；range: {min,max}
@@ -1182,8 +1182,10 @@ function renderTrendSection(box, records, days, opts) {
   // 範圍選擇器：讓使用者把較舊的紀錄（如 5 月）也整合進來看
   // opts.picker === false（個人檔案的固定 7/30 兩張圖）則不顯示選擇器
   const showPicker = opts.picker !== false && allRecs.length > 7;
-  const RANGES = [{ n: 7, label: '近 7 天' }];
-  if (allRecs.length > 7) RANGES.push({ n: 30, label: '近 30 天' });
+  // 這裡是 allRecs.slice(0, n)，取的是「最近 N 筆有紀錄的日子」而不是日期區間，
+  // 中間沒填的日子不會佔名額。標籤照實寫成「筆」，否則會被誤讀成日期範圍。
+  const RANGES = [{ n: 7, label: '近 7 筆' }];
+  if (allRecs.length > 7) RANGES.push({ n: 30, label: '近 30 筆' });
   if (allRecs.length > 30) RANGES.push({ n: 99999, label: '全部' });
   let range = Math.min(days || 7, allRecs.length);
   const metricValue = (metric, rec) => {
@@ -1227,7 +1229,7 @@ function renderTrendSection(box, records, days, opts) {
     // 沒填該指標的當天（值為 null）直接跳過，不畫成 0 造成假性暴跌
     const pts = recs.map(r => ({ r, v: valOf(r) })).filter(p => p.v !== null && p.v !== undefined);
     if (pts.length < 2) {
-      chartBox.innerHTML = '<div class="hint-box">這個指標目前有效資料不足 2 天，無法畫出趨勢。</div>';
+      chartBox.innerHTML = '<div class="hint-box">這個指標目前有效資料不足 2 筆，無法畫出趨勢。</div>';
       summaryBox.innerHTML = '';
       return;
     }
@@ -1244,7 +1246,8 @@ function renderTrendSection(box, records, days, opts) {
     const first = vals[0], last = vals[vals.length - 1];
     const diff = round1(last - first);
     const dir = diff > 0 ? `📈 上升 ${diff}` : (diff < 0 ? `📉 下降 ${Math.abs(diff)}` : '➡️ 持平');
-    summaryBox.innerHTML = `<b>${cur.label}</b>：${pts.length} 天從 <b>${round1(first)}</b> → <b>${round1(last)}</b>　<span class="${diff >= 0 ? 'up' : 'down'}">${dir}</span>`;
+    const spanText = series.length ? `${series[0].label}～${series[series.length - 1].label}` : '';
+    summaryBox.innerHTML = `<b>${cur.label}</b>：${pts.length} 筆${spanText ? `（${spanText}）` : ''}從 <b>${round1(first)}</b> → <b>${round1(last)}</b>　<span class="${diff >= 0 ? 'up' : 'down'}">${dir}</span>`;
   }
 
   box.querySelectorAll('.trend-btn').forEach(b => b.addEventListener('click', () => {
