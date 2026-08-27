@@ -589,6 +589,58 @@ function readinessToneCls(label) {
   if (String(label).indexOf('黃') !== -1) return 'warn';
   return 'good';
 }
+function parseReflectionMeta(rec) {
+  try {
+    if (rec && rec.reflectionMetaJson) {
+      const meta = JSON.parse(rec.reflectionMetaJson);
+      if (meta && typeof meta === 'object') return meta;
+    }
+  } catch (e) {}
+  return {};
+}
+const GENERIC_REPORT_TEXT = ['很好', '還好', '普通', '很累', '加油', '努力', '更努力', '練好', '不知道', '沒什麼', '無', '沒有'];
+// 自由填寫欄位（心得、下一步）：要夠長且不是罐頭字才算數。
+function reportUsefulnessHint(v, minLength) {
+  const t = String(v || '').trim();
+  if (!t) return false;
+  if (GENERIC_REPORT_TEXT.indexOf(t) !== -1) return false;
+  return t.length >= (minLength == null ? 6 : minLength);
+}
+// 選項欄位（證據來源、處理結果）是固定選項，多半只有 4 個字，
+// 不能套自由文字的長度門檻，否則永遠拿不到分數。
+function reportUsefulnessChoice(v, unknownValues) {
+  const t = String(v || '').trim();
+  if (!t) return false;
+  return (unknownValues || []).indexOf(t) === -1;
+}
+function computeReportUsefulness(rec) {
+  const meta = parseReflectionMeta(rec);
+  const eventText = String(meta.reflectionEvent || rec.reflection || '').trim();
+  const nextActionText = String(meta.nextAction || rec.tomorrowGoal || '').trim();
+  const evidenceText = String(meta.reflectionEvidence || '').trim();
+  const resultText = String(meta.reflectionResult || '').trim();
+
+  const eventOk = reportUsefulnessHint(eventText, 10) && /[一-龥A-Za-z0-9]/.test(eventText);
+  const evidenceOk = reportUsefulnessChoice(evidenceText, ['目前無法確認']);
+  const nextOk = reportUsefulnessHint(nextActionText) && !/不知道|沒想到|尚未想到/.test(nextActionText);
+  const resultOk = reportUsefulnessChoice(resultText, ['尚未驗證']);
+
+  const score = (eventOk ? 35 : 0) + (evidenceOk ? 25 : 0) + (nextOk ? 30 : 0) + (resultOk ? 10 : 0);
+  let label = '建議教練追問';
+  if (score >= 80) label = '回報完整';
+  else if (score >= 55) label = '回報具體';
+  else if (score >= 30) label = '需要補充';
+
+  return {
+    score,
+    label,
+    eventOk,
+    evidenceOk,
+    nextOk,
+    resultOk,
+    meta
+  };
+}
 function computeSelfReadinessScore(rec) {
   if (rec._isAbsence || isAbsenceRecord(rec)) return hasUsefulText(rec.absenceReflection || rec.absenceReason, 12) ? 70 : 45;
   let score = 78;
@@ -605,9 +657,6 @@ function computeSelfReadinessScore(rec) {
   if (rpe !== null) score -= rpe >= 9 ? 12 : rpe >= 8 ? 7 : 0;
   const pain = nval(rec.painScore);
   if (pain !== null) score -= pain >= 7 ? 25 : pain >= 4 ? 12 : pain >= 1 ? 3 : 0;
-  if (hasUsefulText(rec.reflection, 12)) score += 5;
-  if (hasUsefulText(rec.tomorrowGoal, 8)) score += 5;
-  if (/疲|痛|緊|怕|累|不穩|失誤|壓力|睡/.test(String(rec.reflection || '') + String(rec.moodReason || ''))) score += 4;
   return Math.round(clamp(score, 0, 100));
 }
 function computeCoachReadinessScore(rec) {
@@ -695,6 +744,7 @@ function buildReadinessAnalysis(rec, history) {
   const recoveryScore = computeRecoveryReadinessScore(rec);
   const attendanceScore = computeAttendanceReadinessScore(rec);
   const risk = computeRiskPenalty(rec, recoveryScore, history || []);
+  const reportUsefulness = computeReportUsefulness(rec);
   const finalReadinessScore = Math.round(clamp(selfScore * 0.30 + coachScore * 0.35 + recoveryScore * 0.25 + attendanceScore * 0.10 - risk.penalty, 0, 100));
   let light = readinessLight(finalReadinessScore);
   const tags = buildReadinessTags(rec, selfScore, coachScore, recoveryScore, finalReadinessScore, risk.risks, history || []);
@@ -726,7 +776,10 @@ function buildReadinessAnalysis(rec, history) {
     aiTags: uniqueTags,
     aiLabel: uniqueTags.join('、') || '資料穩定',
     algorithmType: 'rule-based algorithm',
-    needInterview: uniqueTags.indexOf('需要關心') !== -1 || uniqueTags.indexOf('受傷風險') !== -1 || uniqueTags.indexOf('高疼痛風險') !== -1 || (nval(rec.coachRiskScore) || 100) <= 40 || finalReadinessScore < 40
+    needInterview: uniqueTags.indexOf('需要關心') !== -1 || uniqueTags.indexOf('受傷風險') !== -1 || uniqueTags.indexOf('高疼痛風險') !== -1 || (nval(rec.coachRiskScore) || 100) <= 40 || finalReadinessScore < 40,
+    reportUsefulness: reportUsefulness.label,
+    reportUsefulnessScore: reportUsefulness.score,
+    reportUsefulnessJson: JSON.stringify(reportUsefulness)
   };
 }
 function applyReadiness(rec, history) {
@@ -744,6 +797,9 @@ function applyReadiness(rec, history) {
     trainingAdvice: r.trainingDirection,
     trainingDirection: r.trainingDirection,
     algorithmType: 'rule-based algorithm',
+    reportUsefulness: r.reportUsefulness,
+    reportUsefulnessScore: r.reportUsefulnessScore,
+    reportUsefulnessJson: r.reportUsefulnessJson,
     readinessJson: JSON.stringify(r)
   });
   return r;

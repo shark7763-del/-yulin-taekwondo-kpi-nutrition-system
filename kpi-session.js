@@ -1,7 +1,7 @@
 /* ============================================================
    本週 KPI 任務制
    - 每日基本回報每天開放
-   - 30 項完整 KPI 每週五自動開放，也可依比賽日手動加開
+   - 30 項完整 KPI 由教練開放，也可依比賽日手動加開
    - 教練端採 optimistic UI，背景同步，不鎖整區
    ============================================================ */
 (function () {
@@ -11,6 +11,7 @@
   window.__TEAMPRO_KPI_INITIALIZED__ = true;
 
   function el(id) { return document.getElementById(id); }
+  function qsa(root, sel) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
   function esc(s) { return (typeof escapeHtml === 'function') ? escapeHtml(s) : String(s == null ? '' : s); }
   function notify(m) { if (typeof toast === 'function') toast(m); }
   function role() { try { return (typeof getRole === 'function') ? getRole() : null; } catch (e) { return null; } }
@@ -313,7 +314,7 @@
       banner +
       '<div class="kpi-task-card">' +
         '<h3 class="card-title">📋 KPI 回報管理</h3>' +
-        '<p class="review-label">每日基本回報每天開放；30 項完整 KPI 每週五自動開放，截止時間為週日 23:59；比賽日、訓練週期調整或狀態異常時，教練也可以手動加開。</p>' +
+        '<p class="review-label">每日基本回報每天開放；30 項完整 KPI 由教練開放，截止時間為週日 23:59；比賽日、訓練週期調整或狀態異常時，教練也可以手動加開。</p>' +
         '<div class="kpi-task-status"><b>本週 KPI 任務</b><span class="' + (enabled.length ? 'is-open' : 'is-closed') + '">' + taskStatusText() + '</span></div>' +
         '<div class="kpi-task-meta">' +
           '<span>週次：' + esc(wk) + '</span><span>開放對象：' + esc(targetText()) + '</span><span>截止時間：' + esc(enabled.length ? fmtTime(due) : defaultDueLabel()) + '</span>' +
@@ -583,6 +584,184 @@
   }
 
   /* ===================== 學生端 ===================== */
+  var WEEKLY_STATE_PREFIX = 'teampro_weekly_kpi_state_';
+  var WEEKLY_SCORE_OPTIONS = [1, 2, 3, 4, 5, 'na'];
+  var WEEKLY_KEY_MAP = {
+    technical: 'technicalScore',
+    tactical: 'tacticalScore',
+    physical: 'physicalScore',
+    mental: 'mentalScore',
+    attitude: 'attitudeScore',
+    recovery: 'recoveryScore'
+  };
+  function weeklyAspectDefs() {
+    try {
+      if (typeof KPI_ASPECTS !== 'undefined') {
+        return [
+          { key: 'technical', label: KPI_ASPECTS.technical.label, items: KPI_ASPECTS.technical.items || [] },
+          { key: 'tactical', label: KPI_ASPECTS.tactical.label, items: KPI_ASPECTS.tactical.items || [] },
+          { key: 'physical', label: KPI_ASPECTS.physical.label, items: KPI_ASPECTS.physical.items || [] },
+          { key: 'mental', label: KPI_ASPECTS.focus ? KPI_ASPECTS.focus.label : '心理', items: (KPI_ASPECTS.focus && KPI_ASPECTS.focus.items) || [] },
+          { key: 'attitude', label: KPI_ASPECTS.discipline ? KPI_ASPECTS.discipline.label : '態度', items: (KPI_ASPECTS.discipline && KPI_ASPECTS.discipline.items) || [] },
+          { key: 'recovery', label: '恢復／生理', items: (KPI_ASPECTS.emotion && KPI_ASPECTS.emotion.items) || [] }
+        ];
+      }
+    } catch (e) {}
+    return [
+      { key: 'technical', label: '技術', items: [] },
+      { key: 'tactical', label: '戰術', items: [] },
+      { key: 'physical', label: '體能', items: [] },
+      { key: 'mental', label: '心理', items: [] },
+      { key: 'attitude', label: '態度', items: [] },
+      { key: 'recovery', label: '恢復／生理', items: [] }
+    ];
+  }
+  function weeklyAspectIcon(aspectKey) {
+    var dim = WK_DIMS.filter(function (d) { return d.key === aspectKey + 'Score'; })[0];
+    return dim ? dim.icon : '📈';
+  }
+  function weeklyStorageKey(sessionId) { return WEEKLY_STATE_PREFIX + String(sessionId || ''); }
+  function weeklyDraftRead(sessionId) { try { return JSON.parse(localStorage.getItem(weeklyStorageKey(sessionId)) || 'null'); } catch (e) { return null; } }
+  function weeklyDraftWrite(sessionId, data) { try { localStorage.setItem(weeklyStorageKey(sessionId), JSON.stringify(data || {})); } catch (e) {} }
+  function weeklyDraftClear(sessionId) { try { localStorage.removeItem(weeklyStorageKey(sessionId)); } catch (e) {} }
+  function weeklyValueText(v) { if (v === 'na') return 'N/A'; if (v === '' || v == null) return ''; return String(v); }
+  function weeklySetValue(aspectKey, itemKey, value) {
+    var row = el('wk-item-' + aspectKey + '-' + itemKey);
+    if (!row) return;
+    var val = value === 'na' ? 'na' : String(value || '');
+    row.dataset.value = val;
+    row.querySelectorAll('[data-wk-value]').forEach(function (btn) {
+      var on = String(btn.dataset.wkValue) === val;
+      btn.classList.toggle('sel', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var score = row.querySelector('.wk-item-score');
+    if (score) {
+      score.textContent = val === 'na' ? 'N/A' : (val ? val + ' 分' : '尚未評分');
+      score.className = 'kpi-item-score ' + (val === 'na' ? 'lv-none' : (val ? (Number(val) >= 4 ? 'lv-green' : Number(val) >= 3 ? 'lv-yellow' : 'lv-red') : 'kpi-untouched'));
+    }
+    weeklyUpdateSummary();
+  }
+  function weeklyCollect() {
+    var scores = {};
+    var aspectAverages = {};
+    var total = 0;
+    var counted = 0;
+    var completed = 0;
+    weeklyAspectDefs().forEach(function (aspect) {
+      scores[aspect.key] = {};
+      var sum = 0, cnt = 0;
+      qsa(document, '#studentKpiForm [data-wk-item^="' + aspect.key + '-"]').forEach(function (row) {
+        var itemLabel = row.dataset.wkItemLabel || row.dataset.wkItem || '';
+        var raw = String(row.dataset.value || '');
+        if (!raw) {
+          scores[aspect.key][itemLabel] = '';
+          return;
+        }
+        completed += 1;
+        if (raw === 'na') {
+          scores[aspect.key][itemLabel] = 'N/A';
+          return;
+        }
+        var n = Number(raw);
+        scores[aspect.key][itemLabel] = n;
+        if (Number.isFinite(n)) {
+          sum += n;
+          cnt += 1;
+          total += n;
+          counted += 1;
+        }
+      });
+      aspectAverages[aspect.key] = cnt ? Math.round((sum / cnt) * 10) / 10 : null;
+    });
+    var average = counted ? Math.round((total / counted) * 10) / 10 : '';
+    return {
+      scores: scores,
+      aspectAverages: aspectAverages,
+      totalScore: total,
+      averageScore: average,
+      completedCount: completed,
+      numericCount: counted
+    };
+  }
+  function weeklyBadgeClass(avg) {
+    if (avg == null) return 'kpi-aspect-avg lv-none';
+    return 'kpi-aspect-avg ' + (avg >= 4 ? 'lv-green' : avg >= 3 ? 'lv-yellow' : 'lv-red');
+  }
+  function weeklyUpdateSummary() {
+    var data = weeklyCollect();
+    weeklyAspectDefs().forEach(function (aspect) {
+      var badge = el('wk-badge-' + aspect.key);
+      if (!badge) return;
+      var avg = data.aspectAverages[aspect.key];
+      badge.textContent = avg == null ? '尚未評分' : ('平均 ' + avg);
+      badge.className = weeklyBadgeClass(avg);
+    });
+    var box = el('wkSummary');
+    if (!box) return data;
+    var total = qsa(document, '#studentKpiForm [data-wk-item]').length;
+    if (!data.completedCount) {
+      box.textContent = '尚未評分';
+      box.className = 'kpi-aspect-avg lv-none';
+      return data;
+    }
+    box.textContent = '已完成 ' + data.completedCount + '/' + (total || data.completedCount) + ' 項'
+      + (data.numericCount ? '・平均 ' + data.averageScore : '');
+    box.className = weeklyBadgeClass(data.numericCount ? data.averageScore : null);
+    return data;
+  }
+  function weeklySetFromDraft(sessionId) {
+    var draft = weeklyDraftRead(sessionId);
+    if (!draft) return;
+    var map = draft._weeklyScores || draft.scores || {};
+    weeklyAspectDefs().forEach(function (aspect) {
+      var aspectMap = map[aspect.key] || {};
+      qsa(document, '#studentKpiForm [data-wk-item^="' + aspect.key + '-"]').forEach(function (row) {
+        var itemLabel = row.dataset.wkItemLabel || row.dataset.wkItem || '';
+        var raw = aspectMap[itemLabel];
+        if (raw == null && aspectMap[row.dataset.wkItem]) raw = aspectMap[row.dataset.wkItem];
+        if (raw === 'N/A') raw = 'na';
+        if (raw != null && raw !== '') weeklySetValue(aspect.key, row.dataset.wkItem, raw);
+      });
+    });
+    if (el('wkBest') && draft.bestThingThisWeek) el('wkBest').value = draft.bestThingThisWeek;
+    if (el('wkImprove') && draft.needImproveThisWeek) el('wkImprove').value = draft.needImproveThisWeek;
+    if (el('wkGoal') && draft.nextWeekGoal) el('wkGoal').value = draft.nextWeekGoal;
+  }
+  function weeklySaveDraft(sessionId) {
+    var bundle = weeklyCollect();
+    var current = weeklyDraftRead(sessionId) || {};
+    weeklyDraftWrite(sessionId, Object.assign({}, current, {
+      _weeklyScores: bundle.scores,
+      bestThingThisWeek: el('wkBest') ? el('wkBest').value.trim() : '',
+      needImproveThisWeek: el('wkImprove') ? el('wkImprove').value.trim() : '',
+      nextWeekGoal: el('wkGoal') ? el('wkGoal').value.trim() : '',
+      updatedAt: Date.now()
+    }));
+  }
+  function weeklyRequestKey(sessionId) {
+    var draft = weeklyDraftRead(sessionId) || {};
+    if (draft._submitRequestId) return draft._submitRequestId;
+    draft._submitRequestId = makeRequestId();
+    draft.updatedAt = Date.now();
+    weeklyDraftWrite(sessionId, draft);
+    return draft._submitRequestId;
+  }
+  function weeklyRenderSummary(report) {
+    var aspectAverages = report && report.aspectAverages ? report.aspectAverages : null;
+    if (!aspectAverages && report && report.aspectAveragesJson) {
+      try { aspectAverages = JSON.parse(report.aspectAveragesJson); } catch (e) { aspectAverages = null; }
+    }
+    return '<div class="hint-box good"><b>本週 KPI 已完成</b><br>以下是你送出的摘要，只能看不能再編輯。</div>' +
+      '<div class="kpi-aspect">' + weeklyAspectDefs().map(function (aspect) {
+        var field = aspect.key + 'Score';
+        var v = aspectAverages ? (aspectAverages[field] != null ? aspectAverages[field] : aspectAverages[aspect.key]) : (report ? report[field] : null);
+        return '<div class="kpi-item"><div class="kpi-item-row"><span class="kpi-item-name">' + esc(aspect.label) + '</span><span class="kpi-item-score">' + (v == null ? 'N/A' : v) + '</span></div></div>';
+      }).join('') + '</div>' +
+      '<div class="review-row"><span class="review-label">本週做得最好的一件事</span><span class="review-value">' + esc((report && report.bestThingThisWeek) || '') + '</span></div>' +
+      '<div class="review-row"><span class="review-label">本週最需要改進的</span><span class="review-value">' + esc((report && report.needImproveThisWeek) || '') + '</span></div>' +
+      '<div class="review-row"><span class="review-label">下週目標</span><span class="review-value">' + esc((report && report.nextWeekGoal) || '') + '</span></div>';
+  }
   function studentStateKey() {
     var r = role();
     var sid = r && (r.studentId || r.name) ? String(r.studentId || r.name) : '';
@@ -645,7 +824,7 @@
         if (_studentRetryTimer) { clearTimeout(_studentRetryTimer); _studentRetryTimer = null; }
         writeStudentStateCache(true, res.session, { state: 'done', closeAt: res.session && res.session.closeAt, message: res.message });
         if (typeof window.setDailyKpiAvailability === 'function') window.setDailyKpiAvailability(true, res.session);
-        renderStudentStatusMessage(body, '本週 KPI 已完成', res.message || '你已完成本次 KPI 回報，可以查看本週成長報告。', 'good', false);
+        body.innerHTML = res.report ? weeklyRenderSummary(res.report) : '<div class="hint-box good"><b>本週 KPI 已完成</b><br>' + esc(res.message || '你已完成本次 KPI 回報，可以查看本週成長報告。') + '</div>';
       } else if (res.state === 'scheduled') {
         state.studentOpen = false;
         state.studentRetryUsed = false;
@@ -712,7 +891,7 @@
     var card = el('studentKpiCard');
     if (card) card.style.display = 'block';
     body.innerHTML =
-      '<div class="hint-box good"><b>本週 KPI 回報</b><br>這是教練本週開放的完整 KPI 回報，請依照最近一週訓練狀態填寫。</div>' +
+      '<div class="hint-box good"><b>本週 KPI 回報</b><br>這是教練本週開放的完整 30 項 KPI 回報，請依照最近一週訓練狀態填寫。</div>' +
       (extraMessage ? '<div class="hint-box">' + esc(extraMessage) + '</div>' : '') +
       '<button type="button" class="btn btn-primary" id="studentKpiStart">開始填寫 KPI</button>' +
       '<div id="studentKpiForm" style="display:none;"></div>';
@@ -722,36 +901,79 @@
     });
   }
   function buildStudentKpiForm(wrap, session) {
-    var sliders = WK_DIMS.map(function (d) {
-      return '<div class="kpi-item"><div class="kpi-item-row"><span class="kpi-item-name">' + d.icon + ' ' + d.label + '</span><span class="kpi-item-score" id="wk-score-' + d.key + '">3 分</span></div>' +
-        '<input type="range" min="1" max="5" step="1" value="3" class="kpi-slider wk-slider" data-key="' + d.key + '" /></div>';
+    var aspects = weeklyAspectDefs();
+    var html = '<div class="kpi-aspect-head kpi-overall-head"><span>30 項完整 KPI</span><span class="kpi-aspect-avg lv-none" id="wkSummary">尚未評分</span></div>';
+    html += aspects.map(function (aspect) {
+      var icon = weeklyAspectIcon(aspect.key);
+      var items = (aspect.items || []).map(function (item, idx) {
+        var itemKey = aspect.key + '-' + idx;
+        return '<div class="kpi-item" id="wk-item-' + aspect.key + '-' + itemKey + '" data-wk-item="' + itemKey + '" data-wk-item-label="' + esc(item) + '" data-value="">' +
+          '<div class="kpi-item-row"><span class="kpi-item-name">' + esc(item) + '</span><span class="kpi-item-score wk-item-score kpi-untouched">尚未評分</span></div>' +
+          '<div class="quick-chips">' + WEEKLY_SCORE_OPTIONS.map(function (v) {
+            return '<button type="button" class="chip' + (v === 'na' ? ' chip-warn' : '') + '" data-wk-value="' + v + '">' + (v === 'na' ? 'N/A' : v) + '</button>';
+          }).join('') + '</div>' +
+        '</div>';
+      }).join('');
+      return '<section class="kpi-section weekly-kpi-section" id="wk-card-' + aspect.key + '" data-aspect="' + aspect.key + '" data-value="">' +
+        '<div class="kpi-section-head"><span class="kpi-section-title">' + icon + ' ' + esc(aspect.label) + '<span class="kpi-section-count">' + (aspect.items && aspect.items.length ? aspect.items.length : 0) + ' 項</span></span><span class="kpi-section-right"><span class="kpi-aspect-avg lv-none" id="wk-badge-' + aspect.key + '">尚未評分</span></span></div>' +
+        '<div class="kpi-section-body"><div class="review-label" style="margin-bottom:8px">請依照最近一週整體表現評分；沒有練到可選 N/A。</div>' + items + '</div>' +
+      '</section>';
     }).join('');
-    wrap.style.display = 'block';
-    wrap.innerHTML = '<div class="kpi-aspect">' + sliders + '</div>' +
-      '<label class="field-label">本週做得最好的一件事</label><textarea id="wkBest" class="text-input" rows="2"></textarea>' +
+    html += '<label class="field-label">本週做得最好的一件事</label><textarea id="wkBest" class="text-input" rows="2"></textarea>' +
       '<label class="field-label">本週最需要改進的</label><textarea id="wkImprove" class="text-input" rows="2"></textarea>' +
       '<label class="field-label">下週目標</label><textarea id="wkGoal" class="text-input" rows="2"></textarea>' +
       '<div class="btn-group"><button type="button" id="wkSubmit" class="btn btn-primary">🚀 送出本週 KPI</button></div>';
-    wrap.querySelectorAll('.wk-slider').forEach(function (s) {
-      s.addEventListener('input', function () { el('wk-score-' + s.dataset.key).textContent = s.value + ' 分'; });
+    wrap.style.display = 'block';
+    wrap.innerHTML = html;
+
+    wrap.querySelectorAll('[data-wk-value]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var row = btn.closest('[data-wk-item]');
+        if (!row) return;
+        var current = String(row.dataset.value || '');
+        var value = String(btn.dataset.wkValue || '');
+        var aspectRow = row.closest('[data-aspect]');
+        if (!aspectRow) return;
+        weeklySetValue(aspectRow.dataset.aspect, row.dataset.wkItem, current === value ? '' : value);
+      });
     });
+    ['wkBest', 'wkImprove', 'wkGoal'].forEach(function (id) {
+      var input = el(id);
+      if (input) input.addEventListener('input', function () { weeklySaveDraft(session.sessionId); });
+    });
+    weeklySetFromDraft(session.sessionId);
+    weeklyUpdateSummary();
     el('wkSubmit').addEventListener('click', function () { submitStudentKpi(session); });
   }
   async function submitStudentKpi(session) {
     var btn = el('wkSubmit'); if (btn) { btn.disabled = true; btn.textContent = '送出中...'; }
-    var scores = {};
-    document.querySelectorAll('#studentKpiForm .wk-slider').forEach(function (s) { scores[s.dataset.key] = parseInt(s.value, 10); });
+    var bundle = weeklyCollect();
+    var missing = qsa(document, '#studentKpiForm [data-wk-item]').filter(function (row) {
+      return !String(row.dataset.value || '').trim();
+    });
+    if (missing.length) {
+      if (btn) { btn.disabled = false; btn.textContent = '🚀 送出本週 KPI'; }
+      notify('還有 ' + missing.length + ' 題尚未評分，請選 1–5 或 N/A。');
+      return;
+    }
     try {
+      var requestKey = weeklyRequestKey(session.sessionId);
       var res = await api({
         action: 'submitWeeklyKpi',
         sessionId: session.sessionId,
-        scores: scores,
+        idempotencyKey: requestKey,
+        scores: bundle.scores,
+        aspectAverages: bundle.aspectAverages,
+        rawScoresJson: JSON.stringify(bundle.scores),
         bestThingThisWeek: el('wkBest').value.trim(),
         needImproveThisWeek: el('wkImprove').value.trim(),
         nextWeekGoal: el('wkGoal').value.trim()
       });
-      if (res && res.ok) { notify('✅ 本週 KPI 已送出'); renderStudentKpi(); }
-      else notify((res && res.error) || '送出失敗');
+      if (res && res.ok) {
+        weeklyDraftClear(session.sessionId);
+        notify('✅ 本週 KPI 已送出');
+        renderStudentKpi();
+      } else notify((res && res.error) || '送出失敗');
     } catch (e) { notify('送出失敗，請確認連線'); }
     finally { if (btn) { btn.disabled = false; btn.textContent = '🚀 送出本週 KPI'; } }
   }
@@ -779,7 +1001,9 @@
     refreshCoach: loadCoachData,
     refreshStudent: renderStudentKpi,
     refresh: refreshForRole,
-    isStudentOpen: function () { return !!state.studentOpen; }
+    isStudentOpen: function () { return !!state.studentOpen; },
+    // 給煙霧測試用：可以在沒有後端的情況下單獨長出每週 KPI 表單
+    _buildStudentKpiForm: buildStudentKpiForm
   };
   window.addEventListener('teampro:role-changed', refreshForRole);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -81,6 +81,47 @@ function setupSettingsHandlers() {
     }
   });
 
+  // Google Sheet 表頭稽核 / append-only 補欄位（教練限定）
+  const btnSchemaAudit = $id('btnSchemaAudit');
+  if (btnSchemaAudit) btnSchemaAudit.addEventListener('click', async () => {
+    showSchema('info', '檢查中...');
+    try {
+      const res = await postToWebApp({ action: 'schemaAudit' });
+      if (!res || !res.ok) { showSchema('fail', (res && res.error) || '檢查失敗，請確認已用教練身分登入且後端已部署。'); return; }
+      renderSchemaAudit(res);
+    } catch (e) {
+      showSchema('fail', '檢查失敗，請確認連線與後端部署版本。');
+    }
+  });
+
+  const btnSchemaMigrate = $id('btnSchemaMigrate');
+  if (btnSchemaMigrate) btnSchemaMigrate.addEventListener('click', async () => {
+    showSchema('info', '計算要補哪些欄位...');
+    let plan;
+    try {
+      plan = await postToWebApp({ action: 'schemaMigrate' });   // 不帶 apply 就是乾跑
+    } catch (e) {
+      showSchema('fail', '無法連線，未做任何更動。'); return;
+    }
+    if (!plan || !plan.ok) { showSchema('fail', (plan && plan.error) || '檢查失敗，未做任何更動。'); return; }
+    if (!plan.totalAppended) { showSchema('ok', plan.message || '所有欄位都齊全，不需要補。'); return; }
+    const detail = (plan.results || []).filter(r => r.appended && r.appended.length)
+      .map(r => `${r.sheetName}：${r.appended.join('、')}`).join('\n');
+    if (!confirm(`要在下列工作表最右邊補上欄位嗎？既有欄位與資料不會被更動。
+
+${detail}`)) {
+      showSchema('info', '已取消，未做任何更動。'); return;
+    }
+    showSchema('info', '補欄位中...');
+    try {
+      const res = await postToWebApp({ action: 'schemaMigrate', apply: true });
+      if (res && res.ok) { showSchema('ok', res.message || '已補上欄位。'); toast('✅ 已補上缺少欄位'); }
+      else showSchema('fail', (res && res.error) || '補欄位失敗。');
+    } catch (e) {
+      showSchema('fail', '補欄位失敗，請確認連線。');
+    }
+  });
+
   // 名單管理
   $id('btnAddPlayer').addEventListener('click', () => {
     const name = $id('newPlayerName').value.trim();
@@ -322,6 +363,33 @@ function showConn(type, msg) {
   const el = $id('connStatus');
   el.className = 'conn-status ' + type;
   el.textContent = msg;
+}
+
+function showSchema(type, msg) {
+  const el = $id('schemaStatus');
+  if (!el) return;
+  el.className = 'conn-status ' + type;
+  el.textContent = msg;
+}
+
+function renderSchemaAudit(res) {
+  const el = $id('schemaStatus');
+  if (!el) return;
+  const problems = (res.sheets || []).filter(s => s.missing.length || s.duplicates.length || s.canonicalDuplicates.length);
+  const dupes = problems.filter(s => s.duplicates.length || s.canonicalDuplicates.length);
+  const lines = [`records：程式 ${res.codeHeadersCount} 欄／Sheet ${res.sheetHeadersCount} 欄（${res.schemaVariant}）`];
+  if (!res.safeToWrite) lines.push('⚠️ records 缺少 timestamp／date／name，寫入會被擋下，請先人工修好。');
+  if (!problems.length) lines.push('✅ 所有工作表欄位都齊全，不需要補。');
+  problems.forEach(s => {
+    if (s.duplicates.length || s.canonicalDuplicates.length) {
+      lines.push(`❌ ${s.sheetName} 有重複表頭：${s.duplicates.concat(s.canonicalDuplicates).join('、')}（要人工修，補欄位會跳過這張表）`);
+    } else {
+      lines.push(`➕ ${s.sheetName} 缺 ${s.missing.length} 欄：${s.missing.join('、')}`);
+    }
+  });
+  el.className = 'conn-status ' + (dupes.length || !res.safeToWrite ? 'fail' : (problems.length ? 'info' : 'ok'));
+  el.textContent = lines.join('\n');
+  el.style.whiteSpace = 'pre-wrap';
 }
 
 /* ============================================================
@@ -904,7 +972,7 @@ async function refreshAccountAdmin() {
         <button type="button" data-student-action="resetPin" data-student-id="${escapeHtml(s.studentId)}">重設 PIN</button>
         <button type="button" data-student-action="unlock" data-student-id="${escapeHtml(s.studentId)}">解除鎖定</button>
         <button type="button" data-student-action="${s.accountStatus === 'disabled' ? 'enable' : 'disable'}" data-student-id="${escapeHtml(s.studentId)}">${s.accountStatus === 'disabled' ? '啟用' : '停用'}</button>
-      </td></tr>`).join('') || '<tr><td colspan="5">尚無選手帳號，請先同步名單並執行 setupSheet。</td></tr>'
+      </td></tr>`).join('') || '<tr><td colspan="5">尚無選手帳號，請先同步名單並建立資料表。</td></tr>'
     }</tbody></table>`;
 
     const studentSelect = $id('accountParentStudent');
@@ -1016,9 +1084,9 @@ function renderTodayGuide() {
   if (r.role === 'student') {
     const card = $id('studentTodayGuide'), list = $id('studentTodayGuideList');
     if (!card || !list) return;
-    const kpiOpen =
-      (window.KpiSession && typeof window.KpiSession.isStudentOpen === 'function' && window.KpiSession.isStudentOpen()) ||
-      ((typeof isDailyKpiAvailable === 'function') && isDailyKpiAvailable());
+    // 只看每週 30 項 KPI 有沒有開；每日六大面向自評本來就天天要填，
+    // 不能再用 isDailyKpiAvailable() 判斷（它已改成恆真）。
+    const kpiOpen = !!(window.KpiSession && typeof window.KpiSession.isStudentOpen === 'function' && window.KpiSession.isStudentOpen());
     list.innerHTML = [
       guideItem('📝', '<b>今天有訓練</b>：填下方「每日基本回報」', 'studentForm'),
       guideItem('🤔', '<b>今天沒出席</b>：把「組別」選未出席，誠實填未出席反思', 'studentForm'),

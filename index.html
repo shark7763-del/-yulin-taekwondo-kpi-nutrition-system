@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-title" content="TeamPro" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=20260708a" />
+  <link rel="stylesheet" href="style.css?v=20260827-kpi-refactor-02" />
   <link rel="stylesheet" href="monthly-report.css?v=20260627f" />
 </head>
 <body>
@@ -213,7 +213,7 @@
               <option value="很好">很好</option>
               <option value="普通" selected>普通</option>
               <option value="疲勞">疲勞</option>
-              <option value="不舒服">不舒服</option>
+              <option value="身體不舒服">身體不舒服</option>
               <option value="受傷中">受傷中</option>
             </select>
 
@@ -263,6 +263,15 @@
             <input type="range" id="painScore" class="pain-slider" min="0" max="10" step="1" value="0" />
             <div class="pain-readout p0" id="painReadout"><b id="painNum">0</b> 分・<span id="painLabel">完全不痛</span></div>
             <div class="pain-care" id="painCare" style="display:none;"></div>
+            <div class="pain-care" id="painCoachWrap" style="display:none;">
+              <label class="field-label" style="margin-top:10px;">是否已告知教練</label>
+              <select id="painCoachInformed" class="text-input">
+                <option value="">請選擇</option>
+                <option value="已告知">已告知教練</option>
+                <option value="尚未告知">尚未告知教練</option>
+                <option value="今天沒有這個問題">今天沒有這個問題</option>
+              </select>
+            </div>
             <div class="pain-ref" id="painRef" style="display:none;">
               <table class="pain-ref-table">
                 <thead><tr><th>分數</th><th>分級</th><th>實際體感與表現</th></tr></thead>
@@ -357,9 +366,9 @@
           <input type="text" id="unlockedMoves" class="text-input" placeholder="例如：540 旋風踢、空中側踢" />
         </fieldset>
 
-        <!-- KPI 紀錄（六面向各 5 題，共 30 項，總分 /150） -->
+        <!-- KPI 紀錄（平日六大面向快速自評） -->
         <fieldset class="form-section training-only" id="standardKpiSection" style="display:none;">
-          <legend>運動科學 KPI 30 項評分 📈</legend>
+          <legend>今日六大面向快速自評 📈</legend>
           <div id="kpiContainer"></div>
         </fieldset>
 
@@ -367,11 +376,26 @@
         <fieldset class="form-section training-only">
           <legend>今日心得與目標</legend>
 
-          <label class="field-label">今日心得 <span class="req">*</span></label>
+          <label class="field-label">今天最值得記錄的是？ <span class="req">*</span></label>
+          <div id="reflectionTypeChips" class="quick-chips"></div>
+
+          <label class="field-label">發生在哪個面向？ <span class="req">*</span></label>
+          <div id="reflectionAspectChips" class="quick-chips"></div>
+
+          <label class="field-label">具體發生什麼事？ <span class="req">*</span></label>
           <textarea id="reflection" class="text-input" rows="2" placeholder="今天訓練的感受..."></textarea>
 
-          <label class="field-label">明日目標 <span class="req">*</span></label>
+          <label class="field-label">證據來源 <span class="req">*</span></label>
+          <div id="reflectionEvidenceChips" class="quick-chips"></div>
+
+          <label class="field-label">處理結果 <span class="req">*</span></label>
+          <div id="reflectionResultChips" class="quick-chips"></div>
+
+          <label class="field-label">下一次我要怎麼做？ <span class="req">*</span></label>
           <textarea id="tomorrowGoal" class="text-input" rows="2" placeholder="明天我要做到..."></textarea>
+
+          <label class="field-label">下一次的處理方式 <span class="req">*</span></label>
+          <div id="nextActionTypeChips" class="quick-chips"></div>
         </fieldset>
 
         <!-- 進階回報（可不填，預設收合）：感謝與鼓勵隊友 -->
@@ -799,7 +823,7 @@
 
           <details class="coach-subdetails">
             <summary>KPI 回報管理</summary>
-            <p class="review-label" style="margin-bottom:12px">每日基本回報每天開放；30 項完整 KPI 每週五自動開放，截止時間為週日 23:59；比賽日、訓練週期調整或狀態異常時，教練也可以手動加開。</p>
+            <p class="review-label" style="margin-bottom:12px">每日基本回報每天開放；30 項完整 KPI 由教練開放，截止時間為週日 23:59；比賽日、訓練週期調整或狀態異常時，教練也可以手動加開。</p>
             <div id="coachKpiManage"><div class="hint-box">讀取中...</div></div>
           </details>
 
@@ -1000,7 +1024,12 @@
 
       <div class="card">
         <h3 class="card-title">🧾 Google Sheet 自動工作表</h3>
-        <p class="review-label">請在 Apps Script 執行一次 <code>setupSheet()</code>。系統會自動建立或更新以下工作表，不需要手動貼表頭。</p>
+        <p class="review-label">系統不會重寫、也不會重排你 Sheet 的第一列表頭。新增欄位一律只接在最右邊（append-only），舊欄位跟舊資料不會被動到。請先按「檢查表頭」看缺了什麼，確認後再按「補上缺少欄位」。</p>
+        <div class="btn-group">
+          <button type="button" id="btnSchemaAudit" class="btn btn-ghost">🔍 檢查表頭（乾跑）</button>
+          <button type="button" id="btnSchemaMigrate" class="btn btn-primary">➕ 補上缺少欄位</button>
+        </div>
+        <div id="schemaStatus" class="conn-status"></div>
         <div class="table-scroll">
           <table class="record-table">
             <thead><tr><th>工作表</th><th>欄位</th></tr></thead>
@@ -1155,11 +1184,11 @@
   <script src="js/02-core-utils.js?v=20260826-mood-fix-01"></script>
   <script src="js/03-forms-scoring.js?v=20260826-mood-fix-01"></script>
   <script src="js/04-daily-submit.js?v=20260625f"></script>
-  <script src="js/05-feedback-readiness.js?v=20260628i"></script>
+  <script src="js/05-feedback-readiness.js?v=20260827-kpi-refactor-02"></script>
   <script src="js/06-player-line.js?v=20260625f"></script>
   <script src="js/07-coach-dashboard.js?v=20260826-name-fix-01"></script>
   <script src="js/08-profile-journal.js?v=20260628i"></script>
-  <script src="js/09-settings-auth.js?v=20260721a"></script>
+  <script src="js/09-settings-auth.js?v=20260827-kpi-refactor-02"></script>
   <script src="js/11-trait-radar.js?v=20260628-trait-fix-01"></script>
   <script src="js/12-research-data.js?v=20260704a"></script>
   <script src="js/13-mental-preparation.js?v=20260721a"></script>
@@ -1168,7 +1197,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="monthly-report.js?v=20260627f"></script>
   <!-- KPI 回報手動開啟（教練後台控制學生每日 30 項 KPI）-->
-  <script src="kpi-session.js?v=20260719a"></script>
+  <script src="kpi-session.js?v=20260827-kpi-refactor-02"></script>
+  <script src="js/14-kpi-refactor.js?v=20260827-kpi-refactor-02"></script>
   <!-- TeamPro 心理成長能量卡（回報完成後抽卡＋集卡）-->
   <script src="psych-cards.js?v=20260626f"></script>
   <!-- PWA：註冊 Service Worker（離線快取＋可安裝）。失敗不影響任何功能 -->

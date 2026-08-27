@@ -60,11 +60,16 @@ yulin-taekwondo-kpi-nutrition-system/
 │   ├── 10-init.js           # 初始化、草稿、PWA 安裝
 │   ├── 11-trait-radar.js    # 學生特質雷達
 │   ├── 12-research-data.js  # 研究資料匯出與匿名化
-│   └── 13-mental-preparation.js # 心理準備訓練計畫
+│   ├── 13-mental-preparation.js # 心理準備訓練計畫
+│   └── 14-kpi-refactor.js   # 每日六大面向快速自評＋結構化心得（覆寫 03/04/10 的表單函式）
+├── kpi-session.js           # 每週 30 項 KPI：教練開放/關閉 + 學生填寫
 ├── apps-script/
 │   └── Code.gs              # Google Apps Script Web App 後端
+├── tests/                   # node 直接跑，不需要 npm install（見 tests/README.md）
+│   ├── backend-schema.test.js       # Code.gs 表頭稽核 / append-only 補欄位 / addRecord
+│   └── daily-kpi-refactor.smoke.js  # Chromium 開 index.html 跑每日/每週 KPI 煙霧測試
 ├── README.md                # 本說明
-└── sample-sheet-headers.md  # Google Sheet 欄位說明（請用 setupSheet 自動建立）
+└── sample-sheet-headers.md  # Google Sheet 欄位說明（表頭由系統自動建立，不要手動貼）
 ```
 
 ---
@@ -101,9 +106,9 @@ yulin-taekwondo-kpi-nutrition-system/
 
 1. 到 [Google 雲端硬碟](https://drive.google.com) → **新增 → Google 試算表**。
 2. 把試算表命名，例如「育林跆拳道 KPI 資料」。
-3. 不需要手動貼表頭；下一步執行 `setupSheet()` 會自動建立 / 更新 `records`、`roster`、`parents`、`attendance_reports`、`appdata` 與 `mental_*` 心理準備工作表。
+3. 不需要手動貼表頭。全新的空白工作表第一次被用到時，系統會自動寫入表頭；`records`、`roster`、`parents`、`attendance_reports`、`appdata` 與 `mental_*` 心理準備工作表都會自動建立。
 
-> ⚠️ 請不要再把表頭手動貼到 A1。新版為了相容舊資料調整過欄位順序，手動貼表頭容易造成欄位錯位。
+> ⚠️ 請不要手動改第一列表頭，也不要自己調欄位順序。系統是靠表頭名字對應欄位的，改了名字資料就會寫錯格。
 
 ---
 
@@ -111,9 +116,9 @@ yulin-taekwondo-kpi-nutrition-system/
 
 1. 在 Google Sheet 上方選單 **擴充功能 → Apps Script**。
 2. 刪掉預設的 `function myFunction(){}`，把 `apps-script/Code.gs` 全部內容貼上 → 按 💾 儲存。
-3. （建議）在編輯器上方函式下拉選 **`setupSheet`** → 按 **執行**。
+3. （建議）在編輯器上方函式下拉選 **`schemaAudit`** → 按 **執行**，純粹是為了跳授權。
    - 第一次會跳授權，依序按 **檢閱權限 → 選擇你的 Google 帳號 → 進階 → 前往專案（不安全）→ 允許**。
-   - 執行成功後 `records`、`roster`、`parents`、`attendance_reports`、`appdata` 與 `mental_*` 心理準備工作表會自動建立 / 更新。
+   - 工作表會在第一次被用到時自動建立，不需要（也不能）再執行 `setupSheet()`。
 4. 右上角 **部署 → 新增部署**。
 5. 齒輪 ⚙️ → 類型選 **網頁應用程式（Web app）**。
 6. 設定：
@@ -144,7 +149,7 @@ yulin-taekwondo-kpi-nutrition-system/
 心理準備模組新增 7 張 Google Sheet 與 15 個 Apps Script actions。更新後請務必：
 
 1. 將新版 `apps-script/Code.gs` 貼到 Apps Script。
-2. 執行 `setupSheet()`，自動建立 `mental_competitions`、`mental_participants`、`mental_daily_records`、`mental_self_talk`、`mental_goals`、`mental_scenario_plans`、`mental_reflections`。
+2. 部署後第一次用到時會自動建立 `mental_competitions`、`mental_participants`、`mental_daily_records`、`mental_self_talk`、`mental_goals`、`mental_scenario_plans`、`mental_reflections`；若這些表已存在但缺欄位，用教練後台的「🔍 檢查表頭 → ➕ 補上缺少欄位」補。
 3. 部署 Web App 新版本。
 4. 到 GitHub Pages 重新整理，必要時在手機 PWA 關閉重開，讓 service worker 更新。
 
@@ -157,7 +162,7 @@ yulin-taekwondo-kpi-nutrition-system/
 新版採「平行漸進」上線，`LEGACY_LOGIN_ENABLED` 預設開啟，避免現有使用者立即被鎖在外面。
 
 1. 將最新版 `apps-script/Code.gs` 貼到 Apps Script。
-2. 執行一次 `setupSheet()`，建立或更新 `student_accounts`、`parents`、`coach_settings` 與心理準備 `mental_*` 工作表。
+2. `student_accounts`、`parents`、`coach_settings` 與心理準備 `mental_*` 工作表會自動建立；已存在但缺欄位的，用教練後台的「🔍 檢查表頭 → ➕ 補上缺少欄位」補。
 3. 重新部署 Web App 新版本。只更新 GitHub Pages 不會啟用後端驗證。
 4. 教練用既有 `ADMIN_KEY` 首次登入；後端會將它轉成加鹽雜湊。若原本未設定，請先在 Script Properties 建立 `ADMIN_KEY`。
 5. 到教練後台「帳號與家長管理」為選手產生啟用碼，並建立家長完整手機。
@@ -306,7 +311,7 @@ token 屬於敏感資訊。若不想經過公開網址，可改在 **Apps Script
 - **不是討價還價**：回應欄是讓選手「說明想法、幫助教練了解」，**不是用來改分數**，最終由教練綜合判斷
 - 舊紀錄（沒有 recordId）無法評分／回應，屬正常現象
 
-> 📌 **重要**：使用這些功能前，後端 `Code.gs` 要**重新部署新版本**，並執行一次 `setupSheet()` 讓 Google Sheet 自動補到最新欄位。
+> 📌 **重要**：使用這些功能前，後端 `Code.gs` 要**重新部署新版本**，再到教練後台按「🔍 檢查表頭 →  ➕ 補上缺少欄位」把新欄位補上（append-only，不會動到舊資料）。
 
 ---
 
@@ -330,12 +335,31 @@ token 屬於敏感資訊。若不想經過公開網址，可改在 **Apps Script
 
 ---
 
+## 🧾 Google Sheet 欄位維護（重要）
+
+系統**不會**重寫、也不會重排你 Sheet 的第一列表頭 —— 舊版 `setupSheet()` 會整列覆寫，
+已停用。新版一律 **append-only**：新欄位只接在最右邊，舊欄位與舊資料完全不動。
+
+程式更新後如果多了新欄位（例如這次的六個 `dailyXxxScore`、`reflectionMetaJson`、
+`reportUsefulness`…），要做一次：
+
+1. 用**教練身分**登入 → 「⚙️ 系統設定」 → 「🧾 Google Sheet 自動工作表」。
+2. 按 **🔍 檢查表頭（乾跑）**，看每張工作表缺哪些欄位（只讀不寫）。
+3. 確認沒問題後按 **➕ 補上缺少欄位**，會再跳一次確認才真的寫入。
+
+沒補欄位也不會壞：`addRecord` 會依 Sheet 現有表頭寫入，多出來的新欄位就先丟掉，
+舊資料不會錯位——但新功能的資料（每日六面向分數、結構化心得）不會被存下來。
+
+若檢查結果出現「有重複表頭」，補欄位會**跳過**那張工作表，請先手動把重複的欄位名改掉。
+
+---
+
 ## 🛠 常見錯誤排除
 
 | 狀況 | 可能原因與解法 |
 | --- | --- |
 | 測試連線「連線失敗」 | URL 沒以 `/exec` 結尾；部署存取權不是「任何人」；用到舊版部署。重新「管理部署 → 新版本」。 |
-| 送出沒進 Sheet | Web App URL、部署權限或新版部署有問題；先執行 `setupSheet()`，再重新部署 Apps Script 新版本。 |
+| 送出沒進 Sheet | Web App URL、部署權限或新版部署有問題；重新部署 Apps Script 新版本後，再到教練後台按「🔍 檢查表頭」確認 records 的 timestamp／date／name 都在。 |
 | 上次表現抓不到 | 該選手還沒有任何紀錄（正常，會顯示「第一筆紀錄」提示）。 |
 | 點「正式送出」叫我去設定 | 尚未在系統設定貼 URL，或 `CONFIG.WEB_APP_URL` 留空；先完成步驟 D。 |
 | 改了 Code.gs 沒生效 | Apps Script 要重新部署新版本。 |
@@ -346,10 +370,33 @@ token 屬於敏感資訊。若不想經過公開網址，可改在 **Apps Script
 
 ## 🧮 分數規則
 
-- 新紀錄固定 30 項 KPI，每細項 1–5 分；總分 = 30 項加總（滿分 150）；六面向各取 5 題平均。
-- 面向平均依各 KPI 歸屬彙總，用於回顧、趨勢與紅燈原因分析；舊資料仍保留滿分 30 顯示。
-- 狀態：平均 ≥ 4.0 🟢 綠燈；3.0 ≤ 平均 < 4.0 🟡 黃燈；平均 < 3.0 🔴 紅燈。
-- 低分細項：所有 < 3 分的細項，取最低三項（同分依出現順序）。
+KPI 分成**每日**與**每週**兩層，兩者互不綁定：
+
+### 每日六大面向快速自評（天天要填）
+
+- 技術／戰術／體能／心理／態度／恢復各一題，1–5 分，今天沒練到可以選 **N/A**。
+- N/A 不列入計算，也不會被當成 0 分或紅燈。
+- 總分 = 有評分的項目加總；平均 = 有評分的項目平均。
+- 狀態：平均 ≥ 4.0 🟢 綠燈；3.0 ≤ 平均 < 4.0 🟡 黃燈；平均 < 3.0 🔴 紅燈；全部 N/A 顯示「已完成回報」。
+- 存進 records 的 `dailyTechnicalScore`…`dailyRecoveryScore` 六欄；
+  面向平均仍寫回既有的 `technicalAvg / tacticalAvg / physicalAvg / focusAvg / disciplineAvg / emotionAvg`，
+  所以雷達圖、趨勢圖、月報、準備度分析都不用改。
+
+### 每週 30 項完整 KPI（教練手動開放）
+
+- 六面向 × 5 細項，每題 1–5 分或 N/A，由教練在「📋 KPI 回報管理」開放。
+- 面向分數 = 該面向有評分細項的平均；總分 = 六個面向平均相加；平均 = 六個面向平均的平均。
+- 送出時會帶 `idempotencyKey`，重複點送出不會產生第二筆。
+- 存進 `weekly_kpi_reports`，另存 `rawScoresJson` / `aspectAveragesJson` 保留逐題原始分數。
+
+### 結構化心得
+
+今日心得改成「類型 → 面向 → 具體事件 → 證據來源 → 處理結果 → 下一步」六格，
+除了「具體發生什麼事」與「下一次我要怎麼做」是自由填寫，其餘都是選項。
+系統會算一個**回報有用度**（`reportUsefulness` / `reportUsefulnessScore` 0–100），
+分成「回報完整／回報具體／需要補充／建議教練追問」，讓教練知道哪些回報值得追問。
+
+- 舊紀錄（30 項 /150 的每日 KPI）仍然相容，趨勢圖一律以「總分%」＝平均 × 20 呈現。
 
 ---
 

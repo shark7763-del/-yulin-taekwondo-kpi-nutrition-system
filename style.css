@@ -2150,3 +2150,29 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
   border-radius: 8px;
   background: rgba(245,197,24,0.42);
 }
+
+/* ===================== 每日六大面向快速自評 / 每週 30 項 KPI（選項式評分） ===================== */
+/* 分數徽章依燈號上色；lv-none = 還沒評分 */
+.kpi-aspect-avg.lv-none { color: var(--text-soft); }
+.kpi-aspect-avg.lv-red { color: var(--red); font-weight: 700; }
+.kpi-aspect-avg.lv-yellow { color: var(--yellow); font-weight: 700; }
+.kpi-aspect-avg.lv-green { color: var(--green); font-weight: 700; }
+
+/* N/A 這顆選起來要跟 1–5 分明顯不同色，避免誤按當成分數 */
+.chip.chip-warn.sel {
+  background: rgba(230, 160, 60, 0.22);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* 1–5 分的圓鈕排成一排，手機上單手可按 */
+.daily-score-chips { margin: 8px 0 4px; }
+.daily-score-chips .chip { min-width: 44px; text-align: center; font-weight: 600; }
+.daily-score-note {
+  font-size: 0.86rem; color: var(--text-soft); line-height: 1.5;
+  margin-top: 6px; padding-left: 2px;
+}
+.daily-kpi-section .kpi-section-body,
+.weekly-kpi-section .kpi-section-body { padding-bottom: 6px; }
+.weekly-kpi-section .kpi-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.weekly-kpi-section .kpi-item:last-child { border-bottom: none; }
