@@ -519,6 +519,22 @@
       return false;
     }
 
+    // 感謝改為必填（上方有快速按鈕，一點就帶入，所以不加長度門檻）；
+    // 鼓勵隊友維持選填，但選了人就一定要寫話，避免只點名不留訊息。
+    const gratitude = text($id('gratitude') && $id('gratitude').value);
+    if (!gratitude) {
+      toast('請填寫：今天我想感謝的人事物（可點上方按鈕快速帶入）');
+      focusField('gratitude');
+      return false;
+    }
+    const teammate = text($id('encourageTeammate') && $id('encourageTeammate').value);
+    const encourageMsg = text($id('encouragementToTeammate') && $id('encouragementToTeammate').value);
+    if (teammate && !encourageMsg) {
+      toast('已選要鼓勵的隊友，請寫下想對他說的話');
+      focusField('encouragementToTeammate');
+      return false;
+    }
+
     if (reflectionType === '今天沒有訓練' && !absent) {
       toast('如果今天沒有訓練，請把組別切成「未出席訓練」');
       focusField('group');

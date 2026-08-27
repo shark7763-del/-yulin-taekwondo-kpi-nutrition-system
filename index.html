@@ -400,16 +400,16 @@
 
         <!-- 進階回報（可不填，預設收合）：感謝與鼓勵隊友 -->
         <details class="form-section adv-fold training-only" id="encourageFold">
-          <summary>💛 想鼓勵與感謝（可不填，點開填寫）</summary>
+          <summary>💛 想鼓勵與感謝（感謝必填，點開填寫）</summary>
 
-          <label class="field-label">今天我想感謝的人事物 🙏</label>
+          <label class="field-label">今天我想感謝的人事物 🙏 <span class="req">*</span></label>
           <div id="gratitudeQuick" class="quick-chips"></div>
           <textarea id="gratitude" class="text-input" rows="2" placeholder="例如：謝謝教練今天特別教我旋踢、謝謝隊友陪我加練...（可點上方按鈕快速帶入）"></textarea>
 
           <label class="field-label">想鼓勵的隊友</label>
           <select id="encourageTeammate" class="text-input"></select>
 
-          <label class="field-label">鼓勵的內容</label>
+          <label class="field-label">鼓勵的內容（選了隊友就要寫）</label>
           <div id="encourageQuick" class="quick-chips"></div>
           <textarea id="encouragementToTeammate" class="text-input" rows="2" placeholder="想對這位隊友說的話...（可點上方按鈕快速帶入）"></textarea>
         </details>
@@ -1198,7 +1198,7 @@
   <script src="monthly-report.js?v=20260627f"></script>
   <!-- KPI 回報手動開啟（教練後台控制學生每日 30 項 KPI）-->
   <script src="kpi-session.js?v=20260827-kpi-refactor-02"></script>
-  <script src="js/14-kpi-refactor.js?v=20260827-kpi-refactor-03"></script>
+  <script src="js/14-kpi-refactor.js?v=20260827-kpi-refactor-04"></script>
   <!-- TeamPro 心理成長能量卡（回報完成後抽卡＋集卡）-->
   <script src="psych-cards.js?v=20260626f"></script>
   <!-- PWA：註冊 Service Worker（離線快取＋可安裝）。失敗不影響任何功能 -->

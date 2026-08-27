@@ -9,6 +9,13 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
+  // #name and #encourageTeammate are <select>s populated from the localStorage roster.
+  // Without seeding it they have no options, `select.value = '...'` silently stays '',
+  // and every validation assertion below would pass for the wrong reason.
+  await page.addInitScript(() => {
+    localStorage.setItem('yulin_players', JSON.stringify(['測試選手', '隊友一號', '隊友二號']));
+  });
+
   await page.goto(URL);
   await page.waitForTimeout(1500);
 
@@ -89,6 +96,7 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
     document.getElementById('tomorrowGoal').value = '收腳後立刻回架式，每組練二十下';
     document.getElementById('name').value = '測試選手';
     document.getElementById('group').value = '對打';
+    if (!document.getElementById('name').value) throw new Error('roster not seeded: #name stayed empty');
     const r = window.buildRecord();
     return {
       dailyTechnicalScore: r.dailyTechnicalScore,
@@ -123,15 +131,107 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('status from daily average 3.6 -> yellow', rec.status === '🟡 黃燈', rec.status);
   t('meta json round-trips the chip answers', rec.metaAspect === '技術', rec.metaAspect);
 
-  // 7. validateForm blocks a missing chip answer
-  const blocked = await page.evaluate(() => {
-    const box = document.getElementById('reflectionEvidenceChips');
-    box.querySelectorAll('.chip').forEach(b => b.classList.remove('sel'));
-    const ok = window.validateForm();
-    box.querySelector('[data-value="教練提醒"]').click();
-    return ok;
+  // 7. validateForm against a COMPLETE form.
+  //    The baseline assertion matters: without it, every "rejects X" test below would
+  //    pass simply because some unrelated required field was still empty.
+  await page.evaluate(() => {
+    window.__fillValidForm = () => {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+      const pickSelect = id => { const el = document.getElementById(id); if (el && el.options.length > 1) el.selectedIndex = 1; };
+      const chip = (boxId, value) => {
+        const box = document.getElementById(boxId);
+        const btn = Array.from(box.querySelectorAll('.chip')).find(b => b.dataset.value === value);
+        if (btn && !btn.classList.contains('sel')) btn.click();
+      };
+      // group first: changing it re-renders the aspect cards and reflection chips
+      const g = document.getElementById('group');
+      g.value = '對打';
+      g.dispatchEvent(new Event('change', { bubbles: true }));
+
+      set('name', '測試選手');
+      ['schoolLevel', 'grade', 'classCode', 'waterIntake', 'trainingIntensity'].forEach(pickSelect);
+      set('trainingMinutes', '90');
+      set('trainingTopic', '旋踢距離控制');
+      set('heightCm', '165');
+      set('weightKg', '55');
+      set('breakfast', '蛋餅豆漿');
+      set('lunch', '雞腿便當');
+      set('dinner', '魚飯花椰菜');
+      set('sleepHours', '8');
+      set('soreness', '2');
+      set('rpe', '5');
+      set('painScore', '0');
+
+      ['dailyTechnicalScore', 'dailyTacticalScore', 'dailyPhysicalScore',
+       'dailyMentalScore', 'dailyAttitudeScore', 'dailyRecoveryScore'].forEach(f => {
+        document.getElementById('daily-card-' + f).querySelector('[data-daily-value="4"]').click();
+      });
+
+      chip('reflectionTypeChips', '我發現問題');
+      chip('reflectionAspectChips', '技術');
+      chip('reflectionEvidenceChips', '教練提醒');
+      chip('reflectionResultChips', '還沒處理');
+      chip('nextActionTypeChips', '重複練習');
+      set('reflection', '右腳橫踢收腳太慢，對打時被反擊三次');
+      set('tomorrowGoal', '收腳後立刻回架式，每組練二十下');
+      set('gratitude', '謝謝教練今天特別教我旋踢');
+      set('encourageTeammate', '');
+      set('encouragementToTeammate', '');
+    };
   });
-  t('validateForm rejects a missing evidence chip', blocked === false, String(blocked));
+
+  const baseline = await page.evaluate(() => { window.__fillValidForm(); return window.validateForm(); });
+  t('a fully filled form actually passes validateForm', baseline === true, String(baseline));
+
+  const gratitudeCases = await page.evaluate(() => {
+    const out = {};
+    window.__fillValidForm();
+    document.getElementById('gratitude').value = '';
+    out.noGratitude = window.validateForm();
+
+    window.__fillValidForm();
+    const te = document.getElementById('encourageTeammate');
+    out.teammateOptions = te.options.length;
+    if (te.options.length > 1) {
+      te.selectedIndex = 1;
+      document.getElementById('encouragementToTeammate').value = '';
+      out.teammateNoMessage = window.validateForm();
+      document.getElementById('encouragementToTeammate').value = '今天練得很拼，繼續加油！';
+      out.teammateWithMessage = window.validateForm();
+    }
+
+    window.__fillValidForm();
+    out.noTeammateAtAll = window.validateForm();
+    return out;
+  });
+  t('gratitude is now required', gratitudeCases.noGratitude === false, JSON.stringify(gratitudeCases));
+  t('leaving the teammate unpicked still submits',
+    gratitudeCases.noTeammateAtAll === true, String(gratitudeCases.noTeammateAtAll));
+  t('the roster actually populated the teammate select',
+    gratitudeCases.teammateOptions > 1, String(gratitudeCases.teammateOptions));
+  t('picking a teammate without a message is blocked',
+    gratitudeCases.teammateNoMessage === false, JSON.stringify(gratitudeCases));
+  t('picking a teammate with a message submits',
+    gratitudeCases.teammateWithMessage === true, JSON.stringify(gratitudeCases));
+
+  const chipCases = await page.evaluate(() => {
+    const out = {};
+    window.__fillValidForm();
+    document.getElementById('reflectionEvidenceChips').querySelectorAll('.chip').forEach(b => b.classList.remove('sel'));
+    out.noEvidence = window.validateForm();
+
+    window.__fillValidForm();
+    document.getElementById('daily-card-dailyMentalScore').dataset.value = '';
+    out.unscoredAspect = window.validateForm();
+
+    window.__fillValidForm();
+    document.getElementById('reflection').value = '很好';
+    out.genericReflection = window.validateForm();
+    return out;
+  });
+  t('validateForm rejects a missing evidence chip', chipCases.noEvidence === false, JSON.stringify(chipCases));
+  t('validateForm rejects an unscored aspect', chipCases.unscoredAspect === false, JSON.stringify(chipCases));
+  t('validateForm rejects a canned one-word reflection', chipCases.genericReflection === false, JSON.stringify(chipCases));
 
   // 8. absence group hides the daily KPI card, training group shows it again
   const visibility = await page.evaluate(() => {
