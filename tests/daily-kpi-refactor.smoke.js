@@ -328,6 +328,30 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
     !trend.summary.includes('07/03') && !trend.xLabels.includes('07/03'),
     trend.summary + ' | ' + trend.xLabels.join(','));
 
+  // 11. a failed load must not leave the coach dashboard blank — that reads exactly like
+  //     "nobody reported today", and the toast explaining it disappears after a few seconds.
+  const loadErr = await page.evaluate(async () => {
+    const boxes = ['coachRedLight', 'coachQuickScoreList', 'coachReadinessGroups', 'coachRiskTracking'];
+    boxes.forEach(id => { const b = document.getElementById(id); if (b) b.innerHTML = ''; });
+    window.fetchAllRecords = async () => { throw new Error('AUTH_REQUIRED'); };
+    await window.refreshCoach();
+    const filled = boxes.map(id => {
+      const b = document.getElementById(id);
+      return { id, present: !!b, text: b ? b.textContent.trim() : '' };
+    });
+    window.clearCoachLoadError();
+    const afterClear = boxes.map(id => (document.getElementById(id) || {}).textContent || '');
+    return { filled, afterClear };
+  });
+  t('a failed load writes a visible reason into every coach panel',
+    loadErr.filled.every(b => !b.present || b.text.includes('這裡是空的，因為資料沒讀進來')),
+    JSON.stringify(loadErr.filled.map(b => [b.id, b.text.slice(0, 30)])));
+  t('the AUTH_REQUIRED code is translated into plain language',
+    loadErr.filled.some(b => b.text.includes('教練登入已過期')),
+    JSON.stringify(loadErr.filled.map(b => b.text.slice(0, 60))));
+  t('clearCoachLoadError removes the banner again',
+    loadErr.afterClear.every(x => !x.includes('這裡是空的')), JSON.stringify(loadErr.afterClear));
+
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
   console.log('');

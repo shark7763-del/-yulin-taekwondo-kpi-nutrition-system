@@ -973,6 +973,27 @@ function renderCoachQuickScores(todays, coachScores) {
   });
 }
 
+// 讀取失敗時，把錯誤直接寫進後台各區塊，不讓畫面停在無法解讀的空白。
+const COACH_LOAD_ERROR_BOXES = ['coachRedLight', 'coachQuickScoreList', 'coachReadinessGroups', 'coachRiskTracking', 'coachWarRoomCard'];
+function coachLoadErrorHint(e) {
+  const msg = (e && e.message) ? e.message : '讀取資料失敗';
+  if (msg === 'AUTH_REQUIRED') return '教練登入已過期，請重新登入後再讀取資料。';
+  if (msg === 'FETCH_FAILED') return '連不到後端（網路或 Apps Script 部署問題），請檢查後按「重新整理資料」再試一次。';
+  return msg;
+}
+function showCoachLoadError(e) {
+  const html = '<div class="hint-box warn"><b>⚠️ 這裡是空的，因為資料沒讀進來，不是今天沒人回報。</b><br>'
+    + escapeHtml(coachLoadErrorHint(e))
+    + '<br>請按上方「🔄 重新整理資料」再試一次；若持續失敗請重新登入教練。</div>';
+  COACH_LOAD_ERROR_BOXES.forEach(id => { const b = $id(id); if (b) b.innerHTML = html; });
+}
+function clearCoachLoadError() {
+  COACH_LOAD_ERROR_BOXES.forEach(id => {
+    const b = $id(id);
+    if (b && b.innerHTML.indexOf('這裡是空的，因為資料沒讀進來') !== -1) b.innerHTML = '';
+  });
+}
+
 async function refreshCoach() {
   toast('讀取資料中...');
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
@@ -982,9 +1003,13 @@ async function refreshCoach() {
   try {
     all = await fetchAllRecords({ strict: true, force: true });
   } catch (e) {
+    // toast 幾秒後就消失，之前只 return 會讓整個後台停在空白畫面，
+    // 看起來跟「今天沒人回報」一模一樣。改成把錯誤留在畫面上。
+    showCoachLoadError(e);
     toast('⚠️ ' + (e && e.message ? e.message : '讀取資料失敗，請重新登入'));
     return;
   }
+  clearCoachLoadError();
 
   // 日期一律正規化，且空白時退回今天，避免 0 筆資料
   const filterDate = normDate($id('coachDate').value || todayStr());
