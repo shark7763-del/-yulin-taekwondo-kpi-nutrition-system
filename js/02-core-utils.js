@@ -140,6 +140,11 @@ function cleanMoodIndex(v) {
   return Number.isFinite(n) && n >= 1 && n <= 5 ? n : '';
 }
 
+function cleanBoundedNumber(v, min, max) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= min && n <= max ? n : '';
+}
+
 /*
    把一筆紀錄正規化成教練後台好用的形狀：
    - date：一律 normDate(r.date || r.timestamp)。
@@ -152,12 +157,16 @@ function normalizeCoachRecord(r) {
   const name = String(r.name || r.studentName || r.athleteName || '').trim();
   const moodIndex = cleanMoodIndex(r.moodIndex);
   const emotionIndex = cleanMoodIndex(r.emotionIndex);
+  const painScore = cleanBoundedNumber(r.painScore, 0, 10);
+  const rpe = cleanBoundedNumber(r.rpe, 1, 10);
   return Object.assign({}, r, {
     date: normDate(r.date || r.timestamp),
     name: name,
     studentName: String(r.studentName || r.name || name).trim(),
     moodIndex: moodIndex || emotionIndex,
-    emotionIndex: emotionIndex || moodIndex
+    emotionIndex: emotionIndex || moodIndex,
+    painScore: painScore,
+    rpe: rpe
   });
 }
 

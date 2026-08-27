@@ -1189,7 +1189,10 @@ function renderTrendSection(box, records, days, opts) {
   const metricValue = (metric, rec) => {
     if (metric.derive) return metric.derive(rec);
     const v = parseFloat(rec[metric.key]);
-    return isNaN(v) ? null : v;
+    if (isNaN(v)) return null;
+    if (metric.min !== null && metric.min !== undefined && v < metric.min) return null;
+    if (metric.max !== null && metric.max !== undefined && v > metric.max) return null;
+    return v;
   };
   const metricHasEnoughData = metric => {
     return allRecs.slice(0, range).filter(r => {
@@ -1273,7 +1276,10 @@ function analyzeTrendSeries(recs, cur, metrics) {
   const valOf = (m, r) => {
     if (m.derive) return m.derive(r);
     const v = parseFloat(r[m.key]);
-    return isNaN(v) ? null : v;
+    if (isNaN(v)) return null;
+    if (m.min !== null && m.min !== undefined && v < m.min) return null;
+    if (m.max !== null && m.max !== undefined && v > m.max) return null;
+    return v;
   };
   // 沒填該指標的當天排除，避免被當 0 分誤判成暴跌
   const pts = recs.map(r => ({ d: dateSlash(r.date).slice(5), v: valOf(cur, r) }))

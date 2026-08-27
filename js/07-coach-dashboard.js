@@ -217,7 +217,7 @@ function yesNo(value) {
 
 function painScoreValue(rec) {
   const n = parseFloat(rec && rec.painScore);
-  return isNaN(n) ? 0 : n;
+  return isNaN(n) || n < 0 || n > 10 ? 0 : n;
 }
 function painAreaText(rec) {
   const area = String((rec && rec.injuryArea) || '').trim();
