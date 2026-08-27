@@ -88,7 +88,7 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
     document.getElementById('reflection').value = '右腳橫踢收腳太慢，對打時被反擊三次';
     document.getElementById('tomorrowGoal').value = '收腳後立刻回架式，每組練二十下';
     document.getElementById('name').value = '測試選手';
-    document.getElementById('group').value = '跆拳道對練';
+    document.getElementById('group').value = '對打';
     const r = window.buildRecord();
     return {
       dailyTechnicalScore: r.dailyTechnicalScore,
@@ -140,12 +140,44 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
     g.value = '未出席訓練';
     window.toggleAbsenceReason(g.value);
     const whenAbsent = sec.style.display;
-    g.value = '跆拳道對練';
+    g.value = '對打';
     window.toggleAbsenceReason(g.value);
     return { whenAbsent, whenTraining: sec.style.display };
   });
   t('daily KPI card hidden when absent, shown when training (no weekly session open)',
     visibility.whenAbsent === 'none' && visibility.whenTraining === '', JSON.stringify(visibility));
+
+  // 8b. changing the group dropdown must drive the absence + freestyle toggles.
+  //     renderKpiSliders() owns that wiring; the refactor override dropped it once and
+  //     picking 未出席訓練 left the reason box hidden while validateForm demanded it.
+  const groupWiring = await page.evaluate(() => {
+    const g = document.getElementById('group');
+    const fire = v => { g.value = v; g.dispatchEvent(new Event('change', { bubbles: true })); };
+    const snap = () => ({
+      absenceWrap: getComputedStyle(document.getElementById('absenceReasonWrap')).display,
+      freestyle: getComputedStyle(document.getElementById('freestyleSection')).display,
+      encourage: getComputedStyle(document.getElementById('encourageFold')).display,
+      kpi: getComputedStyle(document.getElementById('standardKpiSection')).display
+    });
+    fire('未出席訓練');
+    const absent = snap();
+    fire('自由品勢');
+    const freestyle = snap();
+    fire('對打');
+    const spar = snap();
+    return { absent, freestyle, spar };
+  });
+  t('picking 未出席訓練 reveals the reason box and hides training-only sections',
+    groupWiring.absent.absenceWrap !== 'none' && groupWiring.absent.encourage === 'none'
+      && groupWiring.absent.kpi === 'none',
+    JSON.stringify(groupWiring.absent));
+  t('picking 自由品勢 shows the freestyle fields',
+    groupWiring.freestyle.freestyle !== 'none' && groupWiring.freestyle.absenceWrap === 'none',
+    JSON.stringify(groupWiring.freestyle));
+  t('back to a normal training group restores the training sections',
+    groupWiring.spar.kpi !== 'none' && groupWiring.spar.encourage !== 'none'
+      && groupWiring.spar.freestyle === 'none' && groupWiring.spar.absenceWrap === 'none',
+    JSON.stringify(groupWiring.spar));
 
   // 9. weekly KPI form builds without the qsa ReferenceError
   const weekly = await page.evaluate(() => {

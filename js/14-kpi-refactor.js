@@ -580,7 +580,15 @@
     recalcDailySummary();
   }
 
+  // 注意：原本 03-forms-scoring 的 renderKpiSliders 除了畫拉桿，還負責切換
+  // #freestyleSection 與呼叫 toggleAbsenceReason()。組別下拉的 change handler
+  // （10-init.js）就是靠它連動，覆寫時漏掉會讓「未出席訓練」選了卻看不到原因欄位，
+  // 而 validateForm 又要求填 → 表單直接卡死送不出去。
   function renderKpiSliders(group) {
+    const g = group == null ? ($id('group') ? $id('group').value : '') : group;
+    const fsSection = $id('freestyleSection');
+    if (fsSection) fsSection.style.display = (typeof isFreestyle === 'function' && isFreestyle(g)) ? '' : 'none';
+    if (typeof window.toggleAbsenceReason === 'function') window.toggleAbsenceReason(g);
     renderDailyKpi();
     renderReflectionControls();
     updatePainCoachWrap();
