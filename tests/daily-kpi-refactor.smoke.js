@@ -538,6 +538,36 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('a newer record after handling flags it as recurring',
     handled.staleText.includes('後又出現'), handled.staleText);
 
+  // 15. Apps Script 的 /exec 會 302；在某些瀏覽器／登入狀態下 POST 會退化成無 body 的 GET，
+  //     後端回 pong，呼叫端就拿到「看似成功卻沒資料」的回應。必須擋下來並帶 query 動作。
+  const lostAction = await page.evaluate(async () => {
+    const calls = [];
+    const realFetch = window.fetch;
+    window.fetch = async (u, init) => {
+      calls.push(String(u));
+      return { text: async () => JSON.stringify({ ok: true, message: 'pong', time: 'x' }) };
+    };
+    const out = {};
+    try {
+      await window.postToWebApp({ action: 'getAllRecords' });
+      out.threw = false;
+    } catch (e) { out.threw = true; out.msg = e.message; }
+    out.urlHadAction = calls.some(u => u.indexOf('action=getAllRecords') !== -1);
+
+    // 真的問 ping 時，pong 是正確答案，不可以被誤擋
+    try { out.pingResult = await window.postToWebApp({ action: 'ping' }); }
+    catch (e) { out.pingResult = 'THREW: ' + e.message; }
+
+    window.fetch = realFetch;
+    return out;
+  });
+  t('the action is also sent in the query string',
+    lostAction.urlHadAction, JSON.stringify(lostAction).slice(0, 160));
+  t('a pong reply to a non-ping request is rejected, not returned as success',
+    lostAction.threw === true && /動作遺失/.test(lostAction.msg || ''), JSON.stringify(lostAction).slice(0, 200));
+  t('a genuine ping still succeeds',
+    lostAction.pingResult && lostAction.pingResult.message === 'pong', JSON.stringify(lostAction.pingResult));
+
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
   console.log('');

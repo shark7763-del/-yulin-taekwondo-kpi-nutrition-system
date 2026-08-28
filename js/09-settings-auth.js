@@ -410,7 +410,14 @@ async function postToWebApp(body) {
     requestBody.legacyRole = role.role;
     requestBody.legacyName = role.name || '';
   }
-  const res = await fetch(url, {
+  // action 同時放進 query string：Apps Script 的 /exec 會 302 轉址，
+  // 在某些瀏覽器／Google 登入狀態下 POST 會退化成無 body 的 GET，
+  // 後端就走 `body.action || 'ping'` 回一個 pong，呼叫端拿到看似成功卻沒資料的回應。
+  // 帶著 query 的話，退化後 doGet 仍認得動作，會回明確錯誤而不是 pong。
+  const action = String(requestBody.action || '');
+  const sep = url.indexOf('?') === -1 ? '?' : '&';
+  const postUrl = action ? `${url}${sep}action=${encodeURIComponent(action)}` : url;
+  const res = await fetch(postUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(requestBody)
@@ -419,6 +426,12 @@ async function postToWebApp(body) {
   let parsed;
   try { parsed = JSON.parse(text); }
   catch (e) { throw new Error('回傳非 JSON：' + text.slice(0, 120)); }
+  // 收到 pong 但我們問的不是 ping → 請求送到了，但動作在路上掉了。
+  // 這種情況若原樣回傳，呼叫端會誤判成「連線正常但沒資料」。
+  if (action && action !== 'ping' && parsed && parsed.ok === true
+      && parsed.message === 'pong' && parsed.data === undefined) {
+    throw new Error(`請求送達後端但動作遺失（收到 ping 回應）：${action}。請重新整理頁面再試一次。`);
+  }
   // 後端回報 session 過期／未授權時，主動提示重新登入，
   // 避免呼叫端（如 fetchAllRecords）靜默落回本機空資料，害教練後台誤顯示「全體未回報」。
   if (parsed && parsed.ok === false && parsed.authRequired) notifySessionExpired();
