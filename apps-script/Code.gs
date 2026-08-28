@@ -2687,14 +2687,28 @@ function autoOpenWeeklyKpi() {
 
 // 安裝／移除每週五的觸發器（可在編輯器直接執行，也有教練專用的 action）
 function installWeeklyKpiTrigger(hour) {
-  removeWeeklyKpiTrigger();
-  ScriptApp.newTrigger(WEEKLY_KPI_TRIGGER_FN)
-    .timeBased()
-    .onWeekDay(ScriptApp.WeekDay.FRIDAY)
-    .atHour(typeof hour === 'number' ? hour : 17)
-    .create();
-  setProp(WEEKLY_KPI_AUTO_PROP, 'true');
-  return { ok: true, message: '已安裝每週五自動開啟 KPI 的觸發器。' };
+  try {
+    removeWeeklyKpiTrigger();
+    ScriptApp.newTrigger(WEEKLY_KPI_TRIGGER_FN)
+      .timeBased()
+      .onWeekDay(ScriptApp.WeekDay.FRIDAY)
+      .atHour(typeof hour === 'number' ? hour : 17)
+      .create();
+    setProp(WEEKLY_KPI_AUTO_PROP, 'true');
+    return { ok: true, message: '已安裝每週五自動開啟 KPI 的觸發器。' };
+  } catch (e) {
+    // 觸發器 API 需要額外的 OAuth scope。網頁端是以既有授權執行的，
+    // 沒授權過就只能請擁有者到編輯器手動執行一次這支函式。
+    setProp(WEEKLY_KPI_AUTO_PROP, 'true');
+    return {
+      ok: false,
+      needsAuthorization: true,
+      error: '無法建立觸發器（權限不足）：請到 Apps Script 編輯器，'
+        + '在函式下拉選 installWeeklyKpiTrigger 執行一次並允許授權。'
+        + '在那之前，仍會在有人開啟頁面時自動補開本週 KPI。',
+      detail: String(e)
+    };
+  }
 }
 
 function removeWeeklyKpiTrigger() {
@@ -2706,9 +2720,16 @@ function removeWeeklyKpiTrigger() {
 }
 
 function weeklyKpiTriggerInstalled_() {
-  return ScriptApp.getProjectTriggers().some(function (t) {
-    return t.getHandlerFunction() === WEEKLY_KPI_TRIGGER_FN;
-  });
+  // 這支用到 ScriptApp 觸發器 API，等於多要一個 OAuth scope。
+  // 既有部署還沒授權過時會直接丟例外，回 null 表示「查不到」，
+  // 不要讓整支狀態查詢跟著失敗。
+  try {
+    return ScriptApp.getProjectTriggers().some(function (t) {
+      return t.getHandlerFunction() === WEEKLY_KPI_TRIGGER_FN;
+    });
+  } catch (e) {
+    return null;
+  }
 }
 
 // 教練端：查狀態
@@ -2716,10 +2737,12 @@ function getWeeklyKpiAuto(data) {
   var auth = requireRole(data || {}, ['coach']);
   if (!auth.ok) return auth;
   var gate = weeklyKpiGateCheck_();
+  // 預設不查觸發器：那支要另一個 OAuth scope，而且在忙碌時會拖慢整支查詢。
+  var trigger = (data && data.withTrigger) ? weeklyKpiTriggerInstalled_() : undefined;
   return {
     ok: true,
     enabled: weeklyKpiAutoEnabled_(),
-    triggerInstalled: weeklyKpiTriggerInstalled_(),
+    triggerInstalled: trigger,
     gate: gate,
     message: gate.blockedBy
       ? ('目前不會自動開啟：' + gate.blockedBy)
@@ -2733,9 +2756,15 @@ function setWeeklyKpiAuto(data) {
   if (!auth.ok) return auth;
   var enabled = !!(data && data.enabled);
   setProp(WEEKLY_KPI_AUTO_PROP, enabled ? 'true' : 'false');
-  if (enabled) installWeeklyKpiTrigger(data && data.hour);
-  else removeWeeklyKpiTrigger();
-  return getWeeklyKpiAuto(data);
+  var install = null;
+  if (enabled) install = installWeeklyKpiTrigger(data && data.hour);
+  else { try { removeWeeklyKpiTrigger(); } catch (e) {} }
+  var status = getWeeklyKpiAuto(data);
+  if (install && install.ok === false) {
+    status.triggerWarning = install.error;
+    status.needsAuthorization = true;
+  }
+  return status;
 }
 
 // 教練端：立刻補開一次（週五沒開成、或想手動補跑觸發器邏輯時用）

@@ -595,11 +595,12 @@
     }
     var g = cfg.gate || {};
     var on = !!cfg.enabled;
-    var warn = !cfg.triggerInstalled && on;
+    // triggerInstalled 為 undefined 代表這次沒去查（省時間），不是「沒安裝」
+    var warn = on && (cfg.triggerInstalled === false || cfg.needsAuthorization);
     box.innerHTML =
       '<label class="toggle-row"><input type="checkbox" id="weeklyAutoKpiToggle"' + (on ? ' checked' : '') + ' /> 每週五自動開啟本週 KPI</label>' +
       '<span class="review-label">' + esc(cfg.message || '') + '</span>' +
-      (warn ? '<span class="tag tag-orange">觸發器尚未安裝，請重新勾選一次以安裝</span>' : '') +
+      (warn ? '<span class="tag tag-orange">' + esc(cfg.triggerWarning || '觸發器尚未安裝，請重新勾選一次以安裝') + '</span>' : '') +
       '<span class="review-label">今天星期' + esc(g.weekday || '?') + '｜本週 ' + esc(g.weekId || '') +
         '｜啟用中選手帳號 ' + esc(String(g.activeAccounts == null ? '?' : g.activeAccounts)) + ' 人</span>' +
       '<button type="button" class="btn btn-ghost btn-sm" id="weeklyAutoKpiRunNow">立即補開一次</button>';
@@ -607,7 +608,7 @@
     el('weeklyAutoKpiToggle').addEventListener('change', async function (e) {
       var want = e.target.checked;
       e.target.disabled = true;
-      var res = await api({ action: 'setWeeklyKpiAuto', enabled: want });
+      var res = await api({ action: 'setWeeklyKpiAuto', enabled: want, withTrigger: true });
       e.target.disabled = false;
       notify(res && res.ok ? (want ? '✅ 已開啟每週五自動開啟' : '已關閉自動開啟') : ((res && res.error) || '設定失敗'));
       renderWeeklyAutoKpi(res);
@@ -636,7 +637,7 @@
         var btn = el('weeklyAutoKpiRetry');
         if (btn) btn.addEventListener('click', loadWeeklyAutoKpi);
       }
-    }, 12000);
+    }, 25000);
     try { renderWeeklyAutoKpi(await api({ action: 'getWeeklyKpiAuto' })); }
     catch (e) { renderWeeklyAutoKpi(null); }
     finally { clearTimeout(timer); }
