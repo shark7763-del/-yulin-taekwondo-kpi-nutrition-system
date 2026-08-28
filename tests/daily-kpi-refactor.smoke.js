@@ -347,9 +347,19 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
       const b = document.getElementById(id);
       return { id, present: !!b, text: b ? b.textContent.trim() : '' };
     });
+    const hasRelogin = !!document.querySelector('.coach-relogin');
+    // 準備度分組是多欄 grid，橫幅若沒跨列會被擠成一行一個字
+    const groups = document.getElementById('coachReadinessGroups');
+    const banner = groups && groups.querySelector('.coach-load-error');
+    const spanInfo = banner
+      ? { gridColumn: getComputedStyle(banner).gridColumn, w: Math.round(banner.getBoundingClientRect().width),
+          parentW: Math.round(groups.getBoundingClientRect().width) }
+      : null;
+    const spansGrid = !!spanInfo && spanInfo.w >= spanInfo.parentW - 4;
+
     window.clearCoachLoadError();
     const afterClear = boxes.map(id => (document.getElementById(id) || {}).textContent || '');
-    return { filled, afterClear };
+    return { filled, afterClear, hasRelogin, spanInfo, spansGrid };
   });
   t('a failed load writes a visible reason into every coach panel',
     loadErr.filled.every(b => !b.present || b.text.includes('這裡是空的，因為資料沒讀進來')),
@@ -357,6 +367,37 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('the AUTH_REQUIRED code is translated into plain language',
     loadErr.filled.some(b => b.text.includes('教練登入已過期')),
     JSON.stringify(loadErr.filled.map(b => b.text.slice(0, 60))));
+  t('an expired session offers a re-login button instead of instructions',
+    loadErr.hasRelogin, String(loadErr.hasRelogin));
+  t('the banner spans the whole grid row (not squeezed into one column)',
+    loadErr.spansGrid, JSON.stringify(loadErr.spanInfo));
+  // 上次表現查詢的名單面板也不能靜默退回本機空資料
+  const reported = await page.evaluate(async () => {
+    const list = document.getElementById('todayReportedList');
+    const sum = document.getElementById('lastPerfSummaryRow');
+    if (!list) return { missing: true };
+    // 這支開頭有 `if (role !== 'coach') return`，測試瀏覽器沒有角色會直接返回
+    const savedRole = localStorage.getItem('yulin_role');
+    window.setRole('coach', '測試教練', { authToken: 'test-token' });
+    let strictSeen = null;
+    window.fetchAllRecords = async opts => { strictSeen = !!(opts && opts.strict); throw new Error('AUTH_REQUIRED'); };
+    await window.refreshTodayReportedList();
+    if (savedRole) localStorage.setItem('yulin_role', savedRole); else localStorage.removeItem('yulin_role');
+    return {
+      strictSeen,
+      listText: list.textContent,
+      sumText: sum ? sum.textContent : '',
+      hasRelogin: !!list.querySelector('.coach-relogin')
+    };
+  });
+  t('the reported-list panel asks for records in strict mode',
+    reported.missing || reported.strictSeen === true, JSON.stringify(reported));
+  t('a failed load no longer reads as 還沒有選手回報',
+    reported.missing || (!reported.listText.includes('還沒有選手回報')
+      && reported.listText.includes('資料沒讀進來')), (reported.listText || '').slice(0, 80));
+  t('the 0/0/0 counters are blanked when the load failed',
+    reported.missing || !/0/.test(reported.sumText), reported.sumText);
+
   t('clearCoachLoadError removes the banner again',
     loadErr.afterClear.every(x => !x.includes('這裡是空的')), JSON.stringify(loadErr.afterClear));
 

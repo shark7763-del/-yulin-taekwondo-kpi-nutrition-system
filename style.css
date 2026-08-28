@@ -2193,3 +2193,7 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 .risk-handle-box .quick-chips { margin: 8px 0; }
 .risk-handle-note { margin: 6px 0 10px; }
 .risk-handle-box .btn-group { margin: 0; }
+
+/* 教練後台讀取失敗橫幅：這幾個容器是多欄 grid，橫幅要橫跨整列才不會被擠成一行一字 */
+.coach-load-error { grid-column: 1 / -1; width: 100%; box-sizing: border-box; }
+.coach-load-error .btn-group { margin: 10px 0 0; }

@@ -996,17 +996,36 @@ function coachLoadErrorHint(e) {
   if (msg === 'FETCH_FAILED') return '連不到後端（網路或 Apps Script 部署問題），請檢查後按「重新整理資料」再試一次。';
   return msg;
 }
-function showCoachLoadError(e) {
+function coachLoadErrorHtml(e) {
   const detail = (e && e.detail) ? `<br><code style="font-size:.8rem;opacity:.85">診斷：${escapeHtml(String(e.detail))}</code>` : '';
-  const html = '<div class="hint-box warn"><b>⚠️ 這裡是空的，因為資料沒讀進來，不是今天沒人回報。</b><br>'
-    + escapeHtml(coachLoadErrorHint(e)) + detail
-    + '<br>請按上方「🔄 重新整理資料」再試一次；若持續失敗請重新登入教練。</div>';
+  // session 過期是最常見的原因，直接給一顆重新登入的鈕，不要叫教練自己去找。
+  const expired = (e && e.message) === 'AUTH_REQUIRED';
+  const action = expired
+    ? '<div class="btn-group"><button type="button" class="btn btn-primary btn-sm coach-relogin">🔑 重新登入教練</button></div>'
+    : '<br>請按上方「🔄 重新整理資料」再試一次。';
+  // .readiness-groups / .overview-grid 是多欄 grid，橫幅要橫跨整列，
+  // 否則會被擠成一行一個字。
+  return '<div class="hint-box warn coach-load-error"><b>⚠️ 這裡是空的，因為資料沒讀進來，不是今天沒人回報。</b><br>'
+    + escapeHtml(coachLoadErrorHint(e)) + detail + action + '</div>';
+}
+function showCoachLoadError(e) {
+  const html = coachLoadErrorHtml(e);
   COACH_LOAD_ERROR_BOXES.forEach(id => { const b = $id(id); if (b) b.innerHTML = html; });
 }
 function clearCoachLoadError() {
   COACH_LOAD_ERROR_BOXES.forEach(id => {
     const b = $id(id);
     if (b && b.innerHTML.indexOf('這裡是空的，因為資料沒讀進來') !== -1) b.innerHTML = '';
+  });
+}
+
+// 橫幅上的「重新登入」：委派綁在 document，各區塊重繪也不用重綁
+if (typeof document !== 'undefined' && !document.__coachReloginBound) {
+  document.__coachReloginBound = true;
+  document.addEventListener('click', e => {
+    if (!e.target.closest || !e.target.closest('.coach-relogin')) return;
+    try { if (typeof clearRole === 'function') clearRole(); } catch (err) {}
+    if (typeof showLoginOverlay === 'function') showLoginOverlay();
   });
 }
 
@@ -2487,7 +2506,8 @@ function lastPerfHasPriority(rec, history) {
 
 async function loadTodayReportedStudents(opts) {
   const targetDate = getLastPerfSelectedDate();
-  const records = await fetchAllRecords(opts || {});
+  // strict：讀取失敗要丟例外，不能靜默退回本機空資料然後顯示成「還沒有選手回報」。
+  const records = await fetchAllRecords(Object.assign({ strict: true }, opts || {}));
   const todays = {};
   (records || []).forEach(rec => {
     const name = lastPerfRecordName(rec);
@@ -2609,7 +2629,11 @@ async function refreshTodayReportedList(opts) {
     renderTodayReportSummary(data.summary);
     renderTodayReportedList(data.items, LASTPERF_TODAY_STATE.filter);
   } catch (e) {
-    if (list) list.innerHTML = `<div class="hint-box warn">名單讀取失敗，請稍後再試。</div>`;
+    // 統計數字也要一起作廢，0/0/0 看起來像「今天真的沒人回報」
+    const sum = $id('lastPerfSummaryRow');
+    if (sum) sum.innerHTML = ['已回報', '待回覆', '❗ 高優先']
+      .map(l => `<div class="lastperf-summary-card"><b>–</b><span>${l}</span></div>`).join('');
+    if (list) list.innerHTML = coachLoadErrorHtml(e);
   }
 }
 
