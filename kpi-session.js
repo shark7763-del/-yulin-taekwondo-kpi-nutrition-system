@@ -626,8 +626,20 @@
   }
 
   async function loadWeeklyAutoKpi() {
+    // 這支後端要掃 kpi_sessions 與 student_accounts，可能要好幾秒；
+    // 但不能永遠停在「讀取中」，逾時就講清楚並給重試。
+    var timer = setTimeout(function () {
+      var box = el('weeklyAutoKpiBox');
+      if (box && box.textContent.indexOf('讀取自動開啟狀態') !== -1) {
+        box.innerHTML = '<span class="review-label">自動開啟狀態讀取逾時（後端可能正在忙）。</span>'
+          + '<button type="button" class="btn btn-ghost btn-sm" id="weeklyAutoKpiRetry">重試</button>';
+        var btn = el('weeklyAutoKpiRetry');
+        if (btn) btn.addEventListener('click', loadWeeklyAutoKpi);
+      }
+    }, 12000);
     try { renderWeeklyAutoKpi(await api({ action: 'getWeeklyKpiAuto' })); }
     catch (e) { renderWeeklyAutoKpi(null); }
+    finally { clearTimeout(timer); }
   }
 
   /* ===================== 學生端 ===================== */
