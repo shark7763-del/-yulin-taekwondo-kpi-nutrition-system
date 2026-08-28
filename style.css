@@ -2176,3 +2176,20 @@ fieldset.adv-fold { border: 1px dashed var(--border); }
 .weekly-kpi-section .kpi-section-body { padding-bottom: 6px; }
 .weekly-kpi-section .kpi-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .weekly-kpi-section .kpi-item:last-child { border-bottom: none; }
+
+/* ===================== 風險追蹤：處理紀錄 ===================== */
+.risk-entry { display: inline-block; max-width: 100%; }
+.risk-chip {
+  cursor: pointer; text-align: left; font: inherit;
+  border-width: 1px; border-style: solid;
+}
+.risk-chip:hover { filter: brightness(1.18); }
+.risk-handle-panel { display: block; }
+.risk-handle-panel[hidden] { display: none; }
+.risk-handle-box {
+  background: var(--bg-card-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; margin: 8px 0 12px;
+}
+.risk-handle-box .quick-chips { margin: 8px 0; }
+.risk-handle-note { margin: 6px 0 10px; }
+.risk-handle-box .btn-group { margin: 0; }

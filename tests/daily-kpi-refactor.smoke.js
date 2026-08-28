@@ -434,6 +434,69 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('local-only mode still allows name login',
     legacy.localOnlyMode === true, JSON.stringify(legacy));
 
+  // 14. risk items are clickable and remember how the coach handled them
+  const handled = await page.evaluate(async () => {
+    const box = document.getElementById('coachRiskTracking');
+    const store = {};
+    window.appGetAll = async () => JSON.parse(JSON.stringify(store));
+    window.appSet = async (k, v) => { if (v === null) delete store[k]; else store[k] = v; return true; };
+    let viewDate = '2026-08-28';
+    window.refreshCoach = async () => {
+      await window.loadRiskHandles();
+      window.renderRiskTracking([], all, viewDate);
+    };
+    const mk = (name, date) => ({ name, date, group: '對打', waterIntake: '少於 500ml', lateNightSnack: '無' });
+    const all = ['2026-08-26', '2026-08-27', '2026-08-28'].map(d => mk('阿明', d));
+
+    await window.loadRiskHandles();
+    window.renderRiskTracking([], all, '2026-08-28');
+    const chip = box.querySelector('.risk-chip');
+    const out = { clickable: !!chip, beforeText: chip ? chip.textContent : '' };
+
+    chip.click();
+    const panel = box.querySelector('.risk-handle-panel');
+    out.panelOpened = panel && !panel.hasAttribute('hidden');
+    out.options = Array.from(panel.querySelectorAll('[data-risk-status]')).map(b => b.dataset.riskStatus);
+
+    // 沒選處置就儲存 → 應該擋下來，不能寫進去
+    panel.querySelector('.risk-handle-save').click();
+    await new Promise(r => setTimeout(r, 60));
+    out.savedWithoutStatus = Object.keys(store).length;
+
+    Array.from(panel.querySelectorAll('[data-risk-status]')).find(b => b.dataset.riskStatus === '防護員已處理').click();
+    panel.querySelector('.risk-handle-note').value = '腳踝冰敷，明天回報';
+    panel.querySelector('.risk-handle-save').click();
+    await new Promise(r => setTimeout(r, 200));
+    out.storeKeys = Object.keys(store);
+    out.stored = store[Object.keys(store)[0]] || null;
+    out.afterText = (box.querySelector('.risk-chip') || {}).textContent || '';
+
+    // 處理後又有更新的紀錄 → 要提醒「又出現」
+    // （日期篩選也要跟著往後，否則新紀錄會被 endDate 濾掉）
+    all.push(mk('阿明', '2026-09-02'));
+    viewDate = '2026-09-02';
+    await window.refreshCoach();
+    out.staleText = (box.querySelector('.risk-chip') || {}).textContent || '';
+    return out;
+  });
+  t('risk items render as clickable buttons', handled.clickable, String(handled.clickable));
+  t('clicking opens the handling panel with the coach options',
+    handled.panelOpened && handled.options.includes('防護員已處理') && handled.options.includes('已聯繫家長'),
+    JSON.stringify(handled.options));
+  t('saving without picking a status is refused',
+    handled.savedWithoutStatus === 0, String(handled.savedWithoutStatus));
+  t('the handling is stored under riskHandle:<name>:<type>',
+    handled.storeKeys.length === 1 && /^riskHandle:阿明:water$/.test(handled.storeKeys[0]),
+    JSON.stringify(handled.storeKeys));
+  t('status, note and basis date are all recorded',
+    handled.stored && handled.stored.status === '防護員已處理'
+      && handled.stored.note === '腳踝冰敷，明天回報' && handled.stored.basisDate === '2026-08-28',
+    JSON.stringify(handled.stored));
+  t('a handled item is marked as handled',
+    handled.afterText.includes('✅ 防護員已處理'), handled.afterText);
+  t('a newer record after handling flags it as recurring',
+    handled.staleText.includes('後又出現'), handled.staleText);
+
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
   console.log('');

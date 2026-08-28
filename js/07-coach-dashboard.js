@@ -1026,6 +1026,7 @@ async function refreshCoach() {
     return;
   }
   clearCoachLoadError();
+  await loadRiskHandles();   // 風險處理紀錄，讓已處理的警示能標示出來
 
   // 日期一律正規化，且空白時退回今天，避免 0 筆資料
   const filterDate = normDate($id('coachDate').value || todayStr());
@@ -1151,6 +1152,37 @@ function renderCoachSimpleGroups(todays) {
 function riskItem(text, cls) {
   return `<span class="tag ${cls || 'tag-orange'}">${escapeHtml(text)}</span>`;
 }
+
+// 可點擊的風險項目：顯示目前處置狀態，點下去展開處理面板
+function riskHandleItem(name, alert, label, basisDate) {
+  const handle = getRiskHandle(name, alert.key);
+  const stale = riskHandleStale(handle, basisDate);
+  let cls = alert.level === 'watch' ? 'tag-green' : 'tag-orange';
+  let badge = '';
+  if (handle && handle.status) {
+    if (stale) { cls = 'tag-red'; badge = `　⚠️ ${escapeHtml(handle.status)}後又出現`; }
+    else { cls = 'tag-green'; badge = `　✅ ${escapeHtml(handle.status)}`; }
+  }
+  const meta = escapeHtml(JSON.stringify({ name: name, key: alert.key || 'other', basisDate: basisDate || '' }));
+  return `<span class="risk-entry">`
+    + `<button type="button" class="tag ${cls} risk-chip" data-risk="${meta}">${escapeHtml(label)}${badge}</button>`
+    + `<span class="risk-handle-panel" hidden></span></span>`;
+}
+
+// 處理面板：處置方式 chips ＋ 備註
+function riskHandlePanelHtml(name, alertKey) {
+  const handle = getRiskHandle(name, alertKey) || {};
+  const chips = RISK_HANDLE_OPTIONS.map(opt =>
+    `<button type="button" class="chip${handle.status === opt ? ' sel' : ''}" data-risk-status="${escapeHtml(opt)}">${escapeHtml(opt)}</button>`
+  ).join('');
+  const when = handle.at ? `<div class="review-label">上次更新：${escapeHtml(dateSlash(handle.at))}${handle.basisDate ? `（依 ${escapeHtml(dateSlash(handle.basisDate).slice(5))} 紀錄）` : ''}</div>` : '';
+  return `<div class="risk-handle-box">`
+    + `<div class="review-label"><b>${escapeHtml(name)}</b>：這條要怎麼處理？</div>`
+    + `<div class="quick-chips">${chips}</div>`
+    + `<input type="text" class="text-input risk-handle-note" placeholder="補充說明（選填）" value="${escapeHtml(handle.note || '')}" />`
+    + `<div class="btn-group"><button type="button" class="btn btn-primary btn-sm risk-handle-save">儲存</button>`
+    + `<button type="button" class="btn btn-ghost btn-sm risk-handle-clear">清除</button></div>${when}</div>`;
+}
 function renderRiskBlock(title, items, empty) {
   return `<div class="risk-block"><h4>${title}（${items.length}）</h4><div class="name-list">${items.length ? items.join('') : `<span class="review-label">${empty || '目前無'}</span>`}</div></div>`;
 }
@@ -1158,6 +1190,32 @@ function renderRiskBlock(title, items, empty) {
 // 停填兩個月的選手會一直掛著六月的「連續 3 天水量不足」，被當成今天的風險。
 // 同一個面板裡，疼痛／睡眠／心情／RPE 只看選定當天，兩邊時間基準不一致更難解讀。
 const ALERT_WINDOW_DAYS = 14;
+
+/* ---- 風險處理紀錄：教練點警示 → 標記已如何處理 ----
+   存在通用 appdata（key = riskHandle:<選手>:<警示類型>），本機優先＋雲端同步，
+   後端沿用既有的 getAllAppData / setAppData，不需要新的工作表或重新部署。 */
+const RISK_HANDLE_PREFIX = 'riskHandle:';
+// 教練實際會用的處置方式。要增減直接改這一行。
+const RISK_HANDLE_OPTIONS = ['已口頭提醒', '防護員已處理', '已聯繫家長', '已調整訓練', '持續觀察中', '已解除'];
+let _riskHandleCache = {};
+
+function riskHandleKey(name, alertKey) {
+  return `${RISK_HANDLE_PREFIX}${String(name || '').trim()}:${alertKey || 'other'}`;
+}
+async function loadRiskHandles() {
+  try { _riskHandleCache = (await appGetAll(RISK_HANDLE_PREFIX)) || {}; }
+  catch (e) { _riskHandleCache = _riskHandleCache || {}; }
+  return _riskHandleCache;
+}
+function getRiskHandle(name, alertKey) {
+  const v = _riskHandleCache[riskHandleKey(name, alertKey)];
+  return (v && typeof v === 'object') ? v : null;
+}
+// 處理過之後又出現更新的紀錄 → 要讓教練知道這條又回來了
+function riskHandleStale(handle, basisDate) {
+  if (!handle || !handle.basisDate || !basisDate) return false;
+  return normDate(basisDate) > normDate(handle.basisDate);
+}
 function shiftDateStr(dateStr, deltaDays) {
   const base = normDate(dateStr);
   if (!base) return '';
@@ -1167,9 +1225,74 @@ function shiftDateStr(dateStr, deltaDays) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// 事件用委派綁在容器上，重新渲染不用重綁
+function setupRiskHandleHandlers() {
+  const box = $id('coachRiskTracking');
+  if (!box || box.dataset.handleBound === '1') return;
+  box.dataset.handleBound = '1';
+
+  box.addEventListener('click', async e => {
+    const chip = e.target.closest('.risk-chip');
+    if (chip) {
+      const panel = chip.parentElement.querySelector('.risk-handle-panel');
+      if (!panel) return;
+      const open = !panel.hasAttribute('hidden');
+      // 一次只開一個，避免整片展開看不到重點
+      box.querySelectorAll('.risk-handle-panel').forEach(p => { p.setAttribute('hidden', ''); p.innerHTML = ''; });
+      if (open) return;
+      let meta;
+      try { meta = JSON.parse(chip.dataset.risk); } catch (err) { return; }
+      panel.innerHTML = riskHandlePanelHtml(meta.name, meta.key);
+      panel.dataset.risk = chip.dataset.risk;
+      panel.removeAttribute('hidden');
+      return;
+    }
+
+    const statusBtn = e.target.closest('[data-risk-status]');
+    if (statusBtn) {
+      const wrap = statusBtn.closest('.risk-handle-box');
+      wrap.querySelectorAll('[data-risk-status]').forEach(b => b.classList.remove('sel'));
+      statusBtn.classList.add('sel');
+      return;
+    }
+
+    const saveBtn = e.target.closest('.risk-handle-save');
+    const clearBtn = e.target.closest('.risk-handle-clear');
+    if (!saveBtn && !clearBtn) return;
+
+    const panel = e.target.closest('.risk-handle-panel');
+    if (!panel) return;
+    let meta;
+    try { meta = JSON.parse(panel.dataset.risk); } catch (err) { return; }
+    const key = riskHandleKey(meta.name, meta.key);
+
+    if (clearBtn) {
+      _riskHandleCache[key] = null;
+      await appSet(key, null);
+      toast('已清除處理紀錄');
+    } else {
+      const picked = panel.querySelector('[data-risk-status].sel');
+      if (!picked) { toast('請先選一個處理方式'); return; }
+      const role = getRole();
+      const value = {
+        status: picked.dataset.riskStatus,
+        note: (panel.querySelector('.risk-handle-note') || {}).value || '',
+        at: new Date().toISOString(),
+        by: (role && role.name) || '教練',
+        basisDate: meta.basisDate || ''
+      };
+      _riskHandleCache[key] = value;
+      const ok = await appSet(key, value);
+      toast(ok ? '✅ 已記錄處理方式' : '已存在本機（雲端同步失敗）');
+    }
+    if (typeof refreshCoach === 'function') refreshCoach();
+  });
+}
+
 function renderRiskTracking(todays, all, filterDate) {
   const box = $id('coachRiskTracking');
   if (!box) return;
+  setupRiskHandleHandlers();
   const bodyRisks = [];
   const mentalRisks = [];
   const trainingRisks = [];
@@ -1206,10 +1329,12 @@ function renderRiskTracking(todays, all, filterDate) {
     const alerts = computeAlerts(mine);
     // computeAlerts 的「連續 N 天」其實是「最近 N 筆」，中間可能隔了好幾天。
     // 標出依據的最後一筆日期，教練才知道這條警示有多新。
-    const basisDate = mine[0] ? dateSlash(mine[0].date || mine[0].timestamp).slice(5) : '';
+    const basisFull = mine[0] ? normDate(mine[0].date || mine[0].timestamp) : '';
+    const basisDate = basisFull ? dateSlash(basisFull).slice(5) : '';
     alerts.forEach(a => {
       const suffix = basisDate ? `｜依 ${basisDate} 紀錄` : '';
-      const item = riskItem(`${name}｜${a.text.replace(/^[^\s]+\s*/, '')}${suffix}`, a.level === 'watch' ? 'tag-green' : 'tag-orange');
+      const label = `${name}｜${a.text.replace(/^[^\s]+\s*/, '')}${suffix}`;
+      const item = riskHandleItem(name, a, label, basisFull);
       if (/情緒|心情/.test(a.text)) mentalRisks.push(item);
       else if (/睡眠|疼痛|宵夜|水量/.test(a.text)) bodyRisks.push(item);
       else trainingRisks.push(item);
@@ -1978,27 +2103,27 @@ function computeAlerts(recs) {
   const improving = (n, f) => has(n) && (num(recent(n)[0], f) > num(recent(n)[n - 1], f));
 
   if (every(2, r => r.bodyStatus === '受傷中'))
-    alerts.push({ level: 'warn', text: '🤕 連續 2 天回報受傷中，建議調整訓練量並關心' });
+    alerts.push({ key: 'injury', level: 'warn', text: '🤕 連續 2 天回報受傷中，建議調整訓練量並關心' });
   else if (every(2, r => r.bodyStatus === '疲勞' || r.bodyStatus === '受傷中'))
-    alerts.push({ level: 'warn', text: '😪 連續 2 天疲勞，注意休息與恢復' });
+    alerts.push({ key: 'fatigue', level: 'warn', text: '😪 連續 2 天疲勞，注意休息與恢復' });
 
   if (recs[0] && painScoreValue(recs[0]) >= 7) {
-    alerts.push({ level: 'warn', text: `🩹 ${painAreaText(recs[0])}｜疼痛 ${painScoreValue(recs[0])} 分｜建議通知家長` });
+    alerts.push({ key: 'pain', level: 'warn', text: `🩹 ${painAreaText(recs[0])}｜疼痛 ${painScoreValue(recs[0])} 分｜建議通知家長` });
   } else if (every(2, r => painScoreValue(r) >= 4)) {
-    alerts.push({ level: 'warn', text: `🩹 連續疼痛警示｜${painAreaText(recs[0])}｜最近疼痛 ${painScoreValue(recs[0])} 分` });
+    alerts.push({ key: 'pain', level: 'warn', text: `🩹 連續疼痛警示｜${painAreaText(recs[0])}｜最近疼痛 ${painScoreValue(recs[0])} 分` });
   }
 
-  if (every(3, lowWater)) alerts.push({ level: 'warn', text: '💧 連續 3 天水量不足，提醒補水' });
+  if (every(3, lowWater)) alerts.push({ key: 'water', level: 'warn', text: '💧 連續 3 天水量不足，提醒補水' });
   if (every(2, r => r.lateNightSnack && r.lateNightSnack !== '無'))
-    alerts.push({ level: 'warn', text: '🌙 連續 2 次宵夜，注意飲食與睡眠' });
+    alerts.push({ key: 'snack', level: 'warn', text: '🌙 連續 2 次宵夜，注意飲食與睡眠' });
 
   if (every(3, r => num(r, 'emotionAvg') < 3)) {
-    if (improving(3, 'emotionAvg')) alerts.push({ level: 'watch', text: '📈 情緒分數偏低但逐日進步中（進步觀察中）' });
-    else alerts.push({ level: 'warn', text: '😔 連續 3 天情緒偏低，建議個別關心' });
+    if (improving(3, 'emotionAvg')) alerts.push({ key: 'emotion', level: 'watch', text: '📈 情緒分數偏低但逐日進步中（進步觀察中）' });
+    else alerts.push({ key: 'emotion', level: 'warn', text: '😔 連續 3 天情緒偏低，建議個別關心' });
   }
   if (every(3, r => num(r, 'technicalAvg') < 3)) {
-    if (improving(3, 'technicalAvg')) alerts.push({ level: 'watch', text: '📈 技術分數偏低但逐日進步中（進步觀察中）' });
-    else alerts.push({ level: 'warn', text: '🥋 連續 3 天技術偏低，安排技術修正' });
+    if (improving(3, 'technicalAvg')) alerts.push({ key: 'technical', level: 'watch', text: '📈 技術分數偏低但逐日進步中（進步觀察中）' });
+    else alerts.push({ key: 'technical', level: 'warn', text: '🥋 連續 3 天技術偏低，安排技術修正' });
   }
   return alerts;
 }
