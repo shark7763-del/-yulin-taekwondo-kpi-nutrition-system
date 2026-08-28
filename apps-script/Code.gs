@@ -451,6 +451,12 @@ function handleAction(action, data) {
       return jsonOut(schemaAudit(data));
     case 'schemaMigrate':
       return jsonOut(schemaMigrate(data));
+    case 'getWeeklyKpiAuto':
+      return jsonOut(getWeeklyKpiAuto(data));
+    case 'setWeeklyKpiAuto':
+      return jsonOut(setWeeklyKpiAuto(data));
+    case 'runWeeklyKpiNow':
+      return jsonOut(runWeeklyKpiNow(data));
     case 'pushLineText':
       return jsonOut(pushLineText(data));
     case 'getLineLastSource':
@@ -2609,6 +2615,134 @@ function ensureFridayWeeklyKpiSession_() {
   });
   if (created) clearKpiCaches_();
   return created;
+}
+
+/* ============================================================
+   每週五自動開啟 KPI（時間觸發器版）
+
+   ensureFridayWeeklyKpiSession_() 原本是「有人打開頁面才順便檢查」，
+   沒人開 App 的週五就不會建立，而且那條路完全不推 LINE。
+   底下補上真正的時間觸發器與推播，並保留教練可隨時關閉的開關。
+   ============================================================ */
+
+var WEEKLY_KPI_AUTO_PROP = 'WEEKLY_KPI_AUTO_ENABLED';
+var WEEKLY_KPI_TRIGGER_FN = 'autoOpenWeeklyKpi';
+
+function weeklyKpiAutoEnabled_() {
+  // 未設定時視為開啟：這個功能就是為了自動而裝的。
+  return getProp(WEEKLY_KPI_AUTO_PROP) !== 'false';
+}
+
+// 檢查各道閘門，回報「會不會開／為什麼不開」。純唯讀，供診斷與觸發器共用。
+function weeklyKpiGateCheck_() {
+  var now = new Date();
+  var weekId = isoWeekId(now);
+  var out = {
+    weekday: ['日', '一', '二', '三', '四', '五', '六'][now.getDay()],
+    inWindow: isWeeklyAutoKpiWindow_(),
+    weekId: weekId,
+    autoEnabled: weeklyKpiAutoEnabled_(),
+    activeAccounts: 0,
+    sessionsThisWeek: [],
+    blockedBy: ''
+  };
+  if (!out.autoEnabled) { out.blockedBy = '教練已關閉自動開啟'; return out; }
+
+  var sessions = listKpiSessions().filter(function (s) { return String(s.weekId || '') === weekId; });
+  out.sessionsThisWeek = sessions.map(function (s) {
+    return { sessionId: s.sessionId, openMode: s.openMode, status: effectiveSessionStatus(s), closeAt: s.closeAt };
+  });
+  if (sessions.some(function (s) {
+    var es = effectiveSessionStatus(s);
+    return es === 'open' || es === 'scheduled';
+  })) { out.blockedBy = '本週已經有進行中的 KPI，不重複建立'; return out; }
+
+  if (sessions.some(function (s) {
+    return String(s.openMode || '') === 'autoReminder' && effectiveSessionStatus(s) === 'closed';
+  })) { out.blockedBy = '本週自動開啟過但已被關閉，不再自動重開'; return out; }
+
+  var accounts = activeStudentAccounts();
+  out.activeAccounts = accounts.length;
+  if (!accounts.length) { out.blockedBy = '沒有任何啟用中的選手帳號（student_accounts 是空的）'; return out; }
+  return out;
+}
+
+/* 時間觸發器進入點。跟頁面觸發共用 ensureFridayWeeklyKpiSession_，
+   差別是這裡會補推 LINE 給選手。回傳值會寫進執行記錄，方便事後查。 */
+function autoOpenWeeklyKpi() {
+  var gate = weeklyKpiGateCheck_();
+  if (!gate.autoEnabled) return { ok: false, skipped: gate.blockedBy, gate: gate };
+  if (!gate.inWindow) return { ok: false, skipped: '今天不在週五～週日的範圍內', gate: gate };
+  if (gate.blockedBy) return { ok: false, skipped: gate.blockedBy, gate: gate };
+
+  _friKpiEnsured_ = false;   // 觸發器是獨立執行實例，保險起見清掉單次旗標
+  var created = ensureFridayWeeklyKpiSession_();
+  if (!created) return { ok: false, skipped: '未建立（條件在建立當下改變）', gate: gate };
+
+  var line = { ok: false, error: '未嘗試' };
+  try { line = pushToLine(kpiReminderText('student', created, null)); }
+  catch (e) { line = { ok: false, error: String(e) }; }
+  return { ok: true, session: created, line: line, gate: gate };
+}
+
+// 安裝／移除每週五的觸發器（可在編輯器直接執行，也有教練專用的 action）
+function installWeeklyKpiTrigger(hour) {
+  removeWeeklyKpiTrigger();
+  ScriptApp.newTrigger(WEEKLY_KPI_TRIGGER_FN)
+    .timeBased()
+    .onWeekDay(ScriptApp.WeekDay.FRIDAY)
+    .atHour(typeof hour === 'number' ? hour : 17)
+    .create();
+  setProp(WEEKLY_KPI_AUTO_PROP, 'true');
+  return { ok: true, message: '已安裝每週五自動開啟 KPI 的觸發器。' };
+}
+
+function removeWeeklyKpiTrigger() {
+  var removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === WEEKLY_KPI_TRIGGER_FN) { ScriptApp.deleteTrigger(t); removed++; }
+  });
+  return { ok: true, removed: removed };
+}
+
+function weeklyKpiTriggerInstalled_() {
+  return ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === WEEKLY_KPI_TRIGGER_FN;
+  });
+}
+
+// 教練端：查狀態
+function getWeeklyKpiAuto(data) {
+  var auth = requireRole(data || {}, ['coach']);
+  if (!auth.ok) return auth;
+  var gate = weeklyKpiGateCheck_();
+  return {
+    ok: true,
+    enabled: weeklyKpiAutoEnabled_(),
+    triggerInstalled: weeklyKpiTriggerInstalled_(),
+    gate: gate,
+    message: gate.blockedBy
+      ? ('目前不會自動開啟：' + gate.blockedBy)
+      : (gate.inWindow ? '條件都符合，這週會自動開啟。' : '條件都符合，等週五就會自動開啟。')
+  };
+}
+
+// 教練端：開關 + 安裝/移除觸發器
+function setWeeklyKpiAuto(data) {
+  var auth = requireRole(data || {}, ['coach']);
+  if (!auth.ok) return auth;
+  var enabled = !!(data && data.enabled);
+  setProp(WEEKLY_KPI_AUTO_PROP, enabled ? 'true' : 'false');
+  if (enabled) installWeeklyKpiTrigger(data && data.hour);
+  else removeWeeklyKpiTrigger();
+  return getWeeklyKpiAuto(data);
+}
+
+// 教練端：立刻補開一次（週五沒開成、或想手動補跑觸發器邏輯時用）
+function runWeeklyKpiNow(data) {
+  var auth = requireRole(data || {}, ['coach']);
+  if (!auth.ok) return auth;
+  return autoOpenWeeklyKpi();
 }
 
 function normalizeReadinessLight_(value) {

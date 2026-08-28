@@ -314,7 +314,8 @@
       banner +
       '<div class="kpi-task-card">' +
         '<h3 class="card-title">📋 KPI 回報管理</h3>' +
-        '<p class="review-label">每日基本回報每天開放；30 項完整 KPI 由教練開放，截止時間為週日 23:59；比賽日、訓練週期調整或狀態異常時，教練也可以手動加開。</p>' +
+        '<p class="review-label">每日基本回報每天開放；30 項完整 KPI 每週五自動開啟、週日 23:59 截止；比賽日、訓練週期調整或狀態異常時，教練也可以手動加開或提前關閉。</p>' +
+        '<div id="weeklyAutoKpiBox" class="kpi-task-meta"><span class="review-label">讀取自動開啟狀態…</span></div>' +
         '<div class="kpi-task-status"><b>本週 KPI 任務</b><span class="' + (enabled.length ? 'is-open' : 'is-closed') + '">' + taskStatusText() + '</span></div>' +
         '<div class="kpi-task-meta">' +
           '<span>週次：' + esc(wk) + '</span><span>開放對象：' + esc(targetText()) + '</span><span>截止時間：' + esc(enabled.length ? fmtTime(due) : defaultDueLabel()) + '</span>' +
@@ -338,6 +339,7 @@
       '</div>';
 
     bindCoachEvents(box);
+    loadWeeklyAutoKpi();   // 自動開啟狀態另外非同步補進來，不擋整張卡的渲染
   }
 
   function renderGroupPanel() {
@@ -581,6 +583,51 @@
       var t = (res.texts && res.texts.pending) || '';
       if (typeof shareToLine === 'function') shareToLine(t);
     } catch (e) { notify(e.message || '產生失敗'); }
+  }
+
+  /* ---- 每週五自動開啟：狀態、開關、立即補開 ---- */
+  function renderWeeklyAutoKpi(cfg) {
+    var box = el('weeklyAutoKpiBox');
+    if (!box) return;
+    if (!cfg || !cfg.ok) {
+      box.innerHTML = '<span class="review-label">自動開啟狀態讀取失敗（需要教練身分，且後端要是最新版）。</span>';
+      return;
+    }
+    var g = cfg.gate || {};
+    var on = !!cfg.enabled;
+    var warn = !cfg.triggerInstalled && on;
+    box.innerHTML =
+      '<label class="toggle-row"><input type="checkbox" id="weeklyAutoKpiToggle"' + (on ? ' checked' : '') + ' /> 每週五自動開啟本週 KPI</label>' +
+      '<span class="review-label">' + esc(cfg.message || '') + '</span>' +
+      (warn ? '<span class="tag tag-orange">觸發器尚未安裝，請重新勾選一次以安裝</span>' : '') +
+      '<span class="review-label">今天星期' + esc(g.weekday || '?') + '｜本週 ' + esc(g.weekId || '') +
+        '｜啟用中選手帳號 ' + esc(String(g.activeAccounts == null ? '?' : g.activeAccounts)) + ' 人</span>' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="weeklyAutoKpiRunNow">立即補開一次</button>';
+
+    el('weeklyAutoKpiToggle').addEventListener('change', async function (e) {
+      var want = e.target.checked;
+      e.target.disabled = true;
+      var res = await api({ action: 'setWeeklyKpiAuto', enabled: want });
+      e.target.disabled = false;
+      notify(res && res.ok ? (want ? '✅ 已開啟每週五自動開啟' : '已關閉自動開啟') : ((res && res.error) || '設定失敗'));
+      renderWeeklyAutoKpi(res);
+    });
+    el('weeklyAutoKpiRunNow').addEventListener('click', async function () {
+      notify('嘗試補開本週 KPI…');
+      var res = await api({ action: 'runWeeklyKpiNow' });
+      if (res && res.ok) {
+        notify('✅ 已開啟本週 KPI' + (res.line && res.line.ok ? '，並已推播 LINE' : '（LINE 未推播）'));
+        loadCoachData();
+      } else {
+        notify('沒有開啟：' + ((res && (res.skipped || res.error)) || '未知原因'));
+        loadWeeklyAutoKpi();
+      }
+    });
+  }
+
+  async function loadWeeklyAutoKpi() {
+    try { renderWeeklyAutoKpi(await api({ action: 'getWeeklyKpiAuto' })); }
+    catch (e) { renderWeeklyAutoKpi(null); }
   }
 
   /* ===================== 學生端 ===================== */

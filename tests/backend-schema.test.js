@@ -53,7 +53,17 @@ function load(ss) {
   const sandbox = {
     console,
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, setProperty: () => {}, deleteProperty: () => {} }) },
+    // 真的存起來，否則像「自動開啟開關」這種讀寫 Script Properties 的邏輯測不到
+    PropertiesService: (() => {
+      const store = {};
+      const api = {
+        getProperty: k => (k in store ? store[k] : null),
+        setProperty: (k, v) => { store[k] = String(v); return api; },
+        deleteProperty: k => { delete store[k]; return api; },
+        getProperties: () => Object.assign({}, store)
+      };
+      return { getScriptProperties: () => api };
+    })(),
     CacheService: { getScriptCache: () => ({ get: () => null, put: () => {}, remove: () => {} }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
     Session: { getScriptTimeZone: () => 'Asia/Taipei', getActiveUser: () => ({ getEmail: () => '' }) },
@@ -65,7 +75,22 @@ function load(ss) {
       getUuid: () => 'uuid'
     },
     ContentService: { createTextOutput: () => ({ setMimeType: () => ({}) }), MimeType: { JSON: 'json' } },
-    UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getContentText: () => '{}' }) }
+    UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getContentText: () => '{}' }) },
+    ScriptApp: (() => {
+      let triggers = [];
+      return {
+        WeekDay: { FRIDAY: 'FRIDAY' },
+        getProjectTriggers: () => triggers.slice(),
+        deleteTrigger: t => { triggers = triggers.filter(x => x !== t); },
+        newTrigger: fn => {
+          const b = {
+            timeBased: () => b, onWeekDay: () => b, atHour: () => b,
+            create: () => { const t = { getHandlerFunction: () => fn }; triggers.push(t); return t; }
+          };
+          return b;
+        }
+      };
+    })()
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
@@ -196,6 +221,38 @@ const t = (name, ok, extra) => results.push({ name, ok, extra });
   t('setupSheet stays disabled', r.ok === false, r.error);
   t('schemaAudit requires coach auth', g.schemaAudit({}).ok === false, JSON.stringify(g.schemaAudit({})).slice(0, 80));
   t('schemaMigrate requires coach auth', g.schemaMigrate({ apply: true }).ok === false, JSON.stringify(g.schemaMigrate({ apply: true })).slice(0, 80));
+}
+
+/* --- 情境 F：每週五自動開啟 KPI 的閘門 --- */
+{
+  const ss = new FakeSpreadsheet();
+  const g = load(ss);
+  // 沒有任何選手帳號時，必須明確說出原因，而不是靜默什麼都不做
+  const gate = g.weeklyKpiGateCheck_();
+  t('gate check names the blocking reason instead of failing silently',
+    typeof gate.blockedBy === 'string' && gate.blockedBy.length > 0, JSON.stringify(gate));
+  t('empty student_accounts is reported as the blocker',
+    gate.blockedBy.indexOf('選手帳號') !== -1, gate.blockedBy);
+  t('gate reports weekday / weekId / account count for diagnosis',
+    !!gate.weekday && !!gate.weekId && gate.activeAccounts === 0, JSON.stringify(gate));
+
+  const run = g.autoOpenWeeklyKpi();
+  t('autoOpenWeeklyKpi refuses to create a session when blocked',
+    run.ok === false && !!run.skipped, JSON.stringify(run).slice(0, 140));
+
+  t('the coach-facing status action requires coach auth',
+    g.getWeeklyKpiAuto({}).ok === false, JSON.stringify(g.getWeeklyKpiAuto({})).slice(0, 80));
+  t('toggling auto-open requires coach auth',
+    g.setWeeklyKpiAuto({ enabled: false }).ok === false, '');
+  t('the manual re-run action requires coach auth',
+    g.runWeeklyKpiNow({}).ok === false, '');
+
+  // 關掉開關之後，連日期都不用看就該停手
+  g.setProp(g.WEEKLY_KPI_AUTO_PROP, 'false');
+  t('the kill switch is honoured', g.weeklyKpiAutoEnabled_() === false, '');
+  const off = g.autoOpenWeeklyKpi();
+  t('a disabled auto-open reports being switched off',
+    off.ok === false && /關閉/.test(off.skipped || ''), JSON.stringify(off).slice(0, 120));
 }
 
 console.log('');
