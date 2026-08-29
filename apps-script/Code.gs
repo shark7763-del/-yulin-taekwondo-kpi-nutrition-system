@@ -3685,10 +3685,28 @@ function mentalRequestedStudent_(data, allowCoach, allowParent) {
   return { ok: true, session: s, name: normalizeName(s.studentName), athleteId: s.studentId || '' };
 }
 
+/*
+   判定「這一列資料是不是這個人的」。
+
+   ⚠️ athleteId 不可單獨採信（見 DATA_CONTRACT.md §1）：
+     who.athleteId  來自 session，是後端穩定的 studentId（例：ST-A）
+     row.athleteId  可能是前端依名單陣列索引產生的值（例：S003）
+   兩者值域不同，且索引值會在教練刪除／重排名單後位移。
+
+   原本的寫法是「兩邊都有 athleteId 就只比 athleteId」，造成兩種故障：
+     (a) 值域不符 → 回 false → 選手看不到自己的心理準備資料
+     (b) 位移後撞號 → 回 true → 讀到別人的心理準備資料
+
+   改為：athleteId 只能「加強」比對，不能推翻姓名。
+   兩邊都有姓名時，以姓名為準；姓名缺一時才單獨採信 id。
+*/
 function mentalSameStudent_(row, who) {
   if (!row || !who) return false;
-  if (who.athleteId && row.athleteId) return String(row.athleteId) === String(who.athleteId);
-  return normalizeName(row.studentName) === normalizeName(who.name);
+  var hasNames = !!(row.studentName && who.name);
+  var nameMatch = hasNames && normalizeName(row.studentName) === normalizeName(who.name);
+  var idMatch = !!(row.athleteId && who.athleteId) && String(row.athleteId) === String(who.athleteId);
+  if (hasNames) return nameMatch;   // 姓名說了算：撞號不會外洩，值域不符也讀得到自己
+  return idMatch;                   // 只有在缺姓名時才退回比對 id
 }
 
 function mentalCanAccessCompetition_(competitionId, who) {

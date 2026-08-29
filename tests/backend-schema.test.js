@@ -449,6 +449,41 @@ const t = (name, ok, extra) => results.push({ name, ok, extra });
     JSON.stringify(viaNames));
 }
 
+/* --- 情境 I：身分比對不可單獨採信不穩定的 athleteId --- */
+{
+  const ss = new FakeSpreadsheet();
+  const g = load(ss);
+  const same = (row, who) => g.mentalSameStudent_(row, who);
+
+  t('id 相符且姓名相符 → 同一人',
+    same({ athleteId: 'S003', studentName: '甲同學' }, { athleteId: 'S003', name: '甲同學' }) === true, '');
+
+  // 教練刪除選手後，丁 的新 ID 位移成 S003，而 S003 是丙的歷史紀錄
+  t('id 撞號但姓名不符 → 不是同一人（修掉資料外洩）',
+    same({ athleteId: 'S003', studentName: '丙同學' }, { athleteId: 'S003', name: '丁同學' }) === false,
+    '位移撞號時必須以姓名為準');
+
+  // session 帶的是穩定的 studentId，資料列存的是前端索引值 → 值域不同
+  t('id 值域不同但姓名相符 → 同一人（修掉看不到自己的資料）',
+    same({ athleteId: 'S003', studentName: '甲同學' }, { athleteId: 'ST-A', name: '甲同學' }) === true,
+    'who.athleteId 是 studentId，row.athleteId 是索引值');
+
+  t('姓名前後空白不影響比對',
+    same({ athleteId: '', studentName: ' 甲同學 ' }, { athleteId: '', name: '甲同學' }) === true, '');
+
+  t('姓名不符且 id 不符 → 不是同一人',
+    same({ athleteId: 'S001', studentName: '甲同學' }, { athleteId: 'S002', name: '乙同學' }) === false, '');
+
+  t('資料列缺姓名時，才單獨採信 id',
+    same({ athleteId: 'ST-A', studentName: '' }, { athleteId: 'ST-A', name: '甲同學' }) === true, '');
+
+  t('兩邊都缺姓名且 id 不符 → 不是同一人',
+    same({ athleteId: 'ST-A', studentName: '' }, { athleteId: 'ST-B', name: '' }) === false, '');
+
+  t('空物件不會被判成同一人',
+    same(null, { name: '甲' }) === false && same({ studentName: '甲' }, null) === false, '');
+}
+
 console.log('');
 results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
 const failed = results.filter(r => !r.ok).length;
