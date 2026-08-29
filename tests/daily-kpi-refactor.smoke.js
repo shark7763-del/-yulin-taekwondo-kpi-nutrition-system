@@ -621,6 +621,91 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
       && /上限/.test(aiCases.AI_CAPPED.reason),
     [aiCases.AI_DISABLED.reason, aiCases.AI_NO_KEY.reason, aiCases.AI_CAPPED.reason].join(' | '));
 
+  // 17. athleteId 穩定性 —— 這是 DATA_CONTRACT.md §1 記錄的已知 P0。
+  //     下面是「特徵測試」：它斷言的是**目前實際行為**（含缺陷），
+  //     目的是讓這個缺陷無法被靜默修改或遺忘。
+  //     修好之後，標記 [KNOWN P0] 的那幾條會失敗，屆時必須連同 DATA_CONTRACT.md 一起更新。
+  const ids = await page.evaluate(() => {
+    const idsFor = list => {
+      localStorage.setItem('yulin_players', JSON.stringify(list));
+      return list.map(n => n + '=' + window.getAthleteIdForName(n));
+    };
+    const out = {};
+    out.base = idsFor(['甲', '乙', '丙', '丁']);
+    out.afterDelete = idsFor(['甲', '丙', '丁']);          // 刪掉「乙」
+    out.afterAppend = idsFor(['甲', '丙', '丁', '戊']);     // 最後新增
+    out.afterReorder = idsFor(['丁', '甲', '丙']);          // 重排
+    localStorage.removeItem('yulin_players');
+    out.emptyRoster = window.getAthleteIdForName('甲');     // 全新裝置
+    localStorage.setItem('yulin_players', JSON.stringify(['測試選手', '隊友一號', '隊友二號']));
+    return out;
+  });
+  t('在名單最後新增選手，不影響既有 athleteId（安全操作）',
+    ids.afterAppend.slice(0, 3).join(',') === ids.afterDelete.join(','),
+    JSON.stringify({ afterDelete: ids.afterDelete, afterAppend: ids.afterAppend }));
+  t('[KNOWN P0] 刪除選手會讓其後所有人的 athleteId 位移',
+    ids.base[2] === '丙=S003' && ids.afterDelete[1] === '丙=S002',
+    JSON.stringify({ base: ids.base, afterDelete: ids.afterDelete }));
+  t('[KNOWN P0] 位移後的新 ID 會撞到別人歷史紀錄的 ID',
+    ids.base[2].endsWith('S003') && ids.afterDelete[2].endsWith('S003')
+      && ids.base[2].split('=')[0] !== ids.afterDelete[2].split('=')[0],
+    `刪除前 ${ids.base[2]}／刪除後 ${ids.afterDelete[2]}`);
+  t('[KNOWN P0] 重排名單會改變既有 athleteId',
+    ids.afterReorder[0] === '丁=S001', JSON.stringify(ids.afterReorder));
+  t('[KNOWN P0] 名單為空的裝置會落入姓名雜湊分支（格式與索引分支不同）',
+    /^S\d{4}$/.test(ids.emptyRoster) && ids.emptyRoster !== 'S001', ids.emptyRoster);
+
+  // 18. 草稿：先前零測試。兩套實作（10-init.js 基礎版 + 14-kpi-refactor.js 覆寫）互相包裹，
+  //     且有一條「只還原今天的草稿」規則，過期草稿必須被丟棄。
+  const draft = await page.evaluate(() => {
+    const out = {};
+    const KEY = 'yulin_form_draft';
+
+    // (1) 存草稿：基礎欄位與 refactor 加掛的欄位都要進去
+    window.__fillValidForm();
+    window.saveDraft();
+    let parsed = {};
+    try { parsed = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+    out.hasBaseField = parsed.trainingTopic === '旋踢距離控制';
+    out.hasRefactorExtras = !!parsed._dailyScores && !!parsed._reflectionMeta;
+
+    // (2) 清空表單：欄位要清掉，草稿也要一併刪除（clearForm 會呼叫 clearDraft）
+    window.clearForm();
+    out.clearedTopic = document.getElementById('trainingTopic').value;
+    out.clearedAspect = document.getElementById('daily-card-dailyTechnicalScore').dataset.value;
+    out.draftRemovedByClear = localStorage.getItem(KEY) === null;
+
+    // (3) 還原：重新填、存檔，只把畫面欄位弄髒（不刪草稿），再還原
+    window.__fillValidForm();
+    window.saveDraft();
+    document.getElementById('trainingTopic').value = '';
+    document.getElementById('reflection').value = '';
+    window.setDailySelection && window.setDailySelection('dailyTechnicalScore', '');
+    out.restoreReturned = !!window.restoreDraft();
+    out.restoredTopic = document.getElementById('trainingTopic').value;
+    out.restoredAspect = document.getElementById('daily-card-dailyTechnicalScore').dataset.value;
+    out.restoredReflection = document.getElementById('reflection').value;
+
+    // (4) 昨天的草稿必須被丟棄，而且要順手清掉
+    const stale = JSON.parse(localStorage.getItem(KEY));
+    stale.date = '2020-01-01';
+    localStorage.setItem(KEY, JSON.stringify(stale));
+    out.staleRestoreReturned = !!window.restoreDraft();
+    out.staleDraftRemoved = localStorage.getItem(KEY) === null;
+    return out;
+  });
+  t('saveDraft 同時寫入基礎欄位與 refactor 加掛的欄位',
+    draft.hasBaseField && draft.hasRefactorExtras, JSON.stringify(draft));
+  t('clearForm 會清掉欄位與六面向評分，並一併刪除草稿',
+    draft.clearedTopic === '' && !draft.clearedAspect && draft.draftRemovedByClear,
+    JSON.stringify(draft));
+  t('restoreDraft 會把基礎欄位、六面向評分與心得一起復原',
+    draft.restoreReturned && draft.restoredTopic === '旋踢距離控制'
+      && draft.restoredAspect === '4' && /右腳橫踢/.test(draft.restoredReflection),
+    JSON.stringify(draft));
+  t('昨天的草稿會被丟棄，不會蓋掉今天的填寫',
+    draft.staleRestoreReturned === false && draft.staleDraftRemoved, JSON.stringify(draft));
+
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
   console.log('');

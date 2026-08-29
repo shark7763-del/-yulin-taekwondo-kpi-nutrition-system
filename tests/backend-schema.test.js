@@ -64,7 +64,17 @@ function load(ss) {
       };
       return { getScriptProperties: () => api };
     })(),
-    CacheService: { getScriptCache: () => ({ get: () => null, put: () => {}, remove: () => {} }) },
+    // 真的存起來：getAuthSession 從 CacheService 讀 'auth:<token>'，
+    // 空殼版本會讓所有需要 session 的測試無法進行。
+    CacheService: (() => {
+      const c = {};
+      const api = {
+        get: k => (k in c ? c[k] : null),
+        put: (k, v) => { c[k] = String(v); },
+        remove: k => { delete c[k]; }
+      };
+      return { getScriptCache: () => api };
+    })(),
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
     Session: { getScriptTimeZone: () => 'Asia/Taipei', getActiveUser: () => ({ getEmail: () => '' }) },
     Utilities: {
@@ -253,6 +263,71 @@ const t = (name, ok, extra) => results.push({ name, ok, extra });
   const off = g.autoOpenWeeklyKpi();
   t('a disabled auto-open reports being switched off',
     off.ok === false && /關閉/.test(off.skipped || ''), JSON.stringify(off).slice(0, 120));
+}
+
+/* --- 情境 G：家長權限隔離（隱私邊界，先前零測試） --- */
+{
+  const ss = new FakeSpreadsheet();
+  const g = load(ss);
+  const H = g.HEADERS;
+  const row = fields => H.map(h => (h in fields ? fields[h] : ''));
+  // 兩個家庭的資料放在同一張表
+  ss.add('records', [
+    H,
+    row({ recordId: 'r1', timestamp: '2026-08-28T01:00:00Z', date: '2026-08-28', name: '甲同學',
+          studentName: '甲同學', studentId: 'ST-A', weightKg: '55', painArea: '腳踝',
+          urineStatus: '深黃', coachPrivateNote: '甲的私密備註', tomorrowGoal: '甲的目標' }),
+    row({ recordId: 'r2', timestamp: '2026-08-28T01:00:00Z', date: '2026-08-28', name: '乙同學',
+          studentName: '乙同學', studentId: 'ST-B', weightKg: '48', painArea: '手腕',
+          urineStatus: '正常', coachPrivateNote: '乙的私密備註', tomorrowGoal: '乙的目標' })
+  ]);
+
+  const seedSession = (token, session) =>
+    g.CacheService.getScriptCache().put('auth:' + token, JSON.stringify(session));
+
+  // 甲的家長，已完成同意
+  seedSession('tok-parent-a', {
+    role: 'parent', studentId: 'ST-A', studentName: '甲同學', consentStatus: 'agreed'
+  });
+  const asParentA = g.authRecordResult({ authToken: 'tok-parent-a', limit: 50 }, 'recent');
+  const rows = (asParentA && asParentA.data) || [];
+  const names = rows.map(r => String(r.name));
+
+  t('家長讀得到自己孩子的紀錄',
+    asParentA.ok === true && names.includes('甲同學'), JSON.stringify({ ok: asParentA.ok, names }));
+  t('家長讀不到其他選手的紀錄',
+    !names.includes('乙同學'), JSON.stringify(names));
+  t('家長拿不到體重／疼痛部位／尿液等敏感欄位',
+    rows.every(r => r.weightKg === undefined && r.painArea === undefined && r.urineStatus === undefined),
+    JSON.stringify(rows[0] || {}).slice(0, 200));
+  t('家長拿不到教練私密備註',
+    rows.every(r => r.coachPrivateNote === undefined), JSON.stringify(rows[0] || {}).slice(0, 200));
+
+  // 未完成同意的家長要被擋
+  seedSession('tok-parent-noconsent', {
+    role: 'parent', studentId: 'ST-A', studentName: '甲同學', consentStatus: 'pending'
+  });
+  const noConsent = g.authRecordResult({ authToken: 'tok-parent-noconsent', limit: 50 }, 'recent');
+  t('尚未完成個資同意的家長讀不到任何資料',
+    noConsent.ok === false && noConsent.consentRequired === true, JSON.stringify(noConsent));
+
+  // 沒有 session 一律擋下
+  const anon = g.authRecordResult({ limit: 50 }, 'recent');
+  t('沒有登入讀不到任何紀錄',
+    anon.ok === false && anon.authRequired === true, JSON.stringify(anon));
+
+  // 選手只能讀自己的
+  seedSession('tok-student-b', {
+    role: 'student', studentId: 'ST-B', studentName: '乙同學'
+  });
+  const asStudentB = g.authRecordResult({ authToken: 'tok-student-b', limit: 50 }, 'recent');
+  const bNames = ((asStudentB && asStudentB.data) || []).map(r => String(r.name));
+  t('選手讀不到其他選手的紀錄',
+    asStudentB.ok === true && bNames.includes('乙同學') && !bNames.includes('甲同學'),
+    JSON.stringify(bNames));
+  t('選手看得到自己的完整欄位（不被家長遮蔽規則影響）',
+    ((asStudentB.data || [])[0] || {}).weightKg === '48',
+    JSON.stringify((asStudentB.data || [])[0] || {}).slice(0, 160));
 }
 
 console.log('');
