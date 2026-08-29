@@ -42,13 +42,18 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   const wired = await page.evaluate(() => ({
     refactor: !!window.__TEAMPRO_KPI_REFACTOR__,
     hasOrigBuild: typeof window.__origBuildRecord === 'function',
-    hasOrigValidate: typeof window.__origValidateForm === 'function',
+    // validateForm / renderKpiSliders 是完全取代而非包裹，不該存在 __orig 版本；
+    // 留著會讓人以為可以「還原原本行為」，而原版已經無法在現行 DOM 上通過。
+    noOrigValidate: typeof window.__origValidateForm === 'undefined',
+    noOrigRenderSliders: typeof window.__origRenderKpiSliders === 'undefined',
     hasOrigToggle: typeof window.__origToggleAbsenceReason === 'function',
     dailyAvailable: window.isDailyKpiAvailable()
   }));
-  t('refactor module loaded + wrapped originals',
-    wired.refactor && wired.hasOrigBuild && wired.hasOrigValidate && wired.hasOrigToggle && wired.dailyAvailable === true,
+  t('refactor module loaded + genuinely wrapped originals are chained',
+    wired.refactor && wired.hasOrigBuild && wired.hasOrigToggle && wired.dailyAvailable === true,
     JSON.stringify(wired));
+  t('full replacements do not leave a misleading __orig capture behind',
+    wired.noOrigValidate && wired.noOrigRenderSliders, JSON.stringify(wired));
 
   // 2. daily six-aspect cards render
   const cards = await page.evaluate(() =>

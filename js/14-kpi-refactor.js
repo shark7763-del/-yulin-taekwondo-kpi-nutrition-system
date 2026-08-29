@@ -626,8 +626,15 @@
   if (typeof window.saveDraft === 'function') window.__origSaveDraft = window.saveDraft;
   if (typeof window.restoreDraft === 'function') window.__origRestoreDraft = window.restoreDraft;
   if (typeof window.clearForm === 'function') window.__origClearForm = window.clearForm;
-  if (typeof window.validateForm === 'function') window.__origValidateForm = window.validateForm;
-  if (typeof window.renderKpiSliders === 'function') window.__origRenderKpiSliders = window.renderKpiSliders;
+  /* validateForm 與 renderKpiSliders 是「完全取代」，不是包裹 ——
+     底下的覆寫版沒有、也不應該呼叫原版：
+       - 原版 validateForm（03-forms-scoring.js）要求 30 根 .kpi-slider 都被滑過，
+         而那些元素在改成六面向自評後已不存在，呼叫它必定無法通過。
+       - 原版 renderKpiSliders 會把 #kpiContainer 重建成 30 拉桿 UI，
+         直接蓋掉這裡剛畫好的六面向卡片。
+     原本這裡有存 __origValidateForm / __origRenderKpiSliders，
+     但從未被呼叫，只會讓人誤以為有鏈接、進而在「還原原本行為」時把死路叫回來。
+     刻意不保留。原版的副作用改由覆寫版自己重現（見 renderKpiSliders 上方註解）。 */
   if (typeof window.updatePainReadout === 'function') window.__origUpdatePainReadout = window.updatePainReadout;
 
   window.collectScores = collectScores;
