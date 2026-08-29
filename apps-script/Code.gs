@@ -229,6 +229,62 @@ var HEADERS = [
 ];
 
 /* ============================================================
+   ★ 授權用：在 Apps Script 編輯器手動執行這一支
+   （刻意放在檔案最前面，函式下拉一打開就看得到，不用往下捲）
+
+   什麼時候要跑：
+     教練後台的 AI 測試出現「需要重新授權」時。
+
+   為什麼要跑：
+     UrlFetchApp 需要 script.external_request 權限。網頁端是以擁有者
+     既有的授權在執行，拿不到新權限，只有擁有者本人在編輯器執行一次
+     「真的會連外」的函式，Google 才會跳出同意畫面。
+     只宣告 oauthScopes 不會觸發同意，一定要有實際的連外呼叫。
+
+   會做什麼：
+     1. 連一個 Google 的 204 空回應端點，證明連外權限已生效（不傳送任何資料）
+     2. 若已設定 OPENAI_API_KEY，順便查詢模型清單驗證金鑰與餘額
+        （只讀取，不產生內容、不計費）
+   不會做什麼：
+     不寫入試算表、不發 LINE、不改任何設定。
+   ============================================================ */
+function 授權連線至外部服務() {
+  var out = { 連外權限: '未知', OpenAI金鑰: '未檢查' };
+
+  try {
+    var probe = UrlFetchApp.fetch('https://www.google.com/generate_204', { muteHttpExceptions: true });
+    out['連外權限'] = '✅ 正常（HTTP ' + probe.getResponseCode() + '）';
+  } catch (e) {
+    out['連外權限'] = '❌ 仍未授權：' + String(e);
+    console.error('external request still blocked: ' + String(e));
+    Logger.log(JSON.stringify(out));
+    return out;
+  }
+
+  var key = getProp('OPENAI_API_KEY');
+  if (!key) {
+    out['OpenAI金鑰'] = '⚠️ 尚未設定 OPENAI_API_KEY';
+  } else {
+    try {
+      var r = UrlFetchApp.fetch('https://api.openai.com/v1/models', {
+        method: 'get', muteHttpExceptions: true,
+        headers: { Authorization: 'Bearer ' + key }
+      });
+      var code = r.getResponseCode();
+      if (code === 200) out['OpenAI金鑰'] = '✅ 有效';
+      else if (code === 401) out['OpenAI金鑰'] = '❌ 金鑰無效或已撤銷（HTTP 401）';
+      else if (code === 429) out['OpenAI金鑰'] = '❌ 額度不足或被限流（HTTP 429）——請到 platform.openai.com 確認餘額';
+      else out['OpenAI金鑰'] = '⚠️ HTTP ' + code + '：' + r.getContentText().slice(0, 200);
+    } catch (e2) {
+      out['OpenAI金鑰'] = '❌ 呼叫失敗：' + String(e2);
+    }
+  }
+
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
+/* ============================================================
    Web App 入口
    ============================================================ */
 
