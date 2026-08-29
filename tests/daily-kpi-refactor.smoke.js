@@ -568,6 +568,43 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('a genuine ping still succeeds',
     lostAction.pingResult && lostAction.pingResult.message === 'pong', JSON.stringify(lostAction.pingResult));
 
+  // 16. AI 代擬回覆退回內建模板時，要說出「為什麼」。原本一律印
+  //     「AI 未啟用或呼叫失敗」，教練看不出該去設定 Key、儲值、還是等明天。
+  const aiReason = await page.evaluate(async () => {
+    // pickCoachReplyType / fillCoachReplyTemplate 會讀不少欄位，ctx 太貧乏會直接丟例外
+    const ctx = {
+      name: '阿明', rangeDays: 7, averageScore: 3.8, scoreDelta: 0,
+      records: [], recentFlags: [], recentTrend: '穩定',
+      strongestArea: '體能', weakestArea: '技術',
+      reflection: '今天旋踢比較穩', tomorrowGoal: '收腳快一點',
+      traitLabel: '', traitSummary: '', communicationTips: '', trainingTips: '',
+      latest: { name: '阿明', averageScore: 3.8 }
+    };
+    const out = {};
+    const run = async stub => {
+      window.postToWebApp = stub;
+      const r = await window.generateCoachReplyFromPerformance(ctx, 'default');
+      return { source: r.source, reason: r.reason, hasText: !!(r.text && r.text.trim()) };
+    };
+    out.disabled = await run(async () => ({ ok: false, disabled: true, error: 'AI 回饋未啟用' }));
+    out.noKey = await run(async () => ({ ok: false, disabled: true, error: '尚未設定 API Key' }));
+    out.capped = await run(async () => ({ ok: false, capped: true }));
+    out.threw = await run(async () => { throw new Error('boom'); });
+    out.ok = await run(async () => ({ ok: true, versions: { student: { affirm: '今天很穩' } } }));
+    return out;
+  });
+  t('a disabled AI says so, and still returns usable text',
+    aiReason.disabled.source === 'fallback' && aiReason.disabled.reason === 'AI 回饋未啟用'
+      && aiReason.disabled.hasText, JSON.stringify(aiReason.disabled));
+  t('a missing API key is reported as such',
+    aiReason.noKey.reason === '尚未設定 API Key', JSON.stringify(aiReason.noKey));
+  t('hitting the daily cap is reported as a cap, not a failure',
+    /用量已達上限/.test(aiReason.capped.reason || ''), JSON.stringify(aiReason.capped));
+  t('a thrown call is reported as a call failure',
+    /呼叫 AI 失敗/.test(aiReason.threw.reason || ''), JSON.stringify(aiReason.threw));
+  t('a working AI still reports source=ai with no reason',
+    aiReason.ok.source === 'ai' && !aiReason.ok.reason, JSON.stringify(aiReason.ok));
+
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
   console.log('');

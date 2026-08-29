@@ -2862,11 +2862,13 @@ function generateCoachReplyFallback(ctx, mode) {
 }
 async function generateCoachReplyFromPerformance(playerContext, mode) {
   const ctx = await attachTraitToCoachContextAsync(playerContext || {});
+  let fallbackReason = '';
   if (getWebAppUrl()) {
     try {
       const res = await postToWebApp({ action: 'aiCoachPerformanceReply', context: ctx, mode: mode || 'default' });
       if (res && res.ok && res.replyText) return { text: res.replyText, source: 'ai' };
       if (res && res.ok && res.data && res.data.replyText) return { text: res.data.replyText, source: 'ai' };
+      if (res && res.ok === false && res.error) fallbackReason = res.error;
     } catch (e) { /* fallback */ }
     try {
       const record = Object.assign({}, ctx.latest || {}, {
@@ -2890,10 +2892,18 @@ async function generateCoachReplyFromPerformance(playerContext, mode) {
         const v = res.versions.student;
         const text = [v.affirm, v.watch, v.oneThing ? `今天方向：${v.oneThing}` : '', v.quote ? `「${v.quote}」` : ''].filter(Boolean).join(' ');
         if (text.trim()) return { text: text.trim(), source: 'ai' };
+        fallbackReason = 'AI 回傳的內容是空的';
+      } else {
+        // 後端會分辨「沒啟用」「沒設 Key」「今日用量已滿」「API 出錯」，
+        // 這些原因要帶到畫面上，否則教練只會看到一句看不出該做什麼的訊息。
+        fallbackReason = (res && res.capped) ? '今日 AI 用量已達上限'
+          : ((res && res.error) ? res.error : 'AI 回應格式不符');
       }
-    } catch (e) { /* fallback */ }
+    } catch (e) { fallbackReason = '呼叫 AI 失敗（網路或後端錯誤）'; }
+  } else {
+    fallbackReason = '尚未設定 Web App URL';
   }
-  return { text: generateCoachReplyFallback(ctx, mode || 'default'), source: 'fallback' };
+  return { text: generateCoachReplyFallback(ctx, mode || 'default'), source: 'fallback', reason: fallbackReason };
 }
 function coachReplyLineText(ctx, reply) {
   return `TeamPro 教練回覆
@@ -2948,7 +2958,9 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
           ta.value = result.text || generateCoachReplyFallback(ctx, mode);
           ta.dataset.generatedByAi = result.source === 'ai' ? 'true' : 'false';
         }
-        toast(result.source === 'ai' ? '✨ AI 已代擬回覆' : 'AI 未啟用或呼叫失敗，已使用內建模板');
+        toast(result.source === 'ai'
+          ? '✨ AI 已代擬回覆'
+          : `已使用內建模板${result.reason ? `（${result.reason}）` : ''}`);
       } catch (e) {
         if (ta) {
           ta.value = generateCoachReplyFallback(ctx, mode);
