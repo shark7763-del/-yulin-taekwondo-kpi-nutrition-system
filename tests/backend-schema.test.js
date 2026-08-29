@@ -330,6 +330,66 @@ const t = (name, ok, extra) => results.push({ name, ok, extra });
     JSON.stringify((asStudentB.data || [])[0] || {}).slice(0, 160));
 }
 
+/* --- 情境 J：AI 授權與 optional dependency（/goal 指定的五項） --- */
+{
+  const fsx = require('fs');
+  const pathx = require('path');
+  const rd = f => fsx.readFileSync(pathx.join(__dirname, '..', f), 'utf8');
+  const manifest = JSON.parse(rd('apps-script/appsscript.json'));
+  const src = rd('apps-script/Code.gs');
+  const front = rd('js/04-daily-submit.js');
+  const feedback = rd('js/05-feedback-readiness.js');
+  const count = (hay, needle) => hay.split(needle).length - 1;
+
+  // AUTH_SCOPE
+  const scopes = manifest.oauthScopes || [];
+  t('AUTH_SCOPE：appsscript.json 宣告 script.external_request',
+    scopes.includes('https://www.googleapis.com/auth/script.external_request'), JSON.stringify(scopes));
+  t('AUTH_SCOPE：既有 scope 未被移除（spreadsheets / script.scriptapp）',
+    scopes.includes('https://www.googleapis.com/auth/spreadsheets')
+      && scopes.includes('https://www.googleapis.com/auth/script.scriptapp'), JSON.stringify(scopes));
+  t('AUTH_SCOPE：未自行更動 deployment 存取設定',
+    manifest.webapp.executeAs === 'USER_DEPLOYING' && manifest.webapp.access === 'ANYONE_ANONYMOUS',
+    JSON.stringify(manifest.webapp));
+
+  // URLFETCH
+  const authFnIdx = src.indexOf('function 授權連線至外部服務()');
+  t('URLFETCH：授權用函式存在，且函式體內真的呼叫 UrlFetchApp',
+    authFnIdx > -1 && src.slice(authFnIdx, authFnIdx + 1500).includes('UrlFetchApp.fetch'),
+    'idx=' + authFnIdx);
+  t('URLFETCH：授權函式未經由 handleAction 對外開放（只能在編輯器執行）',
+    !src.includes("case '授權連線至外部服務'"), '');
+
+  // OPENAI_REQUEST
+  const openaiCalls = count(src, "UrlFetchApp.fetch('https://api.openai.com");
+  t('OPENAI_REQUEST：OpenAI 請求使用 UrlFetchApp.fetch',
+    openaiCalls >= 2, 'call sites: ' + openaiCalls);
+  t('OPENAI_REQUEST：非 200 回應被攔截並轉成 AI_HTTP_ERROR',
+    count(src, "errorCode: 'AI_HTTP_ERROR'") >= 2, '');
+  t('OPENAI_REQUEST：例外被分類（授權／逾時／網路／其他）',
+    src.includes('function aiErrorCode_') && src.includes('AI_AUTH_ERROR')
+      && src.includes('AI_TIMEOUT'), '');
+
+  // KPI_SAVE_WITH_AI_FAIL
+  const saveIdx = front.indexOf("action: 'addRecord'");
+  const aiIdx = front.indexOf('maybeEnhanceWithAiFeedback(rec, feedback)');
+  t('KPI_SAVE_WITH_AI_FAIL：AI 在 KPI 儲存之後才呼叫',
+    saveIdx > -1 && aiIdx > saveIdx, 'save@' + saveIdx + ' ai@' + aiIdx);
+  t('KPI_SAVE_WITH_AI_FAIL：AI 呼叫不被 await，無法阻塞或影響送出結果',
+    aiIdx > -1 && !front.includes('await maybeEnhanceWithAiFeedback'), '');
+  t('KPI_SAVE_WITH_AI_FAIL：AI 端任何例外都被吞掉，不冒泡到送出流程',
+    feedback.includes('async function maybeEnhanceWithAiFeedback')
+      && feedback.includes('catch (e) { /* 靜默退回模板 */ }'), '');
+
+  // FALLBACK
+  t('FALLBACK：後端 AI 失敗只回統一訊息，不回傳例外全文',
+    count(src, "error: 'AI 服務暫時無法使用'") >= 4
+      && !src.includes("error: '呼叫失敗：' + String(e)"), '');
+  t('FALLBACK：例外全文只寫進 Apps Script 執行記錄',
+    src.includes("console.error('aiCoachFeedback failed")
+      && src.includes("console.error('aiJsonCompletion_ failed"), '');
+}
+
 console.log('');
 results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
 const failed = results.filter(r => !r.ok).length;
