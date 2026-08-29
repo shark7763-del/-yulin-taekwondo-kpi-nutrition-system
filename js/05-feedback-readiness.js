@@ -527,6 +527,27 @@ function setupAiHandlers() {
     } catch (e) { if (st) { st.textContent = '❌ 儲存失敗，請確認連線'; st.className = 'conn-status fail'; } }
   });
 
+  // 把後端的錯誤分類轉成教練看得懂、也知道下一步要做什麼的說明。
+  // 只用穩定的分類代碼，不顯示 Exception 全文（那只寫進 Apps Script 執行記錄）。
+  function aiTestRemedy(res) {
+    const code = res && res.errorCode;
+    if (res && res.capped) return '今日 AI 次數已達上限，明天會自動重置。';
+    if (res && res.disabled) return String(res.error || 'AI 尚未啟用');
+    switch (code) {
+      case 'AI_AUTH_ERROR':
+        return '需要重新授權：請開啟 Apps Script 編輯器，執行任一函式，並在跳出的畫面允許「連線至外部服務」。';
+      case 'AI_HTTP_ERROR':
+        return 'AI 服務回應異常，常見原因是 API 金鑰無效或帳戶餘額不足，請到 platform.openai.com 確認。';
+      case 'AI_TIMEOUT':
+      case 'AI_NETWORK_ERROR':
+        return 'AI 服務連線逾時，請稍後再試一次。';
+      case 'AI_BAD_FORMAT':
+        return 'AI 回傳的格式不符，換一個模型或稍後再試。';
+      default:
+        return String((res && res.error) || '測試失敗') + '（詳細原因請看 Apps Script 的執行記錄）';
+    }
+  }
+
   const testBtn = $id('btnTestAi');
   if (testBtn) testBtn.addEventListener('click', async () => {
     const st = $id('aiStatus'), box = $id('aiTestResult');
@@ -547,8 +568,17 @@ function setupAiHandlers() {
             '<br>【明日任務】' + escapeHtml(v.oneThing || '') + '<br>「' + escapeHtml(v.quote || '') + '」';
         }
         if (st) { st.textContent = '✅ 測試成功，AI 已可使用'; st.className = 'conn-status ok'; }
-      } else if (st) { st.textContent = '❌ ' + ((res && res.error) || '測試失敗'); st.className = 'conn-status fail'; }
-    } catch (e) { if (st) { st.textContent = '❌ 測試失敗，請確認連線'; st.className = 'conn-status fail'; } }
+      } else if (st) {
+        // 這裡是教練專用的系統設定頁，也是唯一能修這件事的地方，
+        // 所以把錯誤「分類」轉成白話的處置指引。仍然不顯示 Exception 全文。
+        console.warn('[AI 測試] 後端回應', res);
+        st.textContent = '❌ ' + aiTestRemedy(res);
+        st.className = 'conn-status fail';
+      }
+    } catch (e) {
+      console.warn('[AI 測試] 呼叫失敗', e);
+      if (st) { st.textContent = '❌ 測試失敗，請確認連線'; st.className = 'conn-status fail'; }
+    }
   });
 }
 
