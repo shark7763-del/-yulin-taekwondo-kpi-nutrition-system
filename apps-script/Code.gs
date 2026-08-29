@@ -2229,6 +2229,17 @@ var AI_USER_CAP_DEFAULT = 40;     // 單一使用者每日呼叫上限（防狂�
 
 function aiDailyCap_() { var v = parseInt(aiProps_().getProperty('AI_DAILY_CAP'), 10); return (v > 0) ? v : AI_DAILY_CAP_DEFAULT; }
 function aiUserCap_()  { var v = parseInt(aiProps_().getProperty('AI_USER_CAP'), 10);  return (v > 0) ? v : AI_USER_CAP_DEFAULT; }
+/* 把例外分類成穩定的代碼，方便看記錄與寫測試；
+   對外一律只回「AI 服務暫時無法使用」，不外洩技術細節。 */
+function aiErrorCode_(e) {
+  var m = String((e && e.message) || e || '');
+  if (m.indexOf('script.external_request') !== -1 || m.indexOf('UrlFetchApp') !== -1
+      || m.indexOf('permission') !== -1 || m.indexOf('權限') !== -1) return 'AI_AUTH_ERROR';
+  if (m.indexOf('Timeout') !== -1 || m.indexOf('timed out') !== -1 || m.indexOf('逾時') !== -1) return 'AI_TIMEOUT';
+  if (m.indexOf('DNS') !== -1 || m.indexOf('Address unavailable') !== -1) return 'AI_NETWORK_ERROR';
+  return 'AI_CALL_FAILED';
+}
+
 function aiTodayKey_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Taipei', 'yyyy-MM-dd'); }
 
 // 單一 property 記錄今日用量，跨日自動歸零：{ d:'yyyy-MM-dd', n: 全域次數, u:{ 身分: 次數 } }
@@ -2396,7 +2407,10 @@ function aiCoachFeedback(data) {
     });
     var code = resp.getResponseCode();
     var body = resp.getContentText();
-    if (code !== 200) return { ok: false, error: 'OpenAI 回應 ' + code + '：' + body.slice(0, 300) };
+    if (code !== 200) {
+      console.error('OpenAI HTTP ' + code + ': ' + body.slice(0, 500));
+      return { ok: false, errorCode: 'AI_HTTP_ERROR', error: 'AI 服務暫時無法使用' };
+    }
     var json = JSON.parse(body);
     var content = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
     if (!content) return { ok: false, error: 'OpenAI 無回傳內容' };
@@ -2407,7 +2421,8 @@ function aiCoachFeedback(data) {
     try { cache.put(cacheKey, JSON.stringify(versions), 21600); } catch (e) {} // 6 小時
     return { ok: true, versions: versions, model: model };
   } catch (e) {
-    return { ok: false, error: '呼叫失敗：' + String(e) };
+    console.error('aiCoachFeedback failed: ' + String(e) + (e && e.stack ? '\n' + e.stack : ''));
+    return { ok: false, errorCode: aiErrorCode_(e), error: 'AI 服務暫時無法使用' };
   }
 }
 
@@ -2453,17 +2468,23 @@ function aiJsonCompletion_(auth, systemPrompt, userPrompt, cacheSeed) {
     });
     var code = resp.getResponseCode();
     var body = resp.getContentText();
-    if (code !== 200) return { ok: false, error: 'OpenAI 回應 ' + code + '：' + body.slice(0, 300) };
+    if (code !== 200) {
+      console.error('OpenAI HTTP ' + code + ': ' + body.slice(0, 500));
+      return { ok: false, errorCode: 'AI_HTTP_ERROR', error: 'AI 服務暫時無法使用' };
+    }
     var json = JSON.parse(body);
     var content = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
     if (!content) return { ok: false, error: 'OpenAI 無回傳內容' };
     var obj;
-    try { obj = JSON.parse(content); } catch (e) { return { ok: false, error: 'AI 回傳格式不符' }; }
+    try { obj = JSON.parse(content); } catch (e) { return { ok: false, errorCode: 'AI_BAD_FORMAT', error: 'AI 服務暫時無法使用' }; }
     aiBumpUsage_(identity);                                       // 成功才計次
     try { cache.put(cacheKey, JSON.stringify(obj), 21600); } catch (e) {} // 6 小時
     return { ok: true, obj: obj, model: model };
   } catch (e) {
-    return { ok: false, error: '呼叫失敗：' + String(e) };
+    // 例外全文只寫進 Apps Script 執行記錄；回給前端的是分類代碼，
+    // 避免把授權失敗、API Key 等技術細節顯示給教練／家長／選手。
+    console.error('aiJsonCompletion_ failed: ' + String(e) + (e && e.stack ? '\n' + e.stack : ''));
+    return { ok: false, errorCode: aiErrorCode_(e), error: 'AI 服務暫時無法使用' };
   }
 }
 

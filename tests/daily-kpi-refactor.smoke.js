@@ -7,7 +7,15 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
-  page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  // 有些測試會故意觸發錯誤路徑（例如 AI 授權失敗），那些 console.error 是預期的，
+  // 不該被當成「頁面壞掉」。只忽略我們自己標記過的。
+  const EXPECTED_CONSOLE = ['[AI 教練回覆]'];
+  page.on('console', m => {
+    if (m.type() !== 'error') return;
+    const text = m.text();
+    if (EXPECTED_CONSOLE.some(tag => text.includes(tag))) return;
+    errors.push('console: ' + text);
+  });
 
   // #name and #encourageTeammate are <select>s populated from the localStorage roster.
   // Without seeding it they have no options, `select.value = '...'` silently stays '',
@@ -568,10 +576,9 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('a genuine ping still succeeds',
     lostAction.pingResult && lostAction.pingResult.message === 'pong', JSON.stringify(lostAction.pingResult));
 
-  // 16. AI 代擬回覆退回內建模板時，要說出「為什麼」。原本一律印
-  //     「AI 未啟用或呼叫失敗」，教練看不出該去設定 Key、儲值、還是等明天。
-  const aiReason = await page.evaluate(async () => {
-    // pickCoachReplyType / fillCoachReplyTemplate 會讀不少欄位，ctx 太貧乏會直接丟例外
+  // 16. AI 教練回覆的四種情境。重點是：一定要有可用文字，而且技術細節
+  //     （授權失敗、HTTP 狀態碼、Exception 全文）不得出現在給人看的訊息裡。
+  const aiCases = await page.evaluate(async () => {
     const ctx = {
       name: '阿明', rangeDays: 7, averageScore: 3.8, scoreDelta: 0,
       records: [], recentFlags: [], recentTrend: '穩定',
@@ -580,30 +587,39 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
       traitLabel: '', traitSummary: '', communicationTips: '', trainingTips: '',
       latest: { name: '阿明', averageScore: 3.8 }
     };
-    const out = {};
     const run = async stub => {
       window.postToWebApp = stub;
       const r = await window.generateCoachReplyFromPerformance(ctx, 'default');
-      return { source: r.source, reason: r.reason, hasText: !!(r.text && r.text.trim()) };
+      return { source: r.source, reason: r.reason || '', hasText: !!(r.text && r.text.trim()) };
     };
-    out.disabled = await run(async () => ({ ok: false, disabled: true, error: 'AI 回饋未啟用' }));
-    out.noKey = await run(async () => ({ ok: false, disabled: true, error: '尚未設定 API Key' }));
-    out.capped = await run(async () => ({ ok: false, capped: true }));
-    out.threw = await run(async () => { throw new Error('boom'); });
-    out.ok = await run(async () => ({ ok: true, versions: { student: { affirm: '今天很穩' } } }));
-    return out;
+    return {
+      AI_SUCCESS: await run(async () => ({ ok: true, versions: { student: { affirm: '今天很穩' } } })),
+      AI_AUTH_ERROR: await run(async () => ({
+        ok: false, errorCode: 'AI_AUTH_ERROR', error: 'AI 服務暫時無法使用' })),
+      AI_TIMEOUT: await run(async () => ({
+        ok: false, errorCode: 'AI_TIMEOUT', error: 'AI 服務暫時無法使用' })),
+      AI_HTTP_ERROR: await run(async () => ({
+        ok: false, errorCode: 'AI_HTTP_ERROR', error: 'AI 服務暫時無法使用' })),
+      AI_THROWS: await run(async () => { throw new Error('你沒有呼叫「UrlFetchApp.fetch」的權限。必要權限：https://www.googleapis.com/auth/script.external_request'); }),
+      AI_DISABLED: await run(async () => ({ ok: false, disabled: true, error: 'AI 回饋未啟用' })),
+      AI_NO_KEY: await run(async () => ({ ok: false, disabled: true, error: '尚未設定 API Key' })),
+      AI_CAPPED: await run(async () => ({ ok: false, capped: true }))
+    };
   });
-  t('a disabled AI says so, and still returns usable text',
-    aiReason.disabled.source === 'fallback' && aiReason.disabled.reason === 'AI 回饋未啟用'
-      && aiReason.disabled.hasText, JSON.stringify(aiReason.disabled));
-  t('a missing API key is reported as such',
-    aiReason.noKey.reason === '尚未設定 API Key', JSON.stringify(aiReason.noKey));
-  t('hitting the daily cap is reported as a cap, not a failure',
-    /用量已達上限/.test(aiReason.capped.reason || ''), JSON.stringify(aiReason.capped));
-  t('a thrown call is reported as a call failure',
-    /呼叫 AI 失敗/.test(aiReason.threw.reason || ''), JSON.stringify(aiReason.threw));
-  t('a working AI still reports source=ai with no reason',
-    aiReason.ok.source === 'ai' && !aiReason.ok.reason, JSON.stringify(aiReason.ok));
+  const leaks = /UrlFetchApp|Exception|googleapis\.com|script\.external_request|HTTP|[0-9]{3}/;
+  t('AI_SUCCESS：AI 回覆正常',
+    aiCases.AI_SUCCESS.source === 'ai' && !aiCases.AI_SUCCESS.reason, JSON.stringify(aiCases.AI_SUCCESS));
+  ['AI_AUTH_ERROR', 'AI_TIMEOUT', 'AI_HTTP_ERROR', 'AI_THROWS'].forEach(k => {
+    const c = aiCases[k];
+    t(`${k}：退回模板且有可用文字`, c.source === 'fallback' && c.hasText, JSON.stringify(c));
+    t(`${k}：畫面訊息不含技術細節`,
+      c.reason === 'AI 服務目前暫時無法使用，已自動切換至教練回覆模板。' && !leaks.test(c.reason),
+      c.reason);
+  });
+  t('教練自己能處理的狀態仍照實說明（未啟用／未設金鑰／額度用完）',
+    /尚未啟用/.test(aiCases.AI_DISABLED.reason) && /金鑰/.test(aiCases.AI_NO_KEY.reason)
+      && /上限/.test(aiCases.AI_CAPPED.reason),
+    [aiCases.AI_DISABLED.reason, aiCases.AI_NO_KEY.reason, aiCases.AI_CAPPED.reason].join(' | '));
 
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));

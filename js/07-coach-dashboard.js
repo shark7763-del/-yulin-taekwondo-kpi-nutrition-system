@@ -2860,6 +2860,28 @@ function generateCoachReplyFallback(ctx, mode) {
   if (mode === 'coachStyle') text = text.replace(/接下來/g, '接著').replace(/教練要你/g, '我希望你').replace(/這是好事/g, '這點可以');
   return text;
 }
+/* AI 失敗時給使用者看的統一說法。
+   授權失敗、API Key、HTTP 狀態碼這類技術細節只寫進 console 與
+   Apps Script 執行記錄，不顯示給教練／家長／選手。
+   「還沒設定／今日額度用完」是教練自己可以處理的狀態，不算技術細節，照常說明。 */
+const AI_FALLBACK_MESSAGE = 'AI 服務目前暫時無法使用，已自動切換至教練回覆模板。';
+const AI_ACTIONABLE_REASON = {
+  AI_DISABLED: 'AI 教練回饋尚未啟用，已使用教練回覆模板。',
+  AI_NO_KEY: '尚未設定 AI 服務金鑰，已使用教練回覆模板。',
+  AI_CAPPED: '今日 AI 回饋次數已達上限，已使用教練回覆模板。'
+};
+function aiFallbackReason(res) {
+  // 技術細節一律只進 console
+  if (res) console.warn('[AI 教練回覆] 後端回應', { errorCode: res.errorCode, error: res.error, capped: res.capped, disabled: res.disabled });
+  if (!res) return AI_FALLBACK_MESSAGE;
+  if (res.capped) return AI_ACTIONABLE_REASON.AI_CAPPED;
+  if (res.disabled) {
+    return /金鑰|API Key/i.test(String(res.error || ''))
+      ? AI_ACTIONABLE_REASON.AI_NO_KEY : AI_ACTIONABLE_REASON.AI_DISABLED;
+  }
+  return AI_FALLBACK_MESSAGE;
+}
+
 async function generateCoachReplyFromPerformance(playerContext, mode) {
   const ctx = await attachTraitToCoachContextAsync(playerContext || {});
   let fallbackReason = '';
@@ -2868,7 +2890,7 @@ async function generateCoachReplyFromPerformance(playerContext, mode) {
       const res = await postToWebApp({ action: 'aiCoachPerformanceReply', context: ctx, mode: mode || 'default' });
       if (res && res.ok && res.replyText) return { text: res.replyText, source: 'ai' };
       if (res && res.ok && res.data && res.data.replyText) return { text: res.data.replyText, source: 'ai' };
-      if (res && res.ok === false && res.error) fallbackReason = res.error;
+      if (res && res.ok === false) fallbackReason = aiFallbackReason(res);
     } catch (e) { /* fallback */ }
     try {
       const record = Object.assign({}, ctx.latest || {}, {
@@ -2892,16 +2914,16 @@ async function generateCoachReplyFromPerformance(playerContext, mode) {
         const v = res.versions.student;
         const text = [v.affirm, v.watch, v.oneThing ? `今天方向：${v.oneThing}` : '', v.quote ? `「${v.quote}」` : ''].filter(Boolean).join(' ');
         if (text.trim()) return { text: text.trim(), source: 'ai' };
-        fallbackReason = 'AI 回傳的內容是空的';
+        fallbackReason = AI_FALLBACK_MESSAGE;
       } else {
-        // 後端會分辨「沒啟用」「沒設 Key」「今日用量已滿」「API 出錯」，
-        // 這些原因要帶到畫面上，否則教練只會看到一句看不出該做什麼的訊息。
-        fallbackReason = (res && res.capped) ? '今日 AI 用量已達上限'
-          : ((res && res.error) ? res.error : 'AI 回應格式不符');
+        fallbackReason = aiFallbackReason(res);
       }
-    } catch (e) { fallbackReason = '呼叫 AI 失敗（網路或後端錯誤）'; }
+    } catch (e) {
+      console.error('[AI 教練回覆] 呼叫失敗', e);
+      fallbackReason = AI_FALLBACK_MESSAGE;
+    }
   } else {
-    fallbackReason = '尚未設定 Web App URL';
+    fallbackReason = AI_FALLBACK_MESSAGE;
   }
   return { text: generateCoachReplyFallback(ctx, mode || 'default'), source: 'fallback', reason: fallbackReason };
 }
@@ -2958,9 +2980,7 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
           ta.value = result.text || generateCoachReplyFallback(ctx, mode);
           ta.dataset.generatedByAi = result.source === 'ai' ? 'true' : 'false';
         }
-        toast(result.source === 'ai'
-          ? '✨ AI 已代擬回覆'
-          : `已使用內建模板${result.reason ? `（${result.reason}）` : ''}`);
+        toast(result.source === 'ai' ? '✨ AI 已代擬回覆' : (result.reason || AI_FALLBACK_MESSAGE));
       } catch (e) {
         if (ta) {
           ta.value = generateCoachReplyFallback(ctx, mode);
