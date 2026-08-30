@@ -79,7 +79,23 @@ function load(ss) {
     Session: { getScriptTimeZone: () => 'Asia/Taipei', getActiveUser: () => ({ getEmail: () => '' }) },
     Utilities: {
       formatDate: (d, tz, fmt) => new Date(d).toISOString().slice(0, 10),
-      computeDigest: () => [1, 2, 3],
+      // 原本固定回 [1,2,3]，等於所有密碼的雜湊都一樣，登入測試會全部誤過。
+      // 這裡放一個確定性的雜湊：同輸入同輸出、不同輸入不同輸出，足以測登入邏輯。
+      computeDigest: (_alg, str) => {
+        const out = [];
+        let h1 = 0x811c9dc5, h2 = 0x01000193;
+        const s = String(str);
+        for (let i = 0; i < s.length; i++) {
+          h1 = ((h1 ^ s.charCodeAt(i)) * 16777619) >>> 0;
+          h2 = ((h2 + s.charCodeAt(i) * (i + 7)) * 2654435761) >>> 0;
+        }
+        for (let i = 0; i < 32; i++) {
+          h1 = ((h1 ^ (h1 << 13)) + h2 + i) >>> 0;
+          h2 = ((h2 ^ (h2 >>> 7)) + h1) >>> 0;
+          out.push((h1 ^ h2) & 0xff);
+        }
+        return out;
+      },
       DigestAlgorithm: { SHA_256: 'SHA_256' },
       Charset: { UTF_8: 'UTF_8' },
       getUuid: () => 'uuid'
@@ -328,6 +344,109 @@ const t = (name, ok, extra) => results.push({ name, ok, extra });
   t('選手看得到自己的完整欄位（不被家長遮蔽規則影響）',
     ((asStudentB.data || [])[0] || {}).weightKg === '48',
     JSON.stringify((asStudentB.data || [])[0] || {}).slice(0, 160));
+}
+
+/* --- 情境 H：登入（先前零測試） --- */
+{
+  const ss = new FakeSpreadsheet();
+  const g = load(ss);
+  const SA = g.STUDENT_ACCOUNT_HEADERS;
+  const CS = g.COACH_SETTING_HEADERS;
+  const mk = (H, f) => H.map(h => (h in f ? f[h] : ''));
+
+  // 教練：用模組自己的 hashSecret 產生正確的密碼雜湊當 fixture
+  ss.add('coach_settings', [CS, mk(CS, {
+    coachId: 'C1', teamId: 'T1',
+    coachPasswordHash: g.hashSecret('coach:C1', '正確密碼'), failedLoginCount: 0
+  })]);
+  // 選手：一個正常帳號、一個尚未啟用、一個已停用
+  ss.add('student_accounts', [SA,
+    mk(SA, { studentId: 'ST-A', studentName: '甲同學', accountStatus: 'active',
+             pinHash: g.hashSecret('pin:ST-A', '2468'), failedLoginCount: 0 }),
+    mk(SA, { studentId: 'ST-P', studentName: '待啟用同學', accountStatus: 'pending', failedLoginCount: 0 }),
+    mk(SA, { studentId: 'ST-D', studentName: '已停用同學', accountStatus: 'disabled',
+             pinHash: g.hashSecret('pin:ST-D', '1357'), failedLoginCount: 0 })
+  ]);
+
+  // 教練
+  const coachOk = g.coachLogin({ coachPassword: '正確密碼' });
+  t('教練：正確密碼可以登入並取得 authToken',
+    coachOk.ok === true && !!coachOk.authToken && coachOk.user.role === 'coach',
+    JSON.stringify({ ok: coachOk.ok, role: coachOk.user && coachOk.user.role }));
+  t('教練：錯誤密碼被擋下',
+    g.coachLogin({ coachPassword: '亂猜的' }).ok === false, '');
+  t('教練：空密碼被擋下',
+    g.coachLogin({ coachPassword: '' }).ok === false, '');
+
+  // 登入成功的 token 真的能通過 requireRole
+  const gate = g.schemaAudit({ authToken: coachOk.authToken });
+  t('教練 token 可通過 requireRole（登入與授權確實接得起來）',
+    gate.ok === true, JSON.stringify(gate).slice(0, 100));
+
+  // 選手
+  const stuOk = g.studentLogin({ studentName: '甲同學', pin: '2468' });
+  t('選手：正確 PIN 可以登入，session 帶正確的 studentId',
+    stuOk.ok === true && stuOk.user.studentId === 'ST-A' && stuOk.user.role === 'student',
+    JSON.stringify({ ok: stuOk.ok, sid: stuOk.user && stuOk.user.studentId }));
+  t('選手：錯誤 PIN 被擋下',
+    g.studentLogin({ studentName: '甲同學', pin: '0000' }).ok === false, '');
+  t('選手：用別人的姓名配自己的 PIN 也進不去',
+    g.studentLogin({ studentName: '已停用同學', pin: '2468' }).ok === false, '');
+  t('選手：不存在的姓名被擋下',
+    g.studentLogin({ studentName: '查無此人', pin: '2468' }).ok === false, '');
+
+  const pending = g.studentLogin({ studentName: '待啟用同學', pin: '2468' });
+  t('選手：尚未啟用的帳號被擋，並明確要求啟用',
+    pending.ok === false && pending.activationRequired === true, JSON.stringify(pending));
+  t('選手：已停用的帳號即使 PIN 正確也進不去',
+    g.studentLogin({ studentName: '已停用同學', pin: '1357' }).ok === false, '');
+
+  // 連續錯誤要鎖定
+  let locked = null;
+  for (let i = 0; i < g.LOGIN_MAX_FAILURES + 1; i++) {
+    locked = g.studentLogin({ studentName: '甲同學', pin: '9999' });
+  }
+  t('選手：連續錯誤達上限後帳號被鎖定',
+    locked.ok === false && locked.locked === true, JSON.stringify(locked));
+  t('選手：鎖定期間即使輸入正確 PIN 也進不去',
+    g.studentLogin({ studentName: '甲同學', pin: '2468' }).ok === false, '');
+
+  // 家長：以孩子姓名 + 手機後四碼登入
+  const PH = g.PARENT_HEADERS;
+  ss.add('parents', [PH,
+    mk(PH, { parentId: 'P1', parentName: '甲媽媽', studentName: '甲同學', studentId: 'ST-A',
+             parentPhone: '0912345678', parentPhoneLast4: '5678', bindStatus: 'verified',
+             consentStatus: 'agreed', failedLoginCount: 0 }),
+    mk(PH, { parentId: 'P2', parentName: '未綁定家長', studentName: '待啟用同學', studentId: 'ST-P',
+             parentPhone: '0987654321', parentPhoneLast4: '4321', bindStatus: 'pending',
+             consentStatus: 'agreed', failedLoginCount: 0 })
+  ]);
+
+  const parentOk = g.parentLogin({ studentName: '甲同學', parentPhoneLast4: '5678' });
+  t('家長：正確後四碼可以登入，session 綁到正確的孩子',
+    parentOk.ok === true && parentOk.user.studentId === 'ST-A' && parentOk.user.role === 'parent',
+    JSON.stringify({ ok: parentOk.ok, sid: parentOk.user && parentOk.user.studentId }));
+  t('家長：錯誤後四碼被擋下',
+    g.parentLogin({ studentName: '甲同學', parentPhoneLast4: '0000' }).ok === false, '');
+  t('家長：後四碼格式不對（非四位數字）被擋下',
+    g.parentLogin({ studentName: '甲同學', parentPhoneLast4: '56' }).ok === false, '');
+  t('家長：尚未完成綁定驗證的帳號進不去',
+    g.parentLogin({ studentName: '待啟用同學', parentPhoneLast4: '4321' }).ok === false, '');
+  t('家長：查無此孩子被擋下',
+    g.parentLogin({ studentName: '查無此人', parentPhoneLast4: '5678' }).ok === false, '');
+
+  // 家長登入拿到的 token，讀到的必須只有自己孩子的資料
+  ss.add('records', [g.HEADERS,
+    g.HEADERS.map(h => ({ recordId: 'r1', timestamp: '2026-08-28T01:00:00Z', date: '2026-08-28',
+      name: '甲同學', studentName: '甲同學', studentId: 'ST-A', weightKg: '55' }[h] || '')),
+    g.HEADERS.map(h => ({ recordId: 'r2', timestamp: '2026-08-28T01:00:00Z', date: '2026-08-28',
+      name: '已停用同學', studentName: '已停用同學', studentId: 'ST-D', weightKg: '48' }[h] || ''))
+  ]);
+  const viaLogin = g.authRecordResult({ authToken: parentOk.authToken, limit: 50 }, 'recent');
+  const viaNames = ((viaLogin && viaLogin.data) || []).map(r => String(r.name));
+  t('家長用真正登入取得的 token，仍然只讀得到自己孩子',
+    viaLogin.ok === true && viaNames.includes('甲同學') && !viaNames.includes('已停用同學'),
+    JSON.stringify(viaNames));
 }
 
 /* --- 情境 J：AI 授權與 optional dependency（/goal 指定的五項） --- */
