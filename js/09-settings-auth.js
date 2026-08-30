@@ -400,7 +400,37 @@ function renderSchemaAudit(res) {
    postToWebApp：以 POST 呼叫 Apps Script Web App。
    使用 text/plain 以避免 CORS preflight（Apps Script 對 simple request 較友善）。
 */
+/* 同一瞬間發出的「相同唯讀請求」去重。
+
+   實測：教練開一次頁面，getAllRecords / getKpiManageData /
+   getMentalCoachDashboard 各被兩條獨立路徑同時打一次（第一個還沒回來，
+   所以第二個吃不到快取）。Apps Script 會把同一使用者的執行排隊，
+   多打一次就是多排一次隊。
+
+   只對「唯讀且同參數必定同結果」的 action 生效，寫入類一律不去重。
+   合併的是「正在飛行中」的請求，不是快取 —— 請求一結束就清掉，
+   下次呼叫仍會真的去拿新資料，不會讀到過期內容。 */
+const INFLIGHT_DEDUP_ACTIONS = [
+  'getAllRecords', 'getKpiManageData', 'getMentalCoachDashboard', 'getRoster',
+  'getAllAttendanceReports', 'getCoachScores', 'getKpiSessions', 'getAuthConfig',
+  'getAllAppData', 'getAccountAdminData', 'getAiConfig', 'getLineStatus'
+];
+const _inflight = {};
+
 async function postToWebApp(body) {
+  const action = String((body && body.action) || '');
+  if (INFLIGHT_DEDUP_ACTIONS.indexOf(action) !== -1) {
+    const key = JSON.stringify(body);           // 參數不同就是不同請求（例如 appdata 的 prefix）
+    if (_inflight[key]) return _inflight[key];
+    const pending = postToWebAppRaw(body);
+    _inflight[key] = pending;
+    pending.then(() => { delete _inflight[key]; }, () => { delete _inflight[key]; });
+    return pending;
+  }
+  return postToWebAppRaw(body);
+}
+
+async function postToWebAppRaw(body) {
   const url = getWebAppUrl();
   if (!url) throw new Error('未設定 Web App URL');
   const role = getRole();

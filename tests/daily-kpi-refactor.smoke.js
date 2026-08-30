@@ -592,12 +592,15 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
       traitLabel: '', traitSummary: '', communicationTips: '', trainingTips: '',
       latest: { name: '阿明', averageScore: 3.8 }
     };
+    // ⚠️ 一定要還原：這支測試會覆寫 window.postToWebApp，不還原的話
+    // 後面所有測試都會打到這個 stub（曾經因此讓 in-flight 去重的測試量到 0 次呼叫）。
+    const savedPost = window.postToWebApp;
     const run = async stub => {
       window.postToWebApp = stub;
       const r = await window.generateCoachReplyFromPerformance(ctx, 'default');
       return { source: r.source, reason: r.reason || '', hasText: !!(r.text && r.text.trim()) };
     };
-    return {
+    const out = {
       AI_SUCCESS: await run(async () => ({ ok: true, versions: { student: { affirm: '今天很穩' } } })),
       AI_AUTH_ERROR: await run(async () => ({
         ok: false, errorCode: 'AI_AUTH_ERROR', error: 'AI 服務暫時無法使用' })),
@@ -610,6 +613,8 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
       AI_NO_KEY: await run(async () => ({ ok: false, disabled: true, error: '尚未設定 API Key' })),
       AI_CAPPED: await run(async () => ({ ok: false, capped: true }))
     };
+    window.postToWebApp = savedPost;
+    return out;
   });
   const leaks = /UrlFetchApp|Exception|googleapis\.com|script\.external_request|HTTP|[0-9]{3}/;
   t('AI_SUCCESS：AI 回覆正常',
@@ -738,6 +743,71 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('設定頁專用的請求不在開頁時發出（getAiConfig / getLineStatus / getAccountAdminData）',
     !reqs.tally.getAiConfig && !reqs.tally.getLineStatus && !reqs.tally.getAccountAdminData,
     JSON.stringify(reqs.tally));
+
+  // 20. in-flight 去重：同一瞬間發出的相同唯讀請求只會真的送出一次。
+  //     必須量在 postToWebAppRaw（真正發網路的那一層），而且要模擬真實延遲，
+  //     否則呼叫不會重疊，量不到去重效果。
+  const dedup = await page.evaluate(async () => {
+    const savedRole = localStorage.getItem('yulin_role');
+    const savedRaw = window.postToWebAppRaw;
+    localStorage.setItem('yulin_role', JSON.stringify({ role: 'coach', name: '教練', authToken: 't' }));
+    const calls = [];
+    window.postToWebAppRaw = async body => {
+      calls.push(body.action);
+      await new Promise(r => setTimeout(r, 300));
+      return { ok: true, data: [], sheets: [], students: [], parents: [], sessions: [] };
+    };
+
+    // (a) 直接驗證：同時發出 3 個相同請求，只該送出 1 次
+    const before = calls.length;
+    await Promise.all([
+      window.postToWebApp({ action: 'getAllRecords' }),
+      window.postToWebApp({ action: 'getAllRecords' }),
+      window.postToWebApp({ action: 'getAllRecords' })
+    ]);
+    const sameAction = calls.length - before;
+
+    // (b) 參數不同就不該被合併（appdata 的 prefix）
+    const before2 = calls.length;
+    await Promise.all([
+      window.postToWebApp({ action: 'getAllAppData', prefix: 'task:' }),
+      window.postToWebApp({ action: 'getAllAppData', prefix: 'riskHandle:' })
+    ]);
+    const diffParams = calls.length - before2;
+
+    // (c) 寫入類不得被去重
+    const before3 = calls.length;
+    await Promise.all([
+      window.postToWebApp({ action: 'addRecord', payload: { a: 1 } }).catch(() => {}),
+      window.postToWebApp({ action: 'addRecord', payload: { a: 1 } }).catch(() => {})
+    ]);
+    const writes = calls.length - before3;
+
+    // (d) 請求結束後不該被當成快取，下次仍要真的送出
+    const before4 = calls.length;
+    await window.postToWebApp({ action: 'getAllRecords' });
+    const afterSettled = calls.length - before4;
+
+    // (e) 整頁載入的網路請求總數
+    calls.length = 0;
+    if (typeof applyRole === 'function') applyRole();
+    await new Promise(r => setTimeout(r, 4000));
+    const tally = {};
+    calls.forEach(a => { tally[a] = (tally[a] || 0) + 1; });
+
+    if (savedRole) localStorage.setItem('yulin_role', savedRole); else localStorage.removeItem('yulin_role');
+    window.postToWebAppRaw = savedRaw;
+    return { sameAction, diffParams, writes, afterSettled, total: calls.length, tally };
+  });
+  t('同時發出的相同唯讀請求只真的送出一次', dedup.sameAction === 1, String(dedup.sameAction));
+  t('參數不同的請求不會被誤併（appdata 的 prefix）', dedup.diffParams === 2, String(dedup.diffParams));
+  t('寫入類請求不得被去重', dedup.writes === 2, String(dedup.writes));
+  t('請求結束後不當成快取，下次仍會真的送出', dedup.afterSettled === 1, String(dedup.afterSettled));
+  t('教練開頁實際送出的網路請求數 ≤ 11',
+    dedup.total <= 11, dedup.total + ' 個：' + JSON.stringify(dedup.tally));
+  t('三個曾經重複的唯讀請求各只送出一次',
+    (dedup.tally.getAllRecords || 0) <= 1 && (dedup.tally.getKpiManageData || 0) <= 1
+      && (dedup.tally.getMentalCoachDashboard || 0) <= 1, JSON.stringify(dedup.tally));
 
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
