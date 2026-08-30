@@ -16,6 +16,7 @@
 | 2026-08-29 | 72 | `f15c333` | 明確 oauthScopes（含 `script.external_request`）；AI 例外只記錄不外洩 |
 | 2026-08-29 | 73 | — | 使用者於 Apps Script UI 手動重新部署（授權新 scope） |
 | 2026-08-29 | 74 | `chore/external-request-authorizer` | 新增編輯器用的連外授權函式 `授權連線至外部服務()` |
+| 2026-08-30 | 78 | `31858bc` | 身分比對不再單獨採信不穩定的 athleteId（mentalSameStudent_） |
 
 ## 部署順序（不可顛倒）
 
