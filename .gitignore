@@ -25,3 +25,11 @@ node_modules/
 test-results/
 playwright-report/
 key.txt
+
+# ===== 絕對不可進版控：含真實選手個資／健康資料的匯出檔 =====
+# 這個 repo 是 public（GitHub Pages 由它發佈），任何 Sheet 匯出檔一旦推上去
+# 就等同公開未成年人的健康紀錄。副檔名一律擋掉，不要只擋單一檔名。
+*.xlsx
+*.xls
+*.csv
+匿名對照表*.json
