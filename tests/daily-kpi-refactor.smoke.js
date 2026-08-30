@@ -711,6 +711,34 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('昨天的草稿會被丟棄，不會蓋掉今天的填寫',
     draft.staleRestoreReturned === false && draft.staleDraftRemoved, JSON.stringify(draft));
 
+  // 19. 教練開頁的後端請求數量。Apps Script 會把同一使用者的執行排隊，
+  //     所以「請求次數」直接等於延遲。實測曾經一次開頁發出 21 個請求，
+  //     其中 getWeeklyKpiAuto 因為 renderCoachKpiManage() 有 17 個呼叫點而重打 6 次。
+  const reqs = await page.evaluate(async () => {
+    const savedRole = localStorage.getItem('yulin_role');
+    const savedPost = window.postToWebApp;
+    localStorage.setItem('yulin_role', JSON.stringify({ role: 'coach', name: '教練', authToken: 't' }));
+    const calls = [];
+    window.postToWebApp = async body => {
+      calls.push(body.action);
+      return { ok: true, data: [], sheets: [], students: [], parents: [], sessions: [] };
+    };
+    if (typeof applyRole === 'function') applyRole();
+    await new Promise(r => setTimeout(r, 2000));
+    const tally = {};
+    calls.forEach(a => { tally[a] = (tally[a] || 0) + 1; });
+    if (savedRole) localStorage.setItem('yulin_role', savedRole); else localStorage.removeItem('yulin_role');
+    window.postToWebApp = savedPost;
+    return { total: calls.length, tally };
+  });
+  t('教練開頁的後端請求數維持在合理範圍（≤ 15）',
+    reqs.total <= 15, reqs.total + ' 個：' + JSON.stringify(reqs.tally));
+  t('getWeeklyKpiAuto 一次開頁最多只打一次（不隨每次重繪重打）',
+    (reqs.tally.getWeeklyKpiAuto || 0) <= 1, JSON.stringify(reqs.tally));
+  t('設定頁專用的請求不在開頁時發出（getAiConfig / getLineStatus / getAccountAdminData）',
+    !reqs.tally.getAiConfig && !reqs.tally.getLineStatus && !reqs.tally.getAccountAdminData,
+    JSON.stringify(reqs.tally));
+
   console.log('');
   results.forEach(r => console.log((r.ok ? 'PASS  ' : 'FAIL  ') + r.name + (r.ok ? '' : '   -> ' + r.extra)));
   console.log('');
