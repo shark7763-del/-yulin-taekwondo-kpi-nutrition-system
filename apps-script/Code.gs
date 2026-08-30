@@ -1383,11 +1383,6 @@ function authorizedStudentName(data, allowCoach) {
   return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
 }
 
-/* 參考實作（reference implementation）。
-   authRecordResult 已改走 recentRecordsForIdentityFast_，這支目前沒有呼叫者，
-   但**刻意保留**：它是 tests/read-optimization.test.js 用來比對「新舊結果必須完全一致」
-   的對照組，也是最短的 rollback 路徑（把 authRecordResult 改回呼叫它即可）。
-   請勿當成死碼刪除。 */
 function recordsForIdentity(identity) {
   var all = getAllRecords();
   return all.filter(function (r) {
@@ -1399,10 +1394,7 @@ function recordsForIdentity(identity) {
 function authRecordResult(data, mode) {
   var identity = authorizedStudentName(data, true);
   if (!identity.ok) return identity;
-  // 只要最近 N 筆 → 走索引式讀取（先讀 4 欄找列號，再只取那幾列）。
-  // 比對規則與 recordsForIdentity() 相同：studentId 優先、舊資料退回 normalizeName。
-  var need = (mode === 'last') ? 1 : Math.max(1, Number(data.limit || 7));
-  var rows = recentRecordsForIdentityFast_(identity, need);
+  var rows = recordsForIdentity(identity).sort(byTimestampDesc);
   // 家長（含舊制以姓名登入的家長）只能拿摘要，不得收到完整 KPI/體重/疼痛/尿液等敏感欄位
   var isParent = (identity.session && identity.session.role === 'parent') || (identity.legacy && data.legacyRole === 'parent');
   if (isParent) rows = rows.map(parentRecordSummary);
@@ -1959,125 +1951,20 @@ function getAllRecords() {
 // 依姓名取得最近一筆（依 timestamp 排序，最新的）
 function getLastRecordByName(name) {
   if (!name) return null;
-  var mine = recentRecordsByNameFast_(name, 1);
-  return mine.length ? mine[0] : null;
-}
-
-/* ============================================================
-   Safe Read Optimization（只優化讀取，不改寫入、不改資料結構）
-
-   問題：前端只要最近 7 筆，getAllRecords() 卻讀「全部列 × 164 欄」。
-   做法：先只讀 4 個索引欄（timestamp / date / name / studentId）找出
-         符合條件的實際列號，再只讀那幾列的完整欄位。
-
-   欄位位置由 auditHeaders_() 的 canonicalMap 決定（不是寫死索引），
-   所以舊的中文表頭、欄位順序不同的試算表一樣適用。
-   ============================================================ */
-
-var RECORD_INDEX_FIELDS = ['timestamp', 'date', 'name', 'studentId'];
-
-// 把欄號分組成連續區段，避免一欄一次 getRange
-function groupConsecutive_(nums) {
-  var sorted = nums.slice().sort(function (a, b) { return a - b; });
-  var out = [];
-  for (var i = 0; i < sorted.length; i++) {
-    if (out.length && sorted[i] === out[out.length - 1][1] + 1) out[out.length - 1][1] = sorted[i];
-    else if (!out.length || sorted[i] !== out[out.length - 1][1]) out.push([sorted[i], sorted[i]]);
-  }
-  return out;
-}
-
-// 只讀索引欄，回傳 [{ row, timestamp, date, name, studentId }]
-function readRecordIndex_() {
-  var sheet = getSheet();
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { rows: [], sheet: sheet, info: null };
-  var info = auditHeaders_(sheet, HEADERS);
-  var cols = {};
-  RECORD_INDEX_FIELDS.forEach(function (k) {
-    var c = info.canonicalMap[k];
-    if (c) cols[k] = c;
-  });
-  var colNums = Object.keys(cols).map(function (k) { return cols[k]; });
-  if (!colNums.length) return { rows: [], sheet: sheet, info: info };
-
-  var cell = {};   // cell[rowOffset][colNum]
-  groupConsecutive_(colNums).forEach(function (seg) {
-    var vals = sheet.getRange(2, seg[0], lastRow - 1, seg[1] - seg[0] + 1).getValues();
-    for (var i = 0; i < vals.length; i++) {
-      if (!cell[i]) cell[i] = {};
-      for (var c = seg[0]; c <= seg[1]; c++) cell[i][c] = vals[i][c - seg[0]];
-    }
-  });
-
-  var rows = [];
-  for (var i = 0; i < lastRow - 1; i++) {
-    var b = cell[i] || {};
-    rows.push({
-      row: i + 2,
-      timestamp: cols.timestamp ? b[cols.timestamp] : '',
-      date: cols.date ? b[cols.date] : '',
-      name: cols.name ? b[cols.name] : '',
-      studentId: cols.studentId ? b[cols.studentId] : ''
-    });
-  }
-  return { rows: rows, sheet: sheet, info: info };
-}
-
-// 依列號取完整紀錄。列號可能不連續 → 分組成區段，減少 getRange 次數。
-// 回傳順序與傳入的 rowNums 一致。
-function fetchRecordsByRowNumbers_(sheet, info, rowNums) {
-  if (!rowNums || !rowNums.length) return [];
-  var headers = (info && info.actual && info.actual.length) ? info.actual : HEADERS;
-  var width = sheet.getLastColumn();
-  var byRow = {};
-  groupConsecutive_(rowNums).forEach(function (seg) {
-    var vals = sheet.getRange(seg[0], 1, seg[1] - seg[0] + 1, width).getValues();
-    for (var i = 0; i < vals.length; i++) byRow[seg[0] + i] = rowToObject(headers, vals[i]);
-  });
-  var out = [];
-  for (var j = 0; j < rowNums.length; j++) if (byRow[rowNums[j]]) out.push(byRow[rowNums[j]]);
-  return out;
-}
-
-/* 最近 N 筆（新到舊）。比對規則與 recordsForIdentity() 完全一致：
-   studentId 優先；舊資料沒有 studentId 時退回 normalizeName(name)。 */
-function recentRecordsForIdentityFast_(identity, limit) {
-  var idx = readRecordIndex_();
-  if (!idx.rows.length) return [];
-  var wantId = identity.studentId ? String(identity.studentId) : '';
-  var wantName = normalizeName(identity.name);
-  var matched = idx.rows.filter(function (r) {
-    if (wantId && r.studentId) return String(r.studentId) === wantId;
-    return normalizeName(r.name) === wantName;
-  });
-  matched.sort(byTimestampDesc);
-  var take = matched.slice(0, Math.max(0, Number(limit) || 0));
-  return fetchRecordsByRowNumbers_(idx.sheet, idx.info, take.map(function (m) { return m.row; }));
-}
-
-// 依姓名取最近 N 筆。保留原本的「原始字串比對」語意，不在此變更行為。
-function recentRecordsByNameFast_(name, limit) {
-  var idx = readRecordIndex_();
-  if (!idx.rows.length) return [];
-  var matched = idx.rows.filter(function (r) { return String(r.name) === String(name); });
-  matched.sort(byTimestampDesc);
-  var take = matched.slice(0, Math.max(0, Number(limit) || 0));
-  return fetchRecordsByRowNumbers_(idx.sheet, idx.info, take.map(function (m) { return m.row; }));
-}
-
-// 依日期取當天所有紀錄，順序與整表由上而下一致（與舊實作相同）
-function recordsByDateFast_(date) {
-  var idx = readRecordIndex_();
-  if (!idx.rows.length) return [];
-  var matched = idx.rows.filter(function (r) { return formatDateCell(r.date) === String(date); });
-  return fetchRecordsByRowNumbers_(idx.sheet, idx.info, matched.map(function (m) { return m.row; }));
+  var all = getAllRecords();
+  var mine = all.filter(function (r) { return String(r.name) === String(name); });
+  if (!mine.length) return null;
+  mine.sort(byTimestampDesc);
+  return mine[0];
 }
 
 // 依姓名取得最近 N 筆（新到舊）
 function getRecentRecordsByName(name, limit) {
   if (!name) return [];
-  return recentRecordsByNameFast_(name, limit || 7);
+  var all = getAllRecords();
+  var mine = all.filter(function (r) { return String(r.name) === String(name); });
+  mine.sort(byTimestampDesc);
+  return mine.slice(0, limit || 7);
 }
 
 // 依 recordId 更新某筆紀錄的指定欄位（供教練複評、選手回應、教練回覆使用）
@@ -4465,7 +4352,10 @@ function getAllAppData(prefix) {
 // 依日期取得所有紀錄
 function getRecordsByDate(date) {
   if (!date) return [];
-  return recordsByDateFast_(date);
+  var all = getAllRecords();
+  return all.filter(function (r) {
+    return formatDateCell(r.date) === String(date);
+  });
 }
 
 // 排序比較器：timestamp 新到舊

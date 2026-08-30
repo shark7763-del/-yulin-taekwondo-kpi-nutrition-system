@@ -18,6 +18,7 @@
 | 2026-08-29 | 74 | `chore/external-request-authorizer` | 新增編輯器用的連外授權函式 `授權連線至外部服務()` |
 | 2026-08-30 | 78 | `31858bc` | 身分比對不再單獨採信不穩定的 athleteId（mentalSameStudent_） |
 | 2026-08-30 | 79 | `perf/safe-read-optimization` | Safe Read Optimization：recent / last / by-date 改索引式讀取 |
+| 2026-08-30 | 82 | `revert/read-optimization` | **還原 v79 的讀取優化**：對正式資料 A/B 實測無效益（瓶頸是 getRange 呼叫次數，非讀取量） |
 
 ## 部署順序（不可顛倒）
 
