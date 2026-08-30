@@ -339,7 +339,10 @@
       '</div>';
 
     bindCoachEvents(box);
-    loadWeeklyAutoKpi();   // 自動開啟狀態另外非同步補進來，不擋整張卡的渲染
+    // renderCoachKpiManage() 有 17 個呼叫點，連「開放指定組別 / 指定選手補填」
+    // 這種純 UI 開合都會重繪 → 以前每次都重打一次 getWeeklyKpiAuto（實測一次開頁 6 次）。
+    // 改成一場只載一次；真正可能改變自動開啟狀態的動作再明確重新整理。
+    if (!_weeklyAutoLoaded) { _weeklyAutoLoaded = true; loadWeeklyAutoKpi(); }
   }
 
   function renderGroupPanel() {
@@ -611,7 +614,7 @@
       var res = await api({ action: 'setWeeklyKpiAuto', enabled: want, withTrigger: true });
       e.target.disabled = false;
       notify(res && res.ok ? (want ? '✅ 已開啟每週五自動開啟' : '已關閉自動開啟') : ((res && res.error) || '設定失敗'));
-      renderWeeklyAutoKpi(res);
+      refreshWeeklyAutoKpi();
     });
     el('weeklyAutoKpiRunNow').addEventListener('click', async function () {
       notify('嘗試補開本週 KPI…');
@@ -619,12 +622,17 @@
       if (res && res.ok) {
         notify('✅ 已開啟本週 KPI' + (res.line && res.line.ok ? '，並已推播 LINE' : '（LINE 未推播）'));
         loadCoachData();
+        refreshWeeklyAutoKpi();
       } else {
         notify('沒有開啟：' + ((res && (res.skipped || res.error)) || '未知原因'));
-        loadWeeklyAutoKpi();
+        refreshWeeklyAutoKpi();
       }
     });
   }
+
+  var _weeklyAutoLoaded = false;
+  // 開關切換、補開、開放/關閉 KPI 之後，狀態可能變了 → 明確重載
+  function refreshWeeklyAutoKpi() { _weeklyAutoLoaded = true; loadWeeklyAutoKpi(); }
 
   async function loadWeeklyAutoKpi() {
     // 這支後端要掃 kpi_sessions 與 student_accounts，可能要好幾秒；

@@ -459,6 +459,20 @@ function notifySessionExpired() {
 /* ============================================================
    15. 分頁切換
    ============================================================ */
+/* 設定頁專用資料的延後載入。
+   這三支的 DOM 目標（#aiModel / #lineEnabled / #studentAccountAdmin）都只在設定頁，
+   以前在 applyRole() 就無條件發出，等於每次教練開頁都多 3 個排隊中的後端請求。
+   一場只載一次；需要重新整理時各自的按鈕仍可單獨呼叫。 */
+let _settingsTabLoaded = false;
+function loadSettingsTabOnce() {
+  const r = getRole();
+  if (!r || r.role !== 'coach' || _settingsTabLoaded) return;
+  _settingsTabLoaded = true;
+  if (typeof refreshAccountAdmin === 'function') refreshAccountAdmin();
+  if (typeof loadAiConfig === 'function') loadAiConfig();
+  if (typeof loadLineStatus === 'function') loadLineStatus();
+}
+
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tabName));
@@ -477,6 +491,7 @@ function switchTab(tabName) {
       if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
     }, 0);
   }
+  if (tabName === 'settings') loadSettingsTabOnce();
   if (tabName === 'trait' && window.TraitRadar) {
     setTimeout(() => {
       const r = getRole();
@@ -904,10 +919,12 @@ function applyRole() {
   }
 
   if (r.role === 'coach') {
-    loadRosterFromServer().then(() => refreshAccountAdmin());
+    loadRosterFromServer();
     refreshCoach();
-    loadAiConfig();
-    loadLineStatus();
+    // getAiConfig / getLineStatus / getAccountAdminData 的畫面只存在於「系統設定」分頁，
+    // 教練預設落在「教練後台」，常常整場都沒打開設定頁。
+    // 這三個改到 switchTab('settings') 時才載（沿用 lastperf / trait 既有的 lazy 模式）。
+    _settingsTabLoaded = false;
     if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
   }
   if (window.TraitRadar && typeof window.TraitRadar.onRoleApplied === 'function') {
