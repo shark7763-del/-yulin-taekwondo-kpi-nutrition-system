@@ -376,6 +376,8 @@ function handleAction(action, data) {
       return jsonOut(authTeamRecords(data, data.date));
     case 'getAllRecords':
       return jsonOut(authAllRecords(data));
+    case 'getCoachDashboard':
+      return jsonOut(getCoachDashboard(data));
     case 'getParents':
       return jsonOut(authCoachOnly(data, function () { return getParentsForCoach(); }));
     case 'getAttendanceReportsByName':
@@ -553,7 +555,13 @@ function handleAction(action, data) {
    ============================================================ */
 
 // 輸出 JSON（CORS 友善：Apps Script Web App 對 simple request 不會擋）
+/* 前後端版本握手。前端 APP_VERSION 與這裡不同時，教練後台會顯示提示。
+   掛在每一個回應上（ping 自然也有），所以不需要多打任何一支請求。
+   規則：只有在前後端契約真的改變時才動這個值。 */
+var API_VERSION = '2026-09-02.2';
+
 function jsonOut(obj) {
+  if (obj && typeof obj === 'object' && !obj.apiVersion) obj.apiVersion = API_VERSION;
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
@@ -1606,11 +1614,21 @@ function recordsReadOptions_(data) {
   var since = String(data.sinceDate || '').trim();
   var hasOmit = false;
   for (var k in omit) { if (Object.prototype.hasOwnProperty.call(omit, k)) { hasOmit = true; break; } }
+  // keepFields 是白名單（只回這些欄位）；omitFields 是黑名單。兩者可並用，白名單先套。
+  var keep = null;
+  if (Object.prototype.toString.call(data.keepFields) === '[object Array]') {
+    keep = {};
+    for (var j = 0; j < data.keepFields.length; j++) {
+      var kf = String(data.keepFields[j] || '').trim();
+      if (kf) keep[kf] = true;
+    }
+  }
   return {
-    active: !!(since || hasOmit || data.omitEmpty === true || data.paged === true),
+    active: !!(since || hasOmit || keep || data.omitEmpty === true || data.paged === true),
     since: since,
     omit: omit,
     hasOmit: hasOmit,
+    keep: keep,
     omitEmpty: data.omitEmpty === true,
     paged: data.paged === true,
     offset: Math.max(0, Number(data.offset) || 0)
@@ -1655,10 +1673,11 @@ function getAllRecordsRead_(opts) {
   var nextOffset = null;
   for (var j = opts.offset; j < kept.length; j++) {
     var obj = rowToObject(headers, kept[j]);
-    if (opts.hasOmit || opts.omitEmpty) {
+    if (opts.hasOmit || opts.omitEmpty || opts.keep) {
       var trimmed = {};
       for (var key in obj) {
         if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+        if (opts.keep && !opts.keep[key]) continue;
         if (opts.omit[key]) continue;
         if (opts.omitEmpty && (obj[key] === '' || obj[key] === null || obj[key] === undefined)) continue;
         trimmed[key] = obj[key];
@@ -1682,6 +1701,71 @@ function getAllRecordsRead_(opts) {
     offset: opts.offset,
     nextOffset: nextOffset
   };
+}
+
+/* ============================================================
+   getCoachDashboard —— 教練後台專用讀取
+   ------------------------------------------------------------
+   教練後台不該再依賴「整張 records」。這個 action 只回後台真正讀得到的
+   87 個欄位（白名單由 tests/coach-dashboard-fields.test.js 自動核對，
+   後台若讀了白名單外的欄位，測試會失敗）。
+
+   回應的 fields 仍然是**完整**欄位清單，前端照舊把沒回傳的欄位補成
+   空字串 —— 下游物件的鍵一個都不會少，只是白名單外的值一律為空。
+   這樣即使將來有人在後台讀了沒列進白名單的欄位，也只會拿到空值，
+   不會變成 undefined 而炸掉。
+
+   輸入：{ date, days }，回應沿用 getAllRecords 的分頁信封。
+   ============================================================ */
+var COACH_DASHBOARD_FIELDS = [
+  "absenceCatchup", "absenceHonesty", "absenceMiss", "absenceReason",
+  "absenceReflection", "aiLabel", "aiTags", "attendanceScore",
+  "averageScore", "bedTime", "bmi", "bodyStatus",
+  "breakfast", "coachAttitudeScore", "coachAverageScore", "coachComment",
+  "coachExecutionScore", "coachOverallScore", "coachPrivateNote", "coachPublicNote",
+  "coachReply", "coachRiskScore", "coachScore", "coachStatus",
+  "coachTechnicalScore", "coachTechniqueScore", "coachTotalScore", "date",
+  "dinner", "disciplineAvg", "emotionAvg", "emotionIndex",
+  "encouragementToTeammate", "finalReadinessScore", "gratitude", "group",
+  "injuryArea", "lateNightSnack", "lowItems", "lunch",
+  "moodIndex", "moodReason", "name", "nutritionAdviceCoach",
+  "nutritionAdviceParent", "nutritionRisks", "painScore", "parentNote",
+  "rawScoresJson", "readinessJson", "readinessRecoveryScore", "readinessStatusLight",
+  "recordId", "recoveryScore", "recoveryState", "redLightHandling",
+  "redLightNote", "redLightReason", "reflection", "reflectionMetaJson",
+  "reportUsefulness", "reportUsefulnessJson", "reportUsefulnessScore", "reviewUpdatedAt",
+  "riskPenalty", "rpe", "selfScore", "sleepHours",
+  "sleepQuality", "snacksDrinks", "soreness", "status",
+  "studentName", "studentResponse", "sweatLevel", "technicalAvg",
+  "timestamp", "tomorrowGoal", "totalScore", "trainingDirection",
+  "trainingIntensity", "trainingSession", "urineStatus", "wakeTime",
+  "waterIntake", "weightGap", "weightKg"
+];
+
+function coachDashboardSince_(date, days) {
+  var tz = Session.getScriptTimeZone() || 'Asia/Taipei';
+  var base = new Date(String(date).slice(0, 10) + 'T00:00:00+08:00');
+  if (isNaN(base.getTime())) base = new Date();
+  base.setDate(base.getDate() - days);
+  return Utilities.formatDate(base, tz, 'yyyy-MM-dd');
+}
+
+function getCoachDashboard(data) {
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+  var date = formatDateCell(data.date || todayStr()).slice(0, 10);
+  var days = Math.max(1, Math.min(180, Number(data.days || 45)));
+  var opts = recordsReadOptions_({
+    sinceDate: coachDashboardSince_(date, days),
+    keepFields: COACH_DASHBOARD_FIELDS,
+    omitEmpty: true,
+    paged: true,
+    offset: data.offset
+  });
+  var res = getAllRecordsRead_(opts);
+  res.date = date;
+  res.days = days;
+  return res;
 }
 
 function authAllRecords(data) {

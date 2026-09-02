@@ -484,7 +484,31 @@ async function postToWebAppFetchJson_(url, requestBody, action, includeActionQue
   });
   const text = await res.text();
   try { return JSON.parse(text); }
-  catch (e) { throw new Error('回傳非 JSON：' + text.slice(0, 120)); }
+  catch (e) {
+    // 原本直接把回應前 120 字塞進錯誤訊息，那可能是半截的紀錄內容（學生健康資料）。
+    // 改成只描述「這是什麼東西」：HTTP 狀態、內容型別、長度、是不是 HTML、
+    // 以及 HTML 的 <title>（Google 的錯誤頁標題本身就是最有用的線索）。
+    const err = new Error('回傳非 JSON（' + describeNonJsonResponse_(res, text) + '）');
+    err.nonJson = true;
+    throw err;
+  }
+}
+
+function describeNonJsonResponse_(res, text) {
+  const bits = ['HTTP ' + res.status];
+  const ct = (res.headers && res.headers.get) ? (res.headers.get('content-type') || '') : '';
+  if (ct) bits.push(ct.split(';')[0]);
+  bits.push(text.length + ' bytes');
+  const head = String(text || '').trim().slice(0, 400);
+  if (head.charAt(0) === '<') {
+    bits.push('HTML');
+    const m = /<title[^>]*>([^<]{0,120})<\/title>/i.exec(head);
+    if (m) bits.push('title=「' + m[1].trim() + '」');
+  } else if (head.charAt(0) === '{' || head.charAt(0) === '[') {
+    bits.push('看起來是被截斷的 JSON');
+  }
+  if (res.redirected) bits.push('經過重導 → ' + String(res.url || '').slice(0, 80));
+  return bits.join('｜');
 }
 
 function isGetOnlyDiagnostic_(parsed) {
@@ -492,7 +516,24 @@ function isGetOnlyDiagnostic_(parsed) {
     String(parsed.error || '').indexOf('此動作不接受 GET 請求') !== -1);
 }
 
+/* 後端把 apiVersion 掛在每一個回應上，所以版本握手不需要額外請求。
+   只記錄狀態，不在這裡跳訊息 —— 由教練後台自己決定怎麼顯示。 */
+let _apiVersionSeen = '';
+let _apiVersionMismatch = false;
+function noteApiVersion_(parsed) {
+  const v = parsed && parsed.apiVersion;
+  if (!v) return;
+  _apiVersionSeen = String(v);
+  const expected = (typeof APP_VERSION === 'string') ? APP_VERSION : '';
+  _apiVersionMismatch = !!(expected && _apiVersionSeen !== expected);
+}
+function getApiVersionState() {
+  return { expected: (typeof APP_VERSION === 'string') ? APP_VERSION : '', actual: _apiVersionSeen, mismatch: _apiVersionMismatch };
+}
+if (typeof window !== 'undefined') window.getApiVersionState = getApiVersionState;
+
 function handleWebAppParsedResponse_(parsed, action, clientMeta) {
+  noteApiVersion_(parsed);
   // 收到 pong 但我們問的不是 ping → 請求送到了，但動作在路上掉了。
   // 這種情況若原樣回傳，呼叫端會誤判成「連線正常但沒資料」。
   if (action && action !== 'ping' && parsed && parsed.ok === true

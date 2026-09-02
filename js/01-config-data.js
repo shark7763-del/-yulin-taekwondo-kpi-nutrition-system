@@ -33,6 +33,12 @@ const CONFIG = {
   WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbxyPgaXgpOA4oyRVxswOWkyvWv5iLC6QTkzOPUSIDl20wE1hBFVXAaSamy3cmvDz_LW/exec'
 };
 
+/* 前後端版本握手。後端 Code.gs 的 API_VERSION 要與這裡一致；
+   不一致時教練後台會顯示「請重新部署 Apps Script」。
+   只有在前後端契約真的改變時才動這個值。 */
+const APP_VERSION = '2026-09-02.2';
+if (typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
+
 const TEAMPRO_FLAGS = {
   DEBUG_PERFORMANCE: false,
   USE_OPTIMIZED_RECORD_READ: true,

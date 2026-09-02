@@ -142,9 +142,14 @@ const front = fs.readFileSync(path.join(__dirname, '..', 'js', '07-coach-dashboa
 const winDays = /const COACH_WINDOW_DAYS = (\d+)/.exec(front);
 t('前端一律分頁取回 getAllRecords', front.includes('paged: true'), '');
 t('只有帶 sinceDate 的呼叫點才縮視窗與排除欄位',
-  front.includes('if (opts.sinceDate) {') && front.includes('request.omitFields = COACH_BULK_OMIT_FIELDS'), '');
+  front.includes('if (opts.sinceDate) {') && front.includes('legacyRequest.omitFields = COACH_BULK_OMIT_FIELDS'), '');
+// 快取鍵必須能區分三種讀取範圍：教練後台 / 指定視窗 / 完整歷史。
+// 只要有兩種範圍共用同一個鍵，個人檔案就會拿到教練視窗的殘缺資料。
 t('快取依讀取範圍分開存（完整歷史不會被教練視窗的結果汙染）',
-  front.includes("const cacheKey = opts.sinceDate ? ('since:' + opts.sinceDate) : 'full'"), '');
+  front.includes("'dash:'") && front.includes("'since:'") && front.includes("'full'"), '');
+t('教練後台走 getCoachDashboard，且後端沒有時會退回 getAllRecords',
+  front.includes("action: 'getCoachDashboard'") && front.includes('isUnknownActionResponse')
+    && front.includes('_coachDashboardUnavailable = true'), '');
 t('省略的欄位會依 fields 補回空字串（下游物件形狀不變）',
   front.includes('function rehydrateRecordFields') && front.includes('Object.assign({}, blank, r)'), '');
 t('教練視窗跟著教練選的日期往前推，不是寫死今天',
