@@ -19,7 +19,7 @@
 | 2026-08-30 | 78 | `31858bc` | 身分比對不再單獨採信不穩定的 athleteId（mentalSameStudent_） |
 | 2026-08-30 | 79 | `perf/safe-read-optimization` | Safe Read Optimization：recent / last / by-date 改索引式讀取 |
 | 2026-08-30 | 82 | `revert/read-optimization` | **還原 v79 的讀取優化**：對正式資料 A/B 實測無效益（瓶頸是 getRange 呼叫次數，非讀取量） |
-| 2026-09-02 | **待部署（83）** | `fix/records-response-size` | getAllRecords 加上 sinceDate／omitFields／omitEmpty／paged 四個可選參數。起因：整張表回應已達 15.66MB，POST→echo 那一跳取不回來、被降級成 GET，教練後台收到 doGet 的「此動作不接受 GET 請求」而整頁空白。不帶參數時行為與 v82 完全相同 |
+| 2026-09-02 | 83 | `fix/records-response-size` | getAllRecords 加上 sinceDate／omitFields／omitEmpty／paged 四個可選參數。起因：整張表回應已達 15.66MB，POST→echo 那一跳取不回來、被降級成 GET，教練後台收到 doGet 的「此動作不接受 GET 請求」而整頁空白。不帶參數時行為與 v82 完全相同 |
 
 ## 部署順序（不可顛倒）
 
@@ -30,3 +30,5 @@
 5. `git push`（前端 1–2 分鐘後生效）
 
 先 push 前端會讓線上使用者的新程式呼叫尚不存在的 action。
+
+> 2026-09-02 部署後驗活：`?action=ping` 回 pong；`getSubmitContext` 由「未知的 action」變成 `authRequired`，確認新版已生效。
