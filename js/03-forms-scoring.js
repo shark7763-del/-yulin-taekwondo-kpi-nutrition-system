@@ -796,7 +796,9 @@ async function fetchLastRecord(name) {
   const url = getWebAppUrl();
   if (url) {
     try {
-      const res = await postToWebApp({ action: 'getLastRecordByName', name: name });
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('fetchLastRecord_start');
+      const res = await postToWebApp({ action: 'getLastRecordByName', name: name, _background: true });
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('fetchLastRecord', 'fetchLastRecord_start', 'fetchLastRecord_end');
       if (res && res.ok) return normalizeCoachRecord(res.data); // data 可能是 null
     } catch (e) { /* 落回本機 */ }
   }
@@ -808,11 +810,44 @@ async function fetchRecentRecords(name, limit) {
   const url = getWebAppUrl();
   if (url) {
     try {
-      const res = await postToWebApp({ action: 'getRecentRecordsByName', name: name, limit: limit || 60 });
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('fetchRecentRecords_start');
+      const res = await postToWebApp({ action: 'getRecentRecordsByName', name: name, limit: limit || 60, _background: true });
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('fetchRecentRecords', 'fetchRecentRecords_start', 'fetchRecentRecords_end');
       if (res && res.ok && Array.isArray(res.data)) return res.data.map(normalizeCoachRecord);
     } catch (e) { /* 落回本機 */ }
   }
   return localRecentRecords(name, limit || 60).map(normalizeCoachRecord);
+}
+
+async function fetchSubmitContext(name, date, limit) {
+  // 上限 60：buildAffirmations 用這份歷史判斷「個人最佳 PB」，視窗變小會誤發徽章。
+  const cappedLimit = Math.min(60, Number(limit || 60));
+  const url = getWebAppUrl();
+  if (url && window.TEAMPRO_FLAGS && window.TEAMPRO_FLAGS.USE_OPTIMIZED_SUBMIT_CONTEXT) {
+    try {
+      const res = await postToWebApp({
+        action: 'getSubmitContext',
+        name: name,
+        date: date,
+        limit: cappedLimit,
+        _background: true
+      });
+      const data = res && (res.data || res);
+      if (res && res.ok && data) {
+        return {
+          alreadySubmittedToday: !!data.alreadySubmittedToday,
+          lastRecord: normalizeCoachRecord(data.lastRecord || null),
+          recentRecords: Array.isArray(data.recentRecords) ? data.recentRecords.map(normalizeCoachRecord) : []
+        };
+      }
+    } catch (e) { /* 落回 legacy 雙查詢 */ }
+  }
+  const [last, history] = await Promise.all([
+    fetchLastRecord(name),
+    fetchRecentRecords(name, cappedLimit)
+  ]);
+  const already = localHasToday(name, date) || (!!last && normDate(last.date) === normDate(date));
+  return { alreadySubmittedToday: already, lastRecord: last, recentRecords: history || [] };
 }
 
 async function fetchParents() {

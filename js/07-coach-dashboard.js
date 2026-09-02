@@ -5,10 +5,59 @@
 // 短效記憶體快取：避免每次開分頁／查詢都重抓整張 records 表（GAS /exec 每次呼叫都慢，
 // 又會被 Google 逐一排隊）。opts.force = true 時繞過快取強制重抓；任何一次成功雲端讀取
 // 都會更新快取，故「更新名單／教練後台」強制重抓後，短時間內其他分頁可直接重用。
-let _allRecordsCache = { data: null, ts: 0 };
+const _allRecordsCache = {};          // 讀取範圍 -> { data, ts }；範圍不同不能共用快取
 const ALL_RECORDS_TTL_MS = 90000; // 90 秒
-function invalidateAllRecordsCache() { _allRecordsCache = { data: null, ts: 0 }; }
+function invalidateAllRecordsCache() {
+  Object.keys(_allRecordsCache).forEach(k => { delete _allRecordsCache[k]; });
+}
 window.invalidateAllRecordsCache = invalidateAllRecordsCache;
+
+/* ── records 讀取瘦身（2026-09-02）──────────────────────────────
+   records 已達 1800+ 列 x 164 欄，整張表一次回傳約 15.66MB，會撐爆
+   POST /exec -> googleusercontent echo 那一跳，鏈路退回 /exec 後被瀏覽器
+   轉成 GET，教練後台就收到「此動作不接受 GET 請求」而整頁讀不到資料。
+
+   兩道處理：
+   1) 一律分頁（後端依 1.5MB 預算切頁），任何呼叫點都不會再撞到大小上限。
+   2) 教練後台再加日期視窗與排除欄位，把常用路徑壓到單頁。
+   後端不帶參數時行為不變，所以可以先部署後端、再推前端。 */
+
+// 這五欄只在 04-daily-submit.js 送出時寫入，教練後台完全不讀，卻佔了整份回應約一半體積。
+const COACH_BULK_OMIT_FIELDS = ['rawNutritionJson', 'studentLineText', 'coachLineText', 'parentLineText',
+  'nutritionLineText', 'nutritionAdviceStudent'];
+// 教練後台回看最長的視窗是連續型警示的 ALERT_WINDOW_DAYS（14 天），
+// 其餘只看選定當天或每人最近 2-3 筆。45 天是留給補填與跨月的安全邊界。
+const COACH_WINDOW_DAYS = 45;
+const ALL_RECORDS_MAX_PAGES = 40;   // 防呆上限，正常情況遠遠用不到
+
+// 後端在 omitEmpty 模式下不回傳空欄位，這裡依 fields 補回空字串，
+// 讓下游拿到的物件形狀與舊版逐字相同（避免 undefined.indexOf 這類雷）。
+function rehydrateRecordFields(rows, fields) {
+  if (!Array.isArray(fields) || !fields.length) return rows;
+  const blank = {};
+  fields.forEach(f => { blank[f] = ''; });
+  return rows.map(r => Object.assign({}, blank, r));
+}
+
+// 逐頁取回 getAllRecords。任何一頁失敗就把該頁的回應原樣往上丟，
+// 讓既有的 authRequired / strict 錯誤處理照舊接手。
+async function fetchAllRecordsPaged(request) {
+  let offset = 0;
+  let rows = [];
+  let fields = null;
+  for (let page = 0; page < ALL_RECORDS_MAX_PAGES; page++) {
+    const res = await postToWebApp(Object.assign({}, request, { offset: offset }));
+    if (!res || !res.ok || !Array.isArray(res.data)) return res;
+    if (!fields && Array.isArray(res.fields)) fields = res.fields;
+    rows = rows.concat(res.data);
+    if (res.nextOffset === null || res.nextOffset === undefined) {
+      return { ok: true, data: rehydrateRecordFields(rows, fields) };
+    }
+    offset = res.nextOffset;
+  }
+  console.warn('[records] 分頁次數超過上限，回傳已取得的', rows.length, '筆');
+  return { ok: true, data: rehydrateRecordFields(rows, fields) };
+}
 
 // 取得所有紀錄（正式優先，否則本機）
 // opts.strict = true 時：雲端讀取失敗／session 過期不再靜默回傳本機空資料，
@@ -19,14 +68,24 @@ async function fetchAllRecords(opts) {
   const url = getWebAppUrl();
   if (!url) return getLocalRecords().map(normalizeCoachRecord);   // 純本機模式才用 localStorage
 
+  // opts.sinceDate 有值才縮視窗；沒帶的呼叫點（個人檔案、研究資料匯出）
+  // 仍然拿到完整歷史，只是改成分頁取回。
+  const request = { action: 'getAllRecords', paged: true, omitEmpty: true };
+  if (opts.sinceDate) {
+    request.sinceDate = opts.sinceDate;
+    request.omitFields = COACH_BULK_OMIT_FIELDS;
+  }
+  const cacheKey = opts.sinceDate ? ('since:' + opts.sinceDate) : 'full';
+
   // 命中未過期的快取就直接回傳，不再打後端（開分頁最大的加速來源）。
-  if (!opts.force && _allRecordsCache.data && (Date.now() - _allRecordsCache.ts) < ALL_RECORDS_TTL_MS) {
-    return _allRecordsCache.data;
+  const cached = _allRecordsCache[cacheKey];
+  if (!opts.force && cached && cached.data && (Date.now() - cached.ts) < ALL_RECORDS_TTL_MS) {
+    return cached.data;
   }
 
   let res;
   try {
-    res = await postToWebApp({ action: 'getAllRecords' });
+    res = await fetchAllRecordsPaged(request);
   } catch (e) {
     console.error('getAllRecords 連線失敗:', e);
     if (opts.strict) {
@@ -38,21 +97,23 @@ async function fetchAllRecords(opts) {
 
   if (res && res.ok && Array.isArray(res.data)) {
     const mapped = res.data.map(normalizeCoachRecord);
-    _allRecordsCache = { data: mapped, ts: Date.now() };   // 成功才更新快取
+    _allRecordsCache[cacheKey] = { data: mapped, ts: Date.now() };   // 成功才更新快取
     return mapped;
   }
 
-  console.error('getAllRecords 回傳失敗:', res);
-
-  // session 過期／未授權：一律跳出重新登入提示（不論 strict 與否，都不再假裝成空資料）
+  // session 過期／未授權：這是後台資料讀取，不直接清掉剛建立的教練 session。
+  // 登入後若背景讀取遇到短暫 authRequired，清 session 會造成「閃一下又回登入」。
+  // 讓呼叫端顯示可重試/重新登入提示；真正的寫入與登入動作仍由全域 critical auth 處理。
   if (res && res.authRequired) {
-    if (typeof notifySessionExpired === 'function') notifySessionExpired();
+    console.warn('[auth] getAllRecords returned authRequired; keeping current role for coach UI');
     if (opts.strict) {
       toast('⚠️ 教練登入已過期，請重新登入後再讀取資料');
       throw new Error('AUTH_REQUIRED');
     }
     return getLocalRecords().map(normalizeCoachRecord);
   }
+
+  console.error('getAllRecords 回傳失敗:', res);
 
   if (opts.strict) {
     toast('⚠️ 後台讀不到雲端 records，請重新登入或檢查 Apps Script 部署');
@@ -1034,9 +1095,18 @@ async function refreshCoach() {
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
 
   // 雲端讀取失敗／session 過期 → 顯示提示並中止，不再誤判「全隊未回報」
+  // 日期一律正規化，且空白時退回今天，避免 0 筆資料。
+  // 這行原本在讀取之後，現在必須先算出來 —— 讀取視窗要跟著教練選的日期往前推，
+  // 否則教練回頭查兩個月前那天會落在視窗外，變成空畫面。
+  const filterDate = normDate($id('coachDate').value || todayStr());
+
   let all;
   try {
-    all = await fetchAllRecords({ strict: true, force: true });
+    all = await fetchAllRecords({
+      strict: true,
+      force: true,
+      sinceDate: shiftDateStr(filterDate, -COACH_WINDOW_DAYS)
+    });
   } catch (e) {
     // toast 幾秒後就消失，之前只 return 會讓整個後台停在空白畫面，
     // 看起來跟「今天沒人回報」一模一樣。改成把錯誤留在畫面上。
@@ -1047,8 +1117,6 @@ async function refreshCoach() {
   clearCoachLoadError();
   await loadRiskHandles();   // 風險處理紀錄，讓已處理的警示能標示出來
 
-  // 日期一律正規化，且空白時退回今天，避免 0 筆資料
-  const filterDate = normDate($id('coachDate').value || todayStr());
   const statusFilter = $id('coachStatusFilter') ? $id('coachStatusFilter').value : 'all';
   const coachScores = await fetchCoachScores(filterDate);
 

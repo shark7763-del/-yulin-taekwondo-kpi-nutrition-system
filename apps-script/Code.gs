@@ -48,6 +48,23 @@ var MENTAL_SELF_TALK_SHEET = 'mental_self_talk';
 var MENTAL_GOALS_SHEET = 'mental_goals';
 var MENTAL_SCENARIO_PLANS_SHEET = 'mental_scenario_plans';
 var MENTAL_REFLECTIONS_SHEET = 'mental_reflections';
+var DEBUG_PERFORMANCE = false;
+var USE_OPTIMIZED_RECORD_READ = true;
+var USE_OPTIMIZED_SUBMIT_CONTEXT = true;
+
+function perfEnabled_() { return DEBUG_PERFORMANCE || getProp('DEBUG_PERFORMANCE') === 'true'; }
+function perfStart_(label) { return perfEnabled_() ? { label: label, start: Date.now(), marks: {} } : null; }
+function perfMark_(perf, label) {
+  if (!perf) return;
+  perf.marks[label] = Date.now() - perf.start;
+  console.log('[perf] ' + perf.label + '.' + label + ': ' + perf.marks[label] + 'ms');
+}
+function perfEnd_(perf, label) {
+  if (!perf) return;
+  var elapsed = Date.now() - perf.start;
+  console.log('[perf] ' + perf.label + '.' + (label || 'total') + ': ' + elapsed + 'ms');
+}
+
 var KPI_SESSION_HEADERS = [
   'sessionId', 'sessionName', 'sessionType', 'weekId', 'openMode', 'targetGroup',
   'targetStudentIds', 'openAt', 'closeAt', 'status', 'includeInWeeklyReport',
@@ -351,6 +368,8 @@ function handleAction(action, data) {
       return jsonOut(authRecordResult(data, 'last'));
     case 'getRecentRecordsByName':
       return jsonOut(authRecordResult(data, 'recent'));
+    case 'getSubmitContext':
+      return jsonOut(getSubmitContext(data));
     case 'getTodayRecords':
       return jsonOut(authTeamRecords(data, data.date || todayStr()));
     case 'getRecordsByDate':
@@ -1391,14 +1410,136 @@ function recordsForIdentity(identity) {
   });
 }
 
+function featureFlagEnabled_(name, defaultValue) {
+  var prop = getProp(name);
+  if (prop === 'true') return true;
+  if (prop === 'false') return false;
+  return defaultValue !== false;
+}
+
+function recordSortValue_(meta) {
+  var t = meta.timestamp ? new Date(meta.timestamp).getTime() : 0;
+  return isNaN(t) ? 0 : t;
+}
+
+function consecutiveGroups_(rowNums) {
+  var groups = [];
+  var sorted = rowNums.slice().sort(function (a, b) { return a - b; });
+  for (var i = 0; i < sorted.length; i++) {
+    var start = sorted[i];
+    var end = start;
+    while (i + 1 < sorted.length && sorted[i + 1] === end + 1) {
+      i++;
+      end = sorted[i];
+    }
+    groups.push({ start: start, end: end });
+  }
+  return groups;
+}
+
+function recordsForIdentityOptimized_(identity, limit) {
+  var perf = perfStart_('getRecentRecordsOptimized');
+  var sheet = getSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var info = auditHeaders_(sheet, HEADERS);
+  var width = sheet.getLastColumn();
+  var nameIdx = info.canonicalMap.name || 0;
+  var studentIdIdx = info.canonicalMap.studentId || 0;
+  var dateIdx = info.canonicalMap.date || 0;
+  var timestampIdx = info.canonicalMap.timestamp || 0;
+  if (nameIdx < 1 || dateIdx < 1 || timestampIdx < 1) return recordsForIdentity(identity).sort(byTimestampDesc).slice(0, limit || 7);
+
+  var lo = Math.min(nameIdx, dateIdx, timestampIdx, studentIdIdx || nameIdx);
+  var hi = Math.max(nameIdx, dateIdx, timestampIdx, studentIdIdx || nameIdx);
+  var indexRows = sheet.getRange(2, lo, lastRow - 1, hi - lo + 1).getValues();
+  perfMark_(perf, 'index_read_end');
+  var nameOff = nameIdx - lo;
+  var studentIdOff = studentIdIdx ? studentIdIdx - lo : -1;
+  var dateOff = dateIdx - lo;
+  var timestampOff = timestampIdx - lo;
+  var metas = [];
+  var identityName = normalizeName(identity.name);
+  for (var i = 0; i < indexRows.length; i++) {
+    var row = indexRows[i];
+    var sid = studentIdOff >= 0 ? row[studentIdOff] : '';
+    var nm = row[nameOff];
+    var match = identity.studentId && sid
+      ? String(sid) === String(identity.studentId)
+      : normalizeName(nm) === identityName;
+    if (!match) continue;
+    metas.push({
+      rowNum: i + 2,
+      date: formatDateCell(row[dateOff]),
+      timestamp: row[timestampOff]
+    });
+  }
+  metas.sort(function (a, b) {
+    var tb = recordSortValue_(b);
+    var ta = recordSortValue_(a);
+    if (tb !== ta) return tb - ta;
+    return String(b.date).localeCompare(String(a.date));
+  });
+  var wanted = metas.slice(0, Math.max(1, Number(limit || 7)));
+  var wantedMap = {};
+  wanted.forEach(function (m) { wantedMap[m.rowNum] = true; });
+  var objectsByRow = {};
+  consecutiveGroups_(wanted.map(function (m) { return m.rowNum; })).forEach(function (g) {
+    var vals = sheet.getRange(g.start, 1, g.end - g.start + 1, width).getValues();
+    for (var j = 0; j < vals.length; j++) {
+      objectsByRow[g.start + j] = rowToObject(info.actual.length ? info.actual : HEADERS, vals[j]);
+    }
+  });
+  perfMark_(perf, 'full_rows_read_end');
+  perfEnd_(perf, 'complete');
+  return wanted.map(function (m) { return objectsByRow[m.rowNum]; }).filter(Boolean);
+}
+
+function getRecentRecordsOptimized_(identity, limit) {
+  return recordsForIdentityOptimized_(identity, limit);
+}
+
+function getLastRecordOptimized_(identity) {
+  var rows = recordsForIdentityOptimized_(identity, 1);
+  return rows[0] || null;
+}
+
 function authRecordResult(data, mode) {
   var identity = authorizedStudentName(data, true);
   if (!identity.ok) return identity;
-  var rows = recordsForIdentity(identity).sort(byTimestampDesc);
+  var useOptimized = featureFlagEnabled_('USE_OPTIMIZED_RECORD_READ', USE_OPTIMIZED_RECORD_READ);
+  var rows = useOptimized
+    ? recordsForIdentityOptimized_(identity, mode === 'last' ? 1 : Number(data.limit || 7))
+    : recordsForIdentity(identity).sort(byTimestampDesc);
   // 家長（含舊制以姓名登入的家長）只能拿摘要，不得收到完整 KPI/體重/疼痛/尿液等敏感欄位
   var isParent = (identity.session && identity.session.role === 'parent') || (identity.legacy && data.legacyRole === 'parent');
   if (isParent) rows = rows.map(parentRecordSummary);
   return { ok: true, data: mode === 'last' ? (rows[0] || null) : rows.slice(0, Number(data.limit || 7)) };
+}
+
+function getSubmitContext(data) {
+  var identity = authorizedStudentName(data, true);
+  if (!identity.ok) return identity;
+  var limit = Math.max(1, Math.min(60, Number(data.limit || 60)));
+  var date = formatDateCell(data.date || todayStr());
+  var useOptimized = featureFlagEnabled_('USE_OPTIMIZED_SUBMIT_CONTEXT', USE_OPTIMIZED_SUBMIT_CONTEXT) &&
+    featureFlagEnabled_('USE_OPTIMIZED_RECORD_READ', USE_OPTIMIZED_RECORD_READ);
+  var rows = useOptimized
+    ? recordsForIdentityOptimized_(identity, limit)
+    : recordsForIdentity(identity).sort(byTimestampDesc).slice(0, limit);
+  var last = rows[0] || null;
+  var already = rows.some(function (r) { return formatDateCell(r.date) === date; });
+  return {
+    ok: true,
+    data: {
+      alreadySubmittedToday: already,
+      lastRecord: last,
+      recentRecords: rows
+    },
+    alreadySubmittedToday: already,
+    lastRecord: last,
+    recentRecords: rows
+  };
 }
 
 function parentRecordSummary(r) {
@@ -1422,13 +1563,137 @@ function authTeamRecords(data, date) {
   return { ok: true, data: getRecordsByDate(date).filter(function (r) { return !r.teamId || r.teamId === auth.session.teamId; }) };
 }
 
+/* ============================================================
+   getAllRecords：日期視窗／排除欄位／去空值／分頁
+   ------------------------------------------------------------
+   records 已達 1800+ 列 x 164 欄，整張表一次回傳的 JSON 約 15.6MB。
+   POST /exec 會 302 轉到 googleusercontent 的 echo 取結果，回應太大時那一跳
+   取不回來，鏈路退回 /exec，而瀏覽器對 302 的 POST 會轉成 GET ——
+   教練後台因此收到 doGet 的「此動作不接受 GET 請求」，整頁空白。
+
+   對策是讓呼叫端可以要求：
+     sinceDate   只要這天（含）以後的紀錄
+     omitFields  排除用不到的欄位（例如只在送出時寫入的 LINE 文案）
+     omitEmpty   不回傳空字串欄位，由前端依 fields 回填
+     paged       依 RECORDS_PAGE_BUDGET_CHARS 分頁，回 nextOffset
+
+   四個參數都不帶時，走的仍是原本的 getAllRecords()，舊前端一行都不受影響。
+   ============================================================ */
+var RECORDS_PAGE_BUDGET_CHARS = 1500000;   // 單頁 JSON 上限，約 1.5MB
+
+// 與 rowToObject 完全一致的鍵名清單（含 canonical 別名），供前端回填空欄位。
+function recordFieldNames_(headers) {
+  var seen = {}, out = [];
+  for (var i = 0; i < headers.length; i++) {
+    var raw = normalizeHeaderName_(headers[i]);
+    if (!raw) continue;
+    var canonical = canonicalHeaderName_(raw);
+    if (!seen[raw]) { seen[raw] = true; out.push(raw); }
+    if (canonical && !seen[canonical]) { seen[canonical] = true; out.push(canonical); }
+  }
+  return out;
+}
+
+function recordsReadOptions_(data) {
+  data = data || {};
+  var omit = {};
+  if (Object.prototype.toString.call(data.omitFields) === '[object Array]') {
+    for (var i = 0; i < data.omitFields.length; i++) {
+      var f = String(data.omitFields[i] || '').trim();
+      if (f) omit[f] = true;
+    }
+  }
+  var since = String(data.sinceDate || '').trim();
+  var hasOmit = false;
+  for (var k in omit) { if (Object.prototype.hasOwnProperty.call(omit, k)) { hasOmit = true; break; } }
+  return {
+    active: !!(since || hasOmit || data.omitEmpty === true || data.paged === true),
+    since: since,
+    omit: omit,
+    hasOmit: hasOmit,
+    omitEmpty: data.omitEmpty === true,
+    paged: data.paged === true,
+    offset: Math.max(0, Number(data.offset) || 0)
+  };
+}
+
+// 日期視窗。讀不出日期的列一律保留 —— 寧可多給，不可把資料弄不見。
+function recordRowInWindow_(row, headers, since) {
+  if (!since) return true;
+  var di = -1, ti = -1;
+  for (var i = 0; i < headers.length; i++) {
+    var h = normalizeHeaderName_(headers[i]);
+    if (h === 'date' && di === -1) di = i;
+    if (h === 'timestamp' && ti === -1) ti = i;
+  }
+  var raw = (di !== -1 ? row[di] : '');
+  if (raw === '' || raw === null || raw === undefined) raw = (ti !== -1 ? row[ti] : '');
+  var d = formatDateCell(raw);
+  if (!d || d.length < 10) return true;
+  return d.slice(0, 10) >= since.slice(0, 10);
+}
+
+function getAllRecordsRead_(opts) {
+  var sheet = getSheet();
+  var info = auditHeaders_(sheet, HEADERS);
+  var headers = info.actual.length ? info.actual : HEADERS;
+  var fields = recordFieldNames_(headers);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return { ok: true, data: [], fields: fields, total: 0, offset: 0, nextOffset: null };
+  }
+  var width = sheet.getLastColumn();
+  var values = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+
+  var kept = [];
+  for (var i = 0; i < values.length; i++) {
+    if (recordRowInWindow_(values[i], headers, opts.since)) kept.push(values[i]);
+  }
+
+  var out = [];
+  var used = 0;
+  var nextOffset = null;
+  for (var j = opts.offset; j < kept.length; j++) {
+    var obj = rowToObject(headers, kept[j]);
+    if (opts.hasOmit || opts.omitEmpty) {
+      var trimmed = {};
+      for (var key in obj) {
+        if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+        if (opts.omit[key]) continue;
+        if (opts.omitEmpty && (obj[key] === '' || obj[key] === null || obj[key] === undefined)) continue;
+        trimmed[key] = obj[key];
+      }
+      obj = trimmed;
+    }
+    if (opts.paged) {
+      var chunk = JSON.stringify(obj).length;
+      // out.length 的判斷確保單列再大也至少回一列，不會卡成無限分頁。
+      if (out.length && used + chunk > RECORDS_PAGE_BUDGET_CHARS) { nextOffset = j; break; }
+      used += chunk;
+    }
+    out.push(obj);
+  }
+
+  return {
+    ok: true,
+    data: out,
+    fields: fields,
+    total: kept.length,
+    offset: opts.offset,
+    nextOffset: nextOffset
+  };
+}
+
 function authAllRecords(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
-  return { ok: true, data: getAllRecords() };
+  var opts = recordsReadOptions_(data);
+  if (!opts.active) return { ok: true, data: getAllRecords() };   // 舊前端：一字不差沿用舊行為
+  return getAllRecordsRead_(opts);
 }
 
 function addRecordAuthorized(data) {
+  var perf = perfStart_('addRecord');
   var payload = data.payload || {};
   var session = getAuthSession(data);
   var studentRequest = false;
@@ -1442,11 +1707,24 @@ function addRecordAuthorized(data) {
     return { ok: false, error: '請先登入再送出資料。', authRequired: true };
   }
 
+  perfMark_(perf, 'addRecord_start');
   var saved = addRecord(payload);
+  perfMark_(perf, 'main_write_complete');
   if (saved.ok) {
-    appendAiScoreFromPayload(payload);
-    appendRiskFlagsFromPayload(payload);
+    perfMark_(perf, 'ai_score_start');
+    var aiPerf = perfStart_('addRecord.ai_score');
+    try { appendAiScoreFromPayload(payload); }
+    catch (e1) { saved.aiScore = { ok: false, error: String(e1) }; }
+    perfEnd_(aiPerf, 'complete');
+    perfMark_(perf, 'ai_score_end');
+    perfMark_(perf, 'risk_flag_start');
+    var riskPerf = perfStart_('addRecord.risk_flag');
+    try { appendRiskFlagsFromPayload(payload); }
+    catch (e2) { saved.riskFlag = { ok: false, error: String(e2) }; }
+    perfEnd_(riskPerf, 'complete');
+    perfMark_(perf, 'risk_flag_end');
   }
+  perfEnd_(perf, 'addRecord_complete');
   return saved;
 }
 
@@ -1856,17 +2134,32 @@ function addRecord(payload) {
      同一人同一天出現兩筆，破壞「每日一筆」的前提，也讓出席人數統計多算。
   */
   var lock = LockService.getScriptLock();
+  var perf = perfStart_('addRecord.lockedWrite');
+  var saved;
   try {
+    perfMark_(perf, 'lock_wait_start');
     if (!lock.tryLock(15000)) {
       return { ok: false, error: '系統忙碌中，請等幾秒後再送出一次（你的資料尚未儲存）。' };
     }
-    return addRecordLocked_(payload);
+    perfMark_(perf, 'lock_acquired');
+    saved = addRecordLocked_(payload, perf);
   } finally {
     try { lock.releaseLock(); } catch (e) { /* 已釋放或逾時，忽略 */ }
+    perfMark_(perf, 'lock_release');
   }
+  if (saved && saved.ok) {
+    perfMark_(perf, 'line_push_start');
+    var pushPerf = perfStart_('addRecord.line_push');
+    try { saved.line = pushRecordToLine(payload); }
+    catch (e) { saved.line = { ok: false, error: String(e) }; }
+    perfEnd_(pushPerf, 'complete');
+    perfMark_(perf, 'line_push_end');
+  }
+  perfEnd_(perf, 'complete');
+  return saved;
 }
 
-function addRecordLocked_(payload) {
+function addRecordLocked_(payload, perf) {
   var sheet = getSheet();
   var info = auditHeaders_(sheet, HEADERS);
   if (info.duplicates.length) return { ok: false, error: 'records 表頭有重複欄位：' + info.duplicates.join('、') };
@@ -1896,8 +2189,7 @@ function addRecordLocked_(payload) {
       }
     }
   }
-
-  var pushResult = null;
+  perfMark_(perf, 'duplicate_check_end');
 
   if (existingRow !== -1) {
     // ---- 更新既有那一列 ----
@@ -1914,10 +2206,11 @@ function addRecordLocked_(payload) {
       }
     }
     if (timestampIdx > 0) rowVals[timestampIdx - 1] = new Date().toISOString(); // timestamp 用伺服器最新時間
+    perfMark_(perf, 'sheet_append_start');
     sheet.getRange(existingRow, 1, 1, width).setValues([rowVals]);
+    perfMark_(perf, 'sheet_append_end');
 
-    try { pushResult = pushRecordToLine(payload); } catch (e) { pushResult = { ok: false, error: String(e) }; }
-    return { ok: true, updated: true, message: '已更新今日紀錄（同一天只保留最新一筆）', name: payload.name, date: payload.date, line: pushResult };
+    return { ok: true, updated: true, mainWriteSucceeded: true, message: '已更新今日紀錄（同一天只保留最新一筆）', name: payload.name, date: payload.date };
   }
 
   // ---- 新增一列 ----
@@ -1927,10 +2220,11 @@ function addRecordLocked_(payload) {
     return (v === undefined || v === null) ? '' : sanitizeCellValue_(v);
   });
   if (!payload.timestamp && timestampIdx > 0 && row.length >= timestampIdx) row[timestampIdx - 1] = new Date().toISOString();
+  perfMark_(perf, 'sheet_append_start');
   sheet.appendRow(row);
+  perfMark_(perf, 'sheet_append_end');
 
-  try { pushResult = pushRecordToLine(payload); } catch (e) { pushResult = { ok: false, error: String(e) }; }
-  return { ok: true, updated: false, message: '已新增紀錄', name: payload.name, date: payload.date, line: pushResult };
+  return { ok: true, updated: false, mainWriteSucceeded: true, message: '已新增紀錄', name: payload.name, date: payload.date };
 }
 
 // 讀取全部紀錄為物件陣列

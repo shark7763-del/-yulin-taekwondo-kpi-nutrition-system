@@ -33,6 +33,31 @@ const CONFIG = {
   WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbxyPgaXgpOA4oyRVxswOWkyvWv5iLC6QTkzOPUSIDl20wE1hBFVXAaSamy3cmvDz_LW/exec'
 };
 
+const TEAMPRO_FLAGS = {
+  DEBUG_PERFORMANCE: false,
+  USE_OPTIMIZED_RECORD_READ: true,
+  USE_LAZY_PROFILE_LOAD: true,
+  USE_OPTIMIZED_SUBMIT_CONTEXT: true
+};
+if (typeof window !== 'undefined') window.TEAMPRO_FLAGS = TEAMPRO_FLAGS;
+
+const TEAMPRO_PERF = {
+  marks: {},
+  mark(label) {
+    if (!TEAMPRO_FLAGS.DEBUG_PERFORMANCE) return;
+    this.marks[label] = performance.now();
+    console.debug('[perf]', label);
+  },
+  measure(label, startLabel, endLabel) {
+    if (!TEAMPRO_FLAGS.DEBUG_PERFORMANCE) return;
+    const end = performance.now();
+    if (endLabel) this.marks[endLabel] = end;
+    const start = this.marks[startLabel];
+    if (typeof start === 'number') console.debug('[perf]', label + ': ' + Math.round(end - start) + 'ms');
+  }
+};
+if (typeof window !== 'undefined') window.TEAMPRO_PERF = TEAMPRO_PERF;
+
 /* ============================================================
    1. 常數設定
    ============================================================ */

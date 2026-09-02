@@ -2,6 +2,7 @@
    12.8 選手個人檔案（功能四）＋ 家長週報（功能三）
    ============================================================ */
 async function loadProfile() {
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('loadProfile_start');
   const name = $id('profileName').value;
   const card = $id('profileResultCard');
   const box = $id('profileResult');
@@ -11,12 +12,15 @@ async function loadProfile() {
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') {
     await window.TraitRadar.loadCache();
   }
+  // 歷史筆數維持 180：renderProfile 的「近 N 筆」飲食/紅燈/疼痛統計都以此為母體，
+  // 砍成 30 會讓畫面上的數字直接失真。延後載入（見 09 的 switchTab）才是該省的地方。
   const history = await fetchRecentRecords(name, 180);
   const recs = dedupeLatestByDate(history || []); // 新→舊
   renderProfile(name, recs);
   if (card) card.style.display = 'block';
   const journalCard = $id('journalQueryCard');
   if (journalCard) setTimeout(() => journalCard.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('loadProfile', 'loadProfile_start', 'loadProfile_end');
 }
 
 function renderProfile(name, recs) {
@@ -1058,4 +1062,3 @@ function printPersonalJournal() {
   win.document.close();
   win.focus();
 }
-
