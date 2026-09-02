@@ -492,7 +492,24 @@ function isGetOnlyDiagnostic_(parsed) {
     String(parsed.error || '').indexOf('此動作不接受 GET 請求') !== -1);
 }
 
+/* 後端把 apiVersion 掛在每一個回應上，所以版本握手不需要額外請求。
+   只記錄狀態，不在這裡跳訊息 —— 由教練後台自己決定怎麼顯示。 */
+let _apiVersionSeen = '';
+let _apiVersionMismatch = false;
+function noteApiVersion_(parsed) {
+  const v = parsed && parsed.apiVersion;
+  if (!v) return;
+  _apiVersionSeen = String(v);
+  const expected = (typeof APP_VERSION === 'string') ? APP_VERSION : '';
+  _apiVersionMismatch = !!(expected && _apiVersionSeen !== expected);
+}
+function getApiVersionState() {
+  return { expected: (typeof APP_VERSION === 'string') ? APP_VERSION : '', actual: _apiVersionSeen, mismatch: _apiVersionMismatch };
+}
+if (typeof window !== 'undefined') window.getApiVersionState = getApiVersionState;
+
 function handleWebAppParsedResponse_(parsed, action, clientMeta) {
+  noteApiVersion_(parsed);
   // 收到 pong 但我們問的不是 ping → 請求送到了，但動作在路上掉了。
   // 這種情況若原樣回傳，呼叫端會誤判成「連線正常但沒資料」。
   if (action && action !== 'ping' && parsed && parsed.ok === true

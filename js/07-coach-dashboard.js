@@ -39,14 +39,21 @@ function rehydrateRecordFields(rows, fields) {
   return rows.map(r => Object.assign({}, blank, r));
 }
 
-// 逐頁取回 getAllRecords。任何一頁失敗就把該頁的回應原樣往上丟，
+// 後端若還沒部署 getCoachDashboard 會回「未知的 action」，此時整場改走
+// getAllRecords 分頁路徑 —— 部署順序顛倒也不會開天窗。
+let _coachDashboardUnavailable = false;
+function isUnknownActionResponse(res) {
+  return !!(res && res.ok === false && String(res.error || '').indexOf('未知的 action') !== -1);
+}
+
+// 逐頁取回。任何一頁失敗就把該頁的回應原樣往上丟，
 // 讓既有的 authRequired / strict 錯誤處理照舊接手。
 async function fetchAllRecordsPaged(request) {
   let offset = 0;
   let rows = [];
   let fields = null;
   for (let page = 0; page < ALL_RECORDS_MAX_PAGES; page++) {
-    const res = await postToWebApp(Object.assign({}, request, { offset: offset }));
+    const res = await postToWebApp(Object.assign({ paged: true }, request, { offset: offset }));
     if (!res || !res.ok || !Array.isArray(res.data)) return res;
     if (!fields && Array.isArray(res.fields)) fields = res.fields;
     rows = rows.concat(res.data);
@@ -70,12 +77,20 @@ async function fetchAllRecords(opts) {
 
   // opts.sinceDate 有值才縮視窗；沒帶的呼叫點（個人檔案、研究資料匯出）
   // 仍然拿到完整歷史，只是改成分頁取回。
-  const request = { action: 'getAllRecords', paged: true, omitEmpty: true };
+  const legacyRequest = { action: 'getAllRecords', paged: true, omitEmpty: true };
   if (opts.sinceDate) {
-    request.sinceDate = opts.sinceDate;
-    request.omitFields = COACH_BULK_OMIT_FIELDS;
+    legacyRequest.sinceDate = opts.sinceDate;
+    legacyRequest.omitFields = COACH_BULK_OMIT_FIELDS;
   }
-  const cacheKey = opts.sinceDate ? ('since:' + opts.sinceDate) : 'full';
+  // opts.dashboard：教練後台專用，只取後台真的會讀的欄位。
+  // 走在 fetchAllRecords 內部，才能沿用底下既有的 authRequired / strict / 快取處理。
+  const useDashboard = !!opts.dashboard && !_coachDashboardUnavailable;
+  const request = useDashboard
+    ? { action: 'getCoachDashboard', date: opts.date, days: opts.days, paged: true }
+    : legacyRequest;
+  const cacheKey = useDashboard
+    ? ('dash:' + opts.date + ':' + opts.days)
+    : (opts.sinceDate ? ('since:' + opts.sinceDate) : 'full');
 
   // 命中未過期的快取就直接回傳，不再打後端（開分頁最大的加速來源）。
   const cached = _allRecordsCache[cacheKey];
@@ -86,6 +101,11 @@ async function fetchAllRecords(opts) {
   let res;
   try {
     res = await fetchAllRecordsPaged(request);
+    if (useDashboard && isUnknownActionResponse(res)) {
+      console.warn('[coach] 後端尚未部署 getCoachDashboard，改用 getAllRecords 分頁路徑');
+      _coachDashboardUnavailable = true;
+      res = await fetchAllRecordsPaged(legacyRequest);
+    }
   } catch (e) {
     console.error('getAllRecords 連線失敗:', e);
     if (opts.strict) {
@@ -826,11 +846,10 @@ function renderCoachReadinessOverview(todays, all) {
     ['高風險名單', highRisk.length]
   ].map(c => `<div class="ov-cell"><span class="ov-num">${c[1]}</span><span class="ov-label">${c[0]}</span></div>`).join('');
 
-  const buckets = { '強化組': [], '穩定組': [], '調整組': [], '保護組': [], '關懷組': [] };
+  const buckets = emptyReadinessBuckets();
   todays.forEach(r => {
-    const score = nval(r.finalReadinessScore) || 0;
-    const key = score >= 85 ? '強化組' : (score >= 70 ? '穩定組' : (score >= 55 ? '調整組' : (score >= 40 ? '保護組' : '關懷組')));
-    buckets[key].push(r);
+    const key = readinessGroupKey(r.finalReadinessScore);
+    (buckets[key] || buckets['關懷組']).push(r);
   });
   const replyTemplates = {
     '強化組': '{name}，今天狀態很好，可以安排高品質技術、速度、對打模擬與爆發力訓練。不過記得，狀態好更要把動作品質守住，不是只有衝強度。',
@@ -1069,6 +1088,25 @@ function coachLoadErrorHtml(e) {
   return '<div class="hint-box warn coach-load-error"><b>⚠️ 這裡是空的，因為資料沒讀進來，不是今天沒人回報。</b><br>'
     + escapeHtml(coachLoadErrorHint(e)) + detail + action + '</div>';
 }
+/* 前後端版本不一致的提示。不動既有版面：找不到掛載點就安靜跳過。 */
+function renderVersionMismatchBanner() {
+  const state = (typeof getApiVersionState === 'function') ? getApiVersionState() : null;
+  const host = $id('coachOverview');
+  const existing = $id('versionMismatchBanner');
+  if (!state || !state.mismatch) { if (existing) existing.remove(); return; }
+  const html = '<b>⚠️ 前後端版本不同，請重新部署 Apps Script</b><br>'
+    + '前端 ' + escapeHtml(state.expected) + '／後端 ' + escapeHtml(state.actual)
+    + '。畫面上的資料可能不完整，請先完成後端部署再操作。';
+  if (existing) { existing.innerHTML = html; return; }
+  if (!host || !host.parentNode) return;
+  const box = document.createElement('div');
+  box.id = 'versionMismatchBanner';
+  box.className = 'hint-box warn';
+  box.style.gridColumn = '1/-1';
+  box.innerHTML = html;
+  host.parentNode.insertBefore(box, host);
+}
+
 function showCoachLoadError(e) {
   const html = coachLoadErrorHtml(e);
   COACH_LOAD_ERROR_BOXES.forEach(id => { const b = $id(id); if (b) b.innerHTML = html; });
@@ -1105,7 +1143,10 @@ async function refreshCoach() {
     all = await fetchAllRecords({
       strict: true,
       force: true,
-      sinceDate: shiftDateStr(filterDate, -COACH_WINDOW_DAYS)
+      dashboard: true,
+      date: filterDate,
+      days: COACH_WINDOW_DAYS,
+      sinceDate: shiftDateStr(filterDate, -COACH_WINDOW_DAYS)   // 退回 getAllRecords 時用得到
     });
   } catch (e) {
     // toast 幾秒後就消失，之前只 return 會讓整個後台停在空白畫面，
@@ -1115,6 +1156,7 @@ async function refreshCoach() {
     return;
   }
   clearCoachLoadError();
+  renderVersionMismatchBanner();
   await loadRiskHandles();   // 風險處理紀錄，讓已處理的警示能標示出來
 
   const statusFilter = $id('coachStatusFilter') ? $id('coachStatusFilter').value : 'all';
@@ -1220,13 +1262,36 @@ function cleanLightForCoach(v) {
   return '';
 }
 
+/* 準備度分組的唯一一份門檻。
+   這裡曾經有兩份實作：renderCoachReadinessOverview 用的是下面這組門檻，
+   renderCoachSimpleGroups 卻用 readinessLight().group —— 那回傳的是
+   「穩定 / 強化日」「調整日」這類值，跟 buckets 的鍵（強化組／穩定組…）
+   永遠對不上，於是 buckets[undefined].push 必定拋錯，讓 refreshCoach 從那一行
+   起全部中斷（風險追蹤、今日簡評、狀態名單、分析…都不會渲染）。
+   合併成一份，並讓 bucket 從這裡產生，日後不可能再對不上。 */
+const READINESS_GROUP_KEYS = ['強化組', '穩定組', '調整組', '保護組', '關懷組'];
+function readinessGroupKey(score) {
+  const n = nval(score) || 0;
+  if (n >= 85) return '強化組';
+  if (n >= 70) return '穩定組';
+  if (n >= 55) return '調整組';
+  if (n >= 40) return '保護組';
+  return '關懷組';
+}
+function emptyReadinessBuckets() {
+  const b = {};
+  READINESS_GROUP_KEYS.forEach(k => { b[k] = []; });
+  return b;
+}
+
 function renderCoachSimpleGroups(todays) {
   const box = $id('coachTodayGroups');
   if (!box) return;
-  const buckets = { '強化組': [], '穩定組': [], '調整組': [], '保護組': [], '關懷組': [] };
+  const buckets = emptyReadinessBuckets();
   (todays || []).forEach(r => {
-    const light = readinessLight(nval(r.finalReadinessScore) || 0);
-    buckets[light.group].push(r);
+    const key = readinessGroupKey(r.finalReadinessScore);
+    // 防呆：就算日後門檻再被改壞，也只是少一個人，不會整個後台停在這裡。
+    (buckets[key] || buckets['關懷組']).push(r);
   });
   box.innerHTML = Object.keys(buckets).map(group => {
     const list = buckets[group];
