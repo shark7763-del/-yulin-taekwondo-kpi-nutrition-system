@@ -1094,12 +1094,12 @@ async function refreshCoach() {
   toast('讀取資料中...');
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
 
-  // 雲端讀取失敗／session 過期 → 顯示提示並中止，不再誤判「全隊未回報」
   // 日期一律正規化，且空白時退回今天，避免 0 筆資料。
   // 這行原本在讀取之後，現在必須先算出來 —— 讀取視窗要跟著教練選的日期往前推，
   // 否則教練回頭查兩個月前那天會落在視窗外，變成空畫面。
   const filterDate = normDate($id('coachDate').value || todayStr());
 
+  // 雲端讀取失敗／session 過期 → 顯示提示並中止，不再誤判「全隊未回報」
   let all;
   try {
     all = await fetchAllRecords({
