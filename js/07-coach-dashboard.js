@@ -110,7 +110,11 @@ async function fetchAllRecords(opts) {
     console.error('getAllRecords 連線失敗:', e);
     if (opts.strict) {
       toast('⚠️ 後台讀不到雲端 records，請檢查網路後重試');
-      throw new Error('FETCH_FAILED');
+      // 原本只丟 FETCH_FAILED，真正的原因（連線斷掉？後端回了 HTML 錯誤頁？）
+      // 只留在 console，教練在手機上根本看不到，等於沒有診斷。
+      const err = new Error('FETCH_FAILED');
+      err.detail = describeThrownError_(e) + '｜action=' + (request && request.action);
+      throw err;
     }
     return getLocalRecords().map(normalizeCoachRecord);
   }
@@ -144,6 +148,17 @@ async function fetchAllRecords(opts) {
     throw err;
   }
   return getLocalRecords().map(normalizeCoachRecord);
+}
+
+// 描述被丟出來的例外，不外洩任何紀錄內容。
+function describeThrownError_(e) {
+  if (!e) return '未知錯誤';
+  const msg = String(e.message || e);
+  if (e.nonJson) return msg;                       // 已經是安全的結構描述
+  if (msg === 'Failed to fetch' || /NetworkError|Load failed/i.test(msg)) {
+    return '瀏覽器連不上 script.google.com（網路中斷、離線、或被擋）';
+  }
+  return (e.name ? e.name + ': ' : '') + msg.slice(0, 160);
 }
 
 // 描述後端回應的結構，不外洩任何紀錄內容。

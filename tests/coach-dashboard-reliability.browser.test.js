@@ -36,6 +36,13 @@ const INIT = () => {
     const reply = o => Promise.resolve(new Response(JSON.stringify(
       Object.assign({ apiVersion: window.__apiVersion }, o))));
 
+    if (window.__scenario === 'htmlError') {
+      return Promise.resolve(new Response(
+        '<!DOCTYPE html><html><head><title>Error 500 (Server Error)!!1</title></head><body>oops</body></html>',
+        { status: 500, headers: { 'Content-Type': 'text/html' } }));
+    }
+    if (window.__scenario === 'offline') return Promise.reject(new TypeError('Failed to fetch'));
+
     if (body.action === 'getCoachDashboard') {
       if (window.__scenario === 'noAction') return reply({ ok: false, error: '未知的 action：getCoachDashboard' });
       if (window.__scenario === 'expired') return reply({ ok: false, error: '登入已失效，請重新登入。', authRequired: true });
@@ -155,6 +162,20 @@ const asCoach = () => {
     return (document.getElementById('versionMismatchBanner') || {}).textContent || '';
   });
   t('版本恢復一致後提示會消失', back === '', back.slice(0, 40));
+
+  /* ---- 6b. 後端回 HTML 錯誤頁 / 連線中斷時，畫面要說得出原因 ---- */
+  const html500 = await run('htmlError');
+  t('後端回 HTML 錯誤頁時，橫幅寫得出 HTTP 狀態與頁面標題',
+    html500.bannerText.indexOf('HTTP 500') !== -1 && html500.bannerText.indexOf('Error 500') !== -1,
+    html500.bannerText.slice(0, 110));
+  t('HTML 錯誤頁的診斷不外洩回應內容（只描述結構）',
+    html500.bannerText.indexOf('oops') === -1, html500.bannerText.slice(0, 80));
+
+  const offline = await run('offline');
+  t('連線中斷時說的是「連不上 script.google.com」，不是丟原始例外',
+    offline.bannerText.indexOf('連不上 script.google.com') !== -1, offline.bannerText.slice(0, 110));
+  t('診斷會標出是哪一個 action 失敗',
+    offline.bannerText.indexOf('action=') !== -1, offline.bannerText.slice(0, 110));
 
   /* ---- 7. 準備度分組：曾經必然拋錯，讓後面所有區塊停止渲染 ---- */
   const groups = await page.evaluate(() => {

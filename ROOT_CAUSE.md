@@ -156,10 +156,10 @@ read-optimization               7/7
 submit-performance             12/12
 login-stability                 6/6
 records-paging.browser          9/9
-coach-dashboard-reliability    16/16   ← 真實頁面
+coach-dashboard-reliability    20/20   ← 真實頁面
 daily-kpi-refactor.smoke       87/87   （no page errors）
 --------------------------------------
-合計                          266/266
+合計                          270/270
 ```
 
 規模測試（5000 列）實測：教練後台單頁最大 JSON 遠低於 2MB 安全上限，

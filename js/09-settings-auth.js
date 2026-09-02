@@ -484,7 +484,31 @@ async function postToWebAppFetchJson_(url, requestBody, action, includeActionQue
   });
   const text = await res.text();
   try { return JSON.parse(text); }
-  catch (e) { throw new Error('回傳非 JSON：' + text.slice(0, 120)); }
+  catch (e) {
+    // 原本直接把回應前 120 字塞進錯誤訊息，那可能是半截的紀錄內容（學生健康資料）。
+    // 改成只描述「這是什麼東西」：HTTP 狀態、內容型別、長度、是不是 HTML、
+    // 以及 HTML 的 <title>（Google 的錯誤頁標題本身就是最有用的線索）。
+    const err = new Error('回傳非 JSON（' + describeNonJsonResponse_(res, text) + '）');
+    err.nonJson = true;
+    throw err;
+  }
+}
+
+function describeNonJsonResponse_(res, text) {
+  const bits = ['HTTP ' + res.status];
+  const ct = (res.headers && res.headers.get) ? (res.headers.get('content-type') || '') : '';
+  if (ct) bits.push(ct.split(';')[0]);
+  bits.push(text.length + ' bytes');
+  const head = String(text || '').trim().slice(0, 400);
+  if (head.charAt(0) === '<') {
+    bits.push('HTML');
+    const m = /<title[^>]*>([^<]{0,120})<\/title>/i.exec(head);
+    if (m) bits.push('title=「' + m[1].trim() + '」');
+  } else if (head.charAt(0) === '{' || head.charAt(0) === '[') {
+    bits.push('看起來是被截斷的 JSON');
+  }
+  if (res.redirected) bits.push('經過重導 → ' + String(res.url || '').slice(0, 80));
+  return bits.join('｜');
 }
 
 function isGetOnlyDiagnostic_(parsed) {
