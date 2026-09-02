@@ -323,6 +323,7 @@ async function alreadySubmittedToday(name, date) {
 
 // 主送出函式
 async function doSubmit(mode) {
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('submit_click');
   if (_submitting) return false;      // 正在送出，忽略重複點擊
   if (!validateForm()) return false;
 
@@ -335,34 +336,37 @@ async function doSubmit(mode) {
   // 鎖定送出按鈕，避免連點
   _submitting = true;
   const submitBtns = [$id('btnSubmit'), $id('btnLocalSubmit'), $id('btnSubmitShare')].filter(Boolean);
-  submitBtns.forEach(b => b.disabled = true);
+  const oldButtonText = submitBtns.map(b => b.textContent);
+  submitBtns.forEach(b => { b.disabled = true; b.textContent = '正在送出...'; });
 
   try {
     // 當日重複送出防呆：今天已填過就先確認是否覆蓋
     const name = $id('name').value;
     const date = $id('date').value || todayStr();
-    if (await alreadySubmittedToday(name, date)) {
+    if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('checkSubmittedToday_start');
+    const submitContext = await fetchSubmitContext(name, date, 60);
+    if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('checkSubmittedToday', 'checkSubmittedToday_start', 'checkSubmittedToday_end');
+    if (submitContext.alreadySubmittedToday) {
       if (!confirm('⚠️ 你今天已經填過了，要用這次的內容覆蓋今天那筆嗎？')) {
         toast('已取消送出');
         return false;   // finally 會解鎖按鈕
       }
     }
-    return await doSubmitInner(mode);
+    return await doSubmitInner(mode, submitContext);
   } finally {
     _submitting = false;
-    submitBtns.forEach(b => b.disabled = false);
+    submitBtns.forEach((b, i) => { b.disabled = false; b.textContent = oldButtonText[i]; });
   }
 }
 
-async function doSubmitInner(mode) {
+async function doSubmitInner(mode, submitContext) {
   const rec = buildRecord();
   if (rec._isAbsence) return await doSubmitAbsence(mode, rec);
 
-  // 取得上一筆與歷史（並行），做比較與進步肯定
-  const [last, history] = await Promise.all([
-    fetchLastRecord(rec.name),
-    fetchRecentRecords(rec.name, 60)
-  ]);
+  // 取得上一筆與歷史，送出前已由 getSubmitContext 合併查詢；保留 fallback。
+  if (!submitContext) submitContext = await fetchSubmitContext(rec.name, rec.date, 60);
+  const last = submitContext.lastRecord || null;
+  const history = submitContext.recentRecords || [];
 
   // 進步肯定（跟昨天的自己比）
   const affirm = buildAffirmations(rec, last, history);
@@ -397,10 +401,13 @@ async function doSubmitInner(mode) {
   if (mode === 'official') {
     toast('送出中...');
     try {
-      const res = await postToWebApp({ action: 'addRecord', payload: payload });
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('addRecord_start');
+      const res = await postToWebApp({ action: 'addRecord', payload: payload, _criticalAuth: true });
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('addRecord', 'addRecord_start', 'addRecord_complete');
       if (res && res.ok) {
         toast('✅ 已送出到 Google Sheet'); clearDraft(); saved = true;
-        if (window.KpiSession && window.KpiSession.refreshStudent) window.KpiSession.refreshStudent();
+        if (res.line && res.line.ok === false && !res.line.skipped) console.warn('[submit] LINE notification failed after main write:', res.line.error || res.line);
+        if (window.KpiSession && window.KpiSession.refreshStudent) setTimeout(() => window.KpiSession.refreshStudent(), 0);
       }
       else toast('⚠️ 送出失敗：' + (res && res.error ? res.error : '未知錯誤'));
     } catch (e) {
@@ -420,7 +427,10 @@ async function doSubmitInner(mode) {
   // 顯示回饋卡（AI 教練回饋卡為主，其餘維持原樣）
   renderCoachFeedbackCard(feedback);
   // 若教練已啟用 OpenAI，背景用 GPT 依語氣＋三明治法重寫三版回饋（失敗自動沿用上面的模板）
-  maybeEnhanceWithAiFeedback(rec, feedback);
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('ai_score_start');
+  maybeEnhanceWithAiFeedback(rec, feedback).finally(() => {
+    if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('ai_score', 'ai_score_start', 'ai_score_end');
+  });
   if (rec._kpiEnabled) renderCompareCard(rec, last, affirm);
   else { const compare = $id('compareCard'); if (compare) compare.style.display = 'none'; }
   renderNutritionCard(rec);

@@ -581,6 +581,32 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('a genuine ping still succeeds',
     lostAction.pingResult && lostAction.pingResult.message === 'pong', JSON.stringify(lostAction.pingResult));
 
+  const getDowngradeRetry = await page.evaluate(async () => {
+    const calls = [];
+    const realFetch = window.fetch;
+    window.fetch = async (u, init) => {
+      calls.push(String(u));
+      if (calls.length === 1) {
+        return { text: async () => JSON.stringify({ ok: false, error: '此動作不接受 GET 請求，請改用 POST。', hint: 'x' }) };
+      }
+      return { text: async () => JSON.stringify({ ok: true, data: [{ name: '阿明' }] }) };
+    };
+    const out = {};
+    try {
+      out.res = await window.postToWebApp({ action: 'getAllRecords' });
+    } catch (e) {
+      out.err = e.message;
+    }
+    out.calls = calls;
+    window.fetch = realFetch;
+    return out;
+  });
+  t('GET-only downgrade diagnostic retries once as pure POST',
+    getDowngradeRetry.res && getDowngradeRetry.res.ok === true && getDowngradeRetry.calls.length === 2
+      && getDowngradeRetry.calls[0].indexOf('action=getAllRecords') !== -1
+      && getDowngradeRetry.calls[1].indexOf('action=getAllRecords') === -1,
+    JSON.stringify(getDowngradeRetry).slice(0, 260));
+
   // 16. AI 教練回覆的四種情境。重點是：一定要有可用文字，而且技術細節
   //     （授權失敗、HTTP 狀態碼、Exception 全文）不得出現在給人看的訊息裡。
   const aiCases = await page.evaluate(async () => {

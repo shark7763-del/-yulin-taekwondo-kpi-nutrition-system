@@ -413,9 +413,22 @@ function renderSchemaAudit(res) {
 const INFLIGHT_DEDUP_ACTIONS = [
   'getAllRecords', 'getKpiManageData', 'getMentalCoachDashboard', 'getRoster',
   'getAllAttendanceReports', 'getCoachScores', 'getKpiSessions', 'getAuthConfig',
-  'getAllAppData', 'getAccountAdminData', 'getAiConfig', 'getLineStatus'
+  'getAllAppData', 'getAccountAdminData', 'getAiConfig', 'getLineStatus',
+  'getLastRecordByName', 'getRecentRecordsByName', 'getSubmitContext'
 ];
 const _inflight = {};
+
+const AUTH_REQUIRED_CRITICAL_ACTIONS = [
+  'studentLogin', 'parentLogin', 'parentVerify', 'parentConsent', 'coachLogin',
+  'addRecord', 'updateRecord', 'saveCoachScore', 'saveCoachReply',
+  'saveStudentTrait', 'submitWeeklyKpi', 'studentActivate'
+];
+
+function isCriticalAuthAction(action, body) {
+  if (body && body._criticalAuth === true) return true;
+  if (body && body._background === true) return false;
+  return AUTH_REQUIRED_CRITICAL_ACTIONS.indexOf(String(action || '')) !== -1;
+}
 
 async function postToWebApp(body) {
   const action = String((body && body.action) || '');
@@ -435,6 +448,12 @@ async function postToWebAppRaw(body) {
   if (!url) throw new Error('未設定 Web App URL');
   const role = getRole();
   const requestBody = Object.assign({}, body);
+  const clientMeta = {
+    criticalAuth: requestBody._criticalAuth === true,
+    background: requestBody._background === true
+  };
+  delete requestBody._criticalAuth;
+  delete requestBody._background;
   if (role && role.authToken && !requestBody.authToken) requestBody.authToken = role.authToken;
   if (role && !role.authToken && AUTH_CONFIG.legacyLoginEnabled) {
     requestBody.legacyRole = role.role;
@@ -445,17 +464,35 @@ async function postToWebAppRaw(body) {
   // 後端就走 `body.action || 'ping'` 回一個 pong，呼叫端拿到看似成功卻沒資料的回應。
   // 帶著 query 的話，退化後 doGet 仍認得動作，會回明確錯誤而不是 pong。
   const action = String(requestBody.action || '');
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('api_' + action + '_start');
+  const parsed = await postToWebAppFetchJson_(url, requestBody, action, true);
+  if (isGetOnlyDiagnostic_(parsed)) {
+    console.warn('[api] POST was downgraded to GET after redirect; retrying without query action:', action);
+    const retry = await postToWebAppFetchJson_(url, requestBody, action, false);
+    return handleWebAppParsedResponse_(retry, action, clientMeta);
+  }
+  return handleWebAppParsedResponse_(parsed, action, clientMeta);
+}
+
+async function postToWebAppFetchJson_(url, requestBody, action, includeActionQuery) {
   const sep = url.indexOf('?') === -1 ? '?' : '&';
-  const postUrl = action ? `${url}${sep}action=${encodeURIComponent(action)}` : url;
+  const postUrl = (includeActionQuery && action) ? `${url}${sep}action=${encodeURIComponent(action)}` : url;
   const res = await fetch(postUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(requestBody)
   });
   const text = await res.text();
-  let parsed;
-  try { parsed = JSON.parse(text); }
+  try { return JSON.parse(text); }
   catch (e) { throw new Error('回傳非 JSON：' + text.slice(0, 120)); }
+}
+
+function isGetOnlyDiagnostic_(parsed) {
+  return !!(parsed && parsed.ok === false &&
+    String(parsed.error || '').indexOf('此動作不接受 GET 請求') !== -1);
+}
+
+function handleWebAppParsedResponse_(parsed, action, clientMeta) {
   // 收到 pong 但我們問的不是 ping → 請求送到了，但動作在路上掉了。
   // 這種情況若原樣回傳，呼叫端會誤判成「連線正常但沒資料」。
   if (action && action !== 'ping' && parsed && parsed.ok === true
@@ -464,7 +501,12 @@ async function postToWebAppRaw(body) {
   }
   // 後端回報 session 過期／未授權時，主動提示重新登入，
   // 避免呼叫端（如 fetchAllRecords）靜默落回本機空資料，害教練後台誤顯示「全體未回報」。
-  if (parsed && parsed.ok === false && parsed.authRequired) notifySessionExpired();
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('api.' + action, 'api_' + action + '_start', 'api_' + action + '_end');
+  if (parsed && parsed.ok === false && parsed.authRequired) {
+    if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('authRequired_received');
+    if (isCriticalAuthAction(action, clientMeta)) notifySessionExpired(action);
+    else console.warn('[auth] background request returned authRequired; session kept:', action);
+  }
   return parsed;
 }
 
@@ -478,9 +520,11 @@ function dispatchRoleChanged() {
 
 // 全域 session 過期處理（同一波只提示一次，避免多個請求同時洗版）
 let _sessionExpiredShown = false;
-function notifySessionExpired() {
+function notifySessionExpired(action) {
   if (_sessionExpiredShown) return;
   _sessionExpiredShown = true;
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('session_cleared');
+  console.warn('[auth] session cleared after authRequired from:', action || 'unknown');
   try { toast('⚠️ 登入已過期，請重新登入後再讀取資料'); } catch (e) {}
   try { clearRole(); } catch (e) {}
   try { if (typeof showLoginOverlay === 'function') showLoginOverlay(); } catch (e) {}
@@ -494,6 +538,7 @@ function notifySessionExpired() {
    以前在 applyRole() 就無條件發出，等於每次教練開頁都多 3 個排隊中的後端請求。
    一場只載一次；需要重新整理時各自的按鈕仍可單獨呼叫。 */
 let _settingsTabLoaded = false;
+let _profileTabLoadedFor = '';
 function loadSettingsTabOnce() {
   const r = getRole();
   if (!r || r.role !== 'coach' || _settingsTabLoaded) return;
@@ -522,6 +567,14 @@ function switchTab(tabName) {
     }, 0);
   }
   if (tabName === 'settings') loadSettingsTabOnce();
+  if (tabName === 'profile' && window.TEAMPRO_FLAGS && window.TEAMPRO_FLAGS.USE_LAZY_PROFILE_LOAD) {
+    const r = getRole();
+    const key = r && r.name ? r.role + ':' + r.name : '';
+    if (key && key !== _profileTabLoadedFor && typeof loadProfile === 'function') {
+      _profileTabLoadedFor = key;
+      setTimeout(() => loadProfile(), 0);
+    }
+  }
   if (tabName === 'trait' && window.TraitRadar) {
     setTimeout(() => {
       const r = getRole();
@@ -696,10 +749,13 @@ async function runLogin(buttonId, request, role) {
   const button = $id(buttonId);
   button.disabled = true; const oldText = button.textContent; button.textContent = '驗證中...';
   try {
-    const res = await postToWebApp(request);
+    if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('login_start');
+    const res = await postToWebApp(Object.assign({ _criticalAuth: true }, request));
     if (!res || !res.ok) { loginError((res && res.error) || '登入失敗，請稍後再試。'); return; }
+    if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('login_auth_success');
     const user = res.user || {};
     setRole(role, user.studentName || '', Object.assign({}, user, { authToken: res.authToken }));
+    _sessionExpiredShown = false;
     if (role === 'parent' && res.consentRequired) {
       showParentConsent();
       return;
@@ -871,6 +927,7 @@ function finishLogin(role, name) {
 
 // 套用角色權限
 function applyRole() {
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('applyRole_start');
   const r = getRole();
   if (!r) { showLoginOverlay(); return; }
   const conf = ROLE_TABS[r.role] || ROLE_TABS.student;
@@ -943,7 +1000,7 @@ function applyRole() {
   if ((r.role === 'student' || r.role === 'parent') && r.name) {
     if (pn) pn.value = r.name;
     if (profileQuery) profileQuery.style.display = 'none';
-    loadProfile();
+    if (!window.TEAMPRO_FLAGS || !window.TEAMPRO_FLAGS.USE_LAZY_PROFILE_LOAD) loadProfile();
   } else if (profileQuery) {
     profileQuery.style.display = '';
   }
@@ -966,6 +1023,7 @@ function applyRole() {
 
   // 今日我該做什麼（選手／家長導引卡）
   renderTodayGuide();
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('applyRole', 'applyRole_start', 'applyRole_end');
 }
 
 function setSelectOnlyName(id, name) {

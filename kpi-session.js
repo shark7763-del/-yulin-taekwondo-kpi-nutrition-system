@@ -88,6 +88,8 @@
   var BULK_CONFIRM_DELAY = 800;
   var _coachBgTimer = null;
   var _studentRetryTimer = null;
+  var _lastRoleRefreshKey = '';
+  var _lastRoleRefreshAt = 0;
   var _initBound = false;
 
   function ndate(v) { var d = new Date(v); return isNaN(d.getTime()) ? null : d; }
@@ -1049,8 +1051,15 @@
   function refreshForRole() {
     var r = role();
     if (!r) return;
+    var key = r.role + ':' + (r.name || r.studentId || '');
+    var now = Date.now();
+    if (key === _lastRoleRefreshKey && now - _lastRoleRefreshAt < 1500) return;
+    _lastRoleRefreshKey = key;
+    _lastRoleRefreshAt = now;
+    if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('kpiSession_start');
     if (r.role === 'coach') loadCoachData();
     if (r.role === 'student' || r.role === 'coach') renderStudentKpi();
+    if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('kpiSession', 'kpiSession_start', 'kpiSession_end');
   }
   function init() {
     if (_initBound) return;
