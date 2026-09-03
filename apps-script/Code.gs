@@ -1588,6 +1588,9 @@ function authTeamRecords(data, date) {
    四個參數都不帶時，走的仍是原本的 getAllRecords()，舊前端一行都不受影響。
    ============================================================ */
 var RECORDS_PAGE_BUDGET_CHARS = 1500000;   // 單頁 JSON 上限，約 1.5MB
+// 分段讀取的段數上限。超過就退回「一次讀完再過濾」——
+// 段數多的時候 getRange 呼叫次數才是瓶頸（v79 的教訓）。
+var RECORDS_MAX_RANGE_READS = 12;
 
 // 與 rowToObject 完全一致的鍵名清單（含 canonical 別名），供前端回填空欄位。
 function recordFieldNames_(headers) {
@@ -1651,6 +1654,31 @@ function recordRowInWindow_(row, headers, since) {
   return d.slice(0, 10) >= since.slice(0, 10);
 }
 
+// date 與 timestamp 兩欄的位置，合併成一段連續範圍一次讀完。
+function recordDateColumns_(headers) {
+  var di = -1, ti = -1;
+  for (var i = 0; i < headers.length; i++) {
+    var h = normalizeHeaderName_(headers[i]);
+    if (h === 'date' && di === -1) di = i + 1;
+    if (h === 'timestamp' && ti === -1) ti = i + 1;
+  }
+  if (di === -1 && ti === -1) return null;
+  var lo = Math.min(di === -1 ? ti : di, ti === -1 ? di : ti);
+  var hi = Math.max(di === -1 ? ti : di, ti === -1 ? di : ti);
+  return { lo: lo, span: hi - lo + 1, dateOff: di === -1 ? -1 : di - lo, tsOff: ti === -1 ? -1 : ti - lo };
+}
+
+// 與 recordRowInWindow_ 同一套判斷，但吃的是只含日期欄的輕量列。
+// 讀不出日期一律保留 —— 寧可多給，不可把資料弄不見。
+function rowInWindowByProbe_(probeRow, cols, since) {
+  if (!since || !cols) return true;
+  var raw = cols.dateOff >= 0 ? probeRow[cols.dateOff] : '';
+  if (raw === '' || raw === null || raw === undefined) raw = cols.tsOff >= 0 ? probeRow[cols.tsOff] : '';
+  var d = formatDateCell(raw);
+  if (!d || d.length < 10) return true;
+  return d.slice(0, 10) >= since.slice(0, 10);
+}
+
 function getAllRecordsRead_(opts) {
   var sheet = getSheet();
   var info = auditHeaders_(sheet, HEADERS);
@@ -1661,11 +1689,48 @@ function getAllRecordsRead_(opts) {
     return { ok: true, data: [], fields: fields, total: 0, offset: 0, nextOffset: null };
   }
   var width = sheet.getLastColumn();
-  var values = sheet.getRange(2, 1, lastRow - 1, width).getValues();
 
+  /* 有日期視窗時，先只讀 date / timestamp 兩欄定位，再把連續的列合併成少數幾段
+     讀內容 —— 不要為了拿 45 天的資料，先把 1800 列 x 164 欄整個拉進記憶體。
+
+     為什麼安全：records 近似 append 但不嚴格（實測 1812 列有 67 次逆序，
+     3.70%，補填舊日期會 append 到尾端）。所以**不能**用尾端切片
+     （實測會漏掉 25 筆），必須整欄掃 date 才不會漏資料 ——
+     但那只是 N x 1 格，成本可以忽略。
+
+     實測（1812 列 x 164 欄 = 297,168 格）：
+       近 7 天   1 段 getRange   15,088 格   6%
+       近 14 天  3 段 getRange   37,556 格  13%
+       近 45 天  4 段 getRange  127,592 格  44%
+     段數只有個位數，所以不會重蹈 v79「getRange 呼叫次數才是瓶頸」的覆轍
+     （v79 讀的是單一選手的散落列，段數多；日期視窗的列是連續的）。 */
   var kept = [];
-  for (var i = 0; i < values.length; i++) {
-    if (recordRowInWindow_(values[i], headers, opts.since)) kept.push(values[i]);
+  if (opts.since) {
+    var idxCols = recordDateColumns_(headers);
+    var probe = sheet.getRange(2, idxCols.lo, lastRow - 1, idxCols.span).getValues();
+    var wanted = [];
+    for (var i = 0; i < probe.length; i++) {
+      if (rowInWindowByProbe_(probe[i], idxCols, opts.since)) wanted.push(i);
+    }
+    var groups = consecutiveGroups_(wanted);
+    if (groups.length > RECORDS_MAX_RANGE_READS) {
+      /* 保險絲：段數太多代表資料不是依時間排列（例如做過一次依姓名排序的匯入）。
+         這種情況下分段讀會退化成幾十次 getRange —— 正是 v79 被還原的原因。
+         寧可退回「一次讀完再過濾」，最壞情況也只是跟改動前一樣，不會更糟。 */
+      var wantedSet = {};
+      for (var wi = 0; wi < wanted.length; wi++) wantedSet[wanted[wi]] = true;
+      var allRows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+      for (var ai = 0; ai < allRows.length; ai++) if (wantedSet[ai]) kept.push(allRows[ai]);
+    } else {
+      for (var gi = 0; gi < groups.length; gi++) {
+        var g = groups[gi];
+        var block = sheet.getRange(2 + g.start, 1, g.end - g.start + 1, width).getValues();
+        for (var bi = 0; bi < block.length; bi++) kept.push(block[bi]);
+      }
+    }
+  } else {
+    var values = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+    for (var j = 0; j < values.length; j++) kept.push(values[j]);
   }
 
   var out = [];

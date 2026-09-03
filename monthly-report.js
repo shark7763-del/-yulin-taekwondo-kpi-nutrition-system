@@ -97,7 +97,9 @@
     month = month || thisMonthStr();
     var allRecords = [];
     var allReports = [];
-    try { allRecords = (typeof fetchAllRecords === 'function') ? (await fetchAllRecords()) : []; } catch (e) { allRecords = []; }
+    // 月報只用得到 inMonth(month) 的資料，讀取範圍就收在該月起始日之後。
+    var monthOpts = /^\d{4}-\d{2}$/.test(String(month)) ? { sinceDate: month + '-01' } : {};
+    try { allRecords = (typeof fetchAllRecords === 'function') ? (await fetchAllRecords(monthOpts)) : []; } catch (e) { allRecords = []; }
     try { allReports = (typeof fetchAllAttendanceReports === 'function') ? (await fetchAllAttendanceReports()) : []; } catch (e) { allReports = []; }
     allRecords = Array.isArray(allRecords) ? allRecords : [];
     allReports = Array.isArray(allReports) ? allReports : [];

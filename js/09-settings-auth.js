@@ -414,7 +414,9 @@ const INFLIGHT_DEDUP_ACTIONS = [
   'getAllRecords', 'getKpiManageData', 'getMentalCoachDashboard', 'getRoster',
   'getAllAttendanceReports', 'getCoachScores', 'getKpiSessions', 'getAuthConfig',
   'getAllAppData', 'getAccountAdminData', 'getAiConfig', 'getLineStatus',
-  'getLastRecordByName', 'getRecentRecordsByName', 'getSubmitContext'
+  'getLastRecordByName', 'getRecentRecordsByName', 'getSubmitContext',
+  // 教練後台的三個區塊會同時要資料，沒列進來就會同時轟炸同一支 GAS
+  'getCoachDashboard', 'getRecordsByDate', 'getTodayRecords', 'getCoachReplies'
 ];
 const _inflight = {};
 
@@ -429,6 +431,112 @@ function isCriticalAuthAction(action, body) {
   if (body && body._background === true) return false;
   return AUTH_REQUIRED_CRITICAL_ACTIONS.indexOf(String(action || '')) !== -1;
 }
+
+/* ============================================================
+   safeReadRequest —— 只給「讀取型」API 的容錯層
+   ------------------------------------------------------------
+   手機端實際會遇到 Failed to fetch / NetworkError / script.google.com
+   暫時連不到。原本任何一次失敗就讓整個區塊掛掉，而分頁讀取又把
+   單次失敗機率乘上頁數。
+
+   這一層提供：逾時、重試一次（含 jitter）、斷路器。
+   in-flight 去重沿用既有的 INFLIGHT_DEDUP_ACTIONS（key 是完整 body）。
+
+   ⚠️ 寫入型 API 一律不得經過這裡 —— 重試會造成重複寫入。
+      要讓寫入可重試，必須先有 requestId / idempotency key。
+   ============================================================ */
+const READ_TIMEOUT_MS = 18000;
+const READ_RETRY_DELAY_MIN_MS = 800;
+const READ_RETRY_DELAY_MAX_MS = 1500;
+const CIRCUIT_FAIL_THRESHOLD = 2;      // 連續失敗幾次後開啟斷路器
+const CIRCUIT_OPEN_MS = 12000;         // 開啟後多久內不再打後端
+
+// 寫入型 action：永遠不進 safeReadRequest，也永遠不重試。
+const WRITE_ACTIONS = [
+  'addRecord', 'updateRecord', 'saveCoachScore', 'saveCoachReply', 'saveStudentTrait',
+  'submitWeeklyKpi', 'studentActivate', 'setAppData', 'setRoster', 'setCoachPassword',
+  'setAiConfig', 'setLineConfig', 'setLegacyLoginEnabled', 'setStarConfig', 'setWeeklyKpiAuto',
+  'saveMentalCompetition', 'saveMentalParticipants', 'saveMentalDailyRecord', 'saveMentalSelfTalk',
+  'saveMentalGoal', 'saveMentalScenarioPlan', 'saveMentalReflection', 'updateMentalCompetition',
+  'createKpiSession', 'bulkSetKpiSession', 'closeKpiSession', 'extendKpiSession', 'reopenKpiSession',
+  'upsertParentAccount', 'studentAccountAction', 'parentAccountAction', 'updateRiskFlag',
+  'schemaMigrate', 'pushLineText', 'lineTest', 'runWeeklyKpiNow'
+];
+function isWriteAction(action) { return WRITE_ACTIONS.indexOf(String(action || '')) !== -1; }
+
+let _circuitFailures = 0;
+let _circuitOpenUntil = 0;
+function circuitIsOpen() { return Date.now() < _circuitOpenUntil; }
+function circuitNote(ok) {
+  if (ok) { _circuitFailures = 0; _circuitOpenUntil = 0; return; }
+  _circuitFailures++;
+  if (_circuitFailures >= CIRCUIT_FAIL_THRESHOLD) {
+    _circuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
+    console.warn('[api] 連續失敗 ' + _circuitFailures + ' 次，暫停呼叫後端 ' + (CIRCUIT_OPEN_MS / 1000) + ' 秒');
+  }
+}
+// 教練主動按「重新整理資料」時解除，讓他能立刻再試一次。
+function resetBackendCircuit() {
+  _circuitFailures = 0;
+  _circuitOpenUntil = 0;
+  if (typeof resetCoachDashboardAvailability === 'function') resetCoachDashboardAvailability();
+}
+if (typeof window !== 'undefined') {
+  window.resetBackendCircuit = resetBackendCircuit;
+  window.getBackendCircuitState = () => ({ failures: _circuitFailures, openUntil: _circuitOpenUntil, open: circuitIsOpen() });
+}
+
+function backendUnavailableError_(reason) {
+  const err = new Error('BACKEND_UNAVAILABLE');
+  err.backendUnavailable = true;
+  err.detail = reason;
+  return err;
+}
+
+function withReadTimeout_(promise, action) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error('讀取逾時（超過 ' + Math.round(READ_TIMEOUT_MS / 1000) + ' 秒沒有回應）');
+      err.timedOut = true;
+      reject(err);
+    }, READ_TIMEOUT_MS);
+  });
+  return Promise.race([promise, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+}
+
+const sleep_ = ms => new Promise(r => setTimeout(r, ms));
+
+async function safeReadRequest(body) {
+  const action = String((body && body.action) || '');
+  if (isWriteAction(action)) {
+    // 防呆：寫入誤走讀取層會造成重複寫入，寧可直接擋下來讓錯誤浮現。
+    throw new Error('safeReadRequest 不接受寫入型 action：' + action);
+  }
+  if (circuitIsOpen()) {
+    throw backendUnavailableError_('後端連續失敗，暫停呼叫中（' +
+      Math.ceil((_circuitOpenUntil - Date.now()) / 1000) + ' 秒後自動重試，或按「重新整理資料」立即重試）');
+  }
+  let lastErr = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) {
+      const jitter = READ_RETRY_DELAY_MIN_MS +
+        Math.floor(Math.random() * (READ_RETRY_DELAY_MAX_MS - READ_RETRY_DELAY_MIN_MS));
+      console.warn('[api] ' + action + ' 第一次失敗，' + jitter + 'ms 後重試一次');
+      await sleep_(jitter);
+    }
+    try {
+      const res = await withReadTimeout_(postToWebApp(body), action);
+      circuitNote(true);
+      return res;
+    } catch (e) {
+      lastErr = e;
+      circuitNote(false);
+    }
+  }
+  throw lastErr;
+}
+if (typeof window !== 'undefined') window.safeReadRequest = safeReadRequest;
 
 async function postToWebApp(body) {
   const action = String((body && body.action) || '');

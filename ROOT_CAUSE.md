@@ -4,7 +4,13 @@
 症狀：教練後台大量區塊顯示
 「此動作不接受 GET 請求，請改用 POST」／`keys=[ok,error,hint]`，以及區塊一片空白。
 
-**結論：這是兩個互相獨立的故障，不是同一個。** 只修其中一個，教練看到的畫面仍然是壞的。
+**結論：這是三個互相獨立的故障。** 只修其中一個，教練看到的畫面仍然是壞的。
+
+| | 症狀 | 狀態 |
+|---|---|---|
+| RC-1 | 「此動作不接受 GET 請求」 | 2026-09-02 修復（v83/v84）|
+| RC-2 | 準備度分組以下全部空白 | 2026-09-02 修復 |
+| RC-3 | 「瀏覽器連不上 script.google.com｜action=getAllRecords」 | 2026-09-03 修復 |
 
 ---
 
@@ -88,6 +94,63 @@ buckets[light.group].push(r);
 
 修法：把門檻抽成唯一一份 `readinessGroupKey()`，兩處共用，並加防呆
 （未知分組落到關懷組，不再讓整個後台停在這裡）。
+
+---
+
+## RC-3｜日常 UI 用「先抓全部再本機 filter」，把單次失敗放大成多次失敗
+
+2026-09-03 手機現場錯誤：
+
+```
+這裡是空的，因為資料沒讀進來，不是今天沒人回報。
+連不到後端（網路或 Apps Script 部署問題）
+診斷：瀏覽器連不上 script.google.com（網路中斷、離線、或被擋）
+action=getAllRecords
+```
+
+### 證據
+
+`action=getAllRecords`（不是 `getCoachDashboard`）→ 不是 `refreshCoach` 發的。
+追下去：`refreshTodayReportedList()` 的 catch（`07-coach-dashboard.js`）會把
+`coachLoadErrorHtml(e)` 塞進 `#todayReportedList`，那正是截圖第一個框
+「需要回覆的選手」。它呼叫 `loadTodayReportedStudents` → `fetchAllRecords({strict:true})`
+→ **無限制全歷史**。
+
+全 repo 8 個 `fetchAllRecords` 呼叫點中，**4 個是無限制的日常 UI**：
+
+| 位置 | 函式 | 只需要 | 原本卻抓 |
+|---|---|---|---|
+| `07:2658` | `loadTodayReportedStudents` | 當日＋近期 | 完整歷史 |
+| `07:621` | `renderCoachAttendanceReports` | 當日 | 完整歷史（且 refreshCoach 已把當日資料傳給它了）|
+| `07:751` | `renderWeeklyStars` | 本週 | 完整歷史 |
+| `07:3187` | `loadLastPerfPage` | 單一選手 | 整隊完整歷史 |
+
+### Root Cause
+
+> 日常互動 UI 用「先抓全部再本機 filter」的寫法。資料小的時候看不出來；
+> records 長到 1812 列（11.86MB / **6 頁**）之後，每一次互動都變成多頁大型傳輸，
+> 把「一次可能失敗」放大成「六次都不能失敗」。
+
+單頁成功率 p 時，六頁全成功只有 p⁶。p=0.97 → 六頁 83%、兩頁 94%、一頁 97%。
+**所以「少打幾次」比「每次小一點」對穩定性更關鍵。**
+
+### 另外兩個放大器（2026-09-02 的修復自己種下的）
+
+1. **`_coachDashboardUnavailable` 是永久閂鎖**。Apps Script redeploy 後約一分鐘
+   新舊 instance 並存（本次部署實測到：`ping` 有 `apiVersion`、`getCoachDashboard`
+   卻回「未知的 action」）。只要那個窗口撞到一次，整個 session **從此**退回
+   無限制的 `getAllRecords`。已改為 2 分鐘時效。
+2. **`INFLIGHT_DEDUP_ACTIONS` 沒有 `getCoachDashboard`**，多個 UI 區塊可同時轟炸
+   同一支 API。已補上（含 `getRecordsByDate`／`getTodayRecords`／`getCoachReplies`）。
+
+### 修復
+四個呼叫點全部改 bounded；`renderCoachAttendanceReports` 直接不再打後端；
+新增 `safeReadRequest()` 容錯層（逾時／重試一次／斷路器／last-known-good）；
+後端改為「先定位、再讀內容」。詳見 `PERFORMANCE_BEFORE_AFTER.md`。
+
+### 未解風險
+`js/12-research-data.js:235` 的研究匯出**刻意保留**完整歷史讀取（E 類）。
+資料再長大時它仍會是最脆弱的一支，但它是低頻、教練主動觸發、且失敗不影響日常運作。
 
 ---
 
