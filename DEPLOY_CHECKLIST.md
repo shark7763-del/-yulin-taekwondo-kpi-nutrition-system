@@ -44,6 +44,16 @@ GET /exec?action=ping
       連續打同一支 action 4 次都拿到新版，才算收斂。
 - [ ] 在 `DEPLOY_LOG.md` 補一行（日期／版本號／commit／內容）
 
+> **注意：純內部優化的版本沒有外部指紋。**
+> v85 只改了 `getAllRecordsRead_` 的讀取策略，contract 完全沒變，
+> 所以 `apiVersion` 不變、也沒有新 action —— 從外面**無法**分辨 v84 與 v85。
+> 這是向後相容的好性質，但也代表部署與否只能靠 Apps Script 的版本清單確認。
+> 若日後需要可驗證性，可另外加一個與 contract 無關的 `buildTag` 欄位。
+
+> **另一個要有心理準備的事**：Apps Script 偶發會花 13–43 秒才回應，
+> 這時 POST 會被降級成 GET（見 `ROOT_CAUSE.md` RC-1 的 2026-09-03 補充）。
+> 部署驗活時若遇到「此動作不接受 GET 請求」，**先隔幾秒重試**再判定部署失敗。
+
 ## 2. 前端（GitHub Pages）
 
 - [ ] `git push` 到 `main`
