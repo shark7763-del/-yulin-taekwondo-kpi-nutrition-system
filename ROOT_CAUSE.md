@@ -4,7 +4,13 @@
 症狀：教練後台大量區塊顯示
 「此動作不接受 GET 請求，請改用 POST」／`keys=[ok,error,hint]`，以及區塊一片空白。
 
-**結論：這是兩個互相獨立的故障，不是同一個。** 只修其中一個，教練看到的畫面仍然是壞的。
+**結論：這是三個互相獨立的故障。** 只修其中一個，教練看到的畫面仍然是壞的。
+
+| | 症狀 | 狀態 |
+|---|---|---|
+| RC-1 | 「此動作不接受 GET 請求」 | 2026-09-02 修復（v83/v84）|
+| RC-2 | 準備度分組以下全部空白 | 2026-09-02 修復 |
+| RC-3 | 「瀏覽器連不上 script.google.com｜action=getAllRecords」 | 2026-09-03 修復 |
 
 ---
 
@@ -60,6 +66,40 @@ Apps Script 的 POST `/exec` 必定回 302，轉往
 
 **為什麼是現在才發作**：records 已長到 1812 列。資料少的時候這個回應撐得過去。
 
+### 2026-09-03 補充：觸發條件是「這次執行太慢」，體積只是原因之一
+
+v85 部署後從乾淨 Chromium 實測，**直接重現了降級**：
+
+```
+ 2181ms  ping                        ✅ 正常
+19876ms  getCoachDashboard           ⚠️ 「此動作不接受 GET 請求」← 被降級成 GET
+42722ms  getAllRecords + sinceDate   ⚠️ 直接回 googleusercontent 的 HTML 包裝頁
+13153ms  getRecordsByDate            ⚠️ 被降級成 GET
+ 1272ms  getRecentRecordsByName      ✅ 正常
+```
+
+這些全部是**未登入**的請求，後端只走到 `requireRole` 就回 `authRequired`，
+**不讀任何資料**。所以與回應體積、與我們的程式碼路徑都無關。
+
+第一個推論是「同一使用者的執行被排隊」，但**實測推翻了**：
+間隔 8 秒逐一發送 → 3/3 正常（其中一次花了 **24.9 秒**但成功）；
+無間隔併發 6 次 → **0/6 失敗**。
+
+所以真正的規律是：
+
+> **Apps Script 偶發地會花 13–43 秒才回應；一旦超過某個門檻，
+> `/exec` → `googleusercontent/echo` 的重導鏈就取不回結果，
+> 鏈路退回 `/exec`，瀏覽器依 302 規範把 POST 轉成 GET。**
+
+體積大只是「讓這次執行變慢」的原因之一，不是唯一原因。
+**這代表 RC-1 無法靠「把回應變小」根治** —— Google 端的延遲尖峰是我們控制不了的。
+因此 RC-3 的容錯層（逾時／重試／斷路器／last-known-good）不是加分項，
+而是**這個架構下唯一能真正止血的手段**。
+
+註：`safeReadRequest` 的逾時設為 18 秒（依規格 15–20 秒）。
+上面量到一次 24.9 秒的**成功**回應會被這個逾時攔下並重試一次 ——
+重試通常 1–2 秒就回來，比讓教練乾等 25 秒好，但這個常數值得依實際體感再調。
+
 ---
 
 ## RC-2｜`renderCoachSimpleGroups` 必然拋錯，讓它之後的所有區塊停止渲染
@@ -88,6 +128,63 @@ buckets[light.group].push(r);
 
 修法：把門檻抽成唯一一份 `readinessGroupKey()`，兩處共用，並加防呆
 （未知分組落到關懷組，不再讓整個後台停在這裡）。
+
+---
+
+## RC-3｜日常 UI 用「先抓全部再本機 filter」，把單次失敗放大成多次失敗
+
+2026-09-03 手機現場錯誤：
+
+```
+這裡是空的，因為資料沒讀進來，不是今天沒人回報。
+連不到後端（網路或 Apps Script 部署問題）
+診斷：瀏覽器連不上 script.google.com（網路中斷、離線、或被擋）
+action=getAllRecords
+```
+
+### 證據
+
+`action=getAllRecords`（不是 `getCoachDashboard`）→ 不是 `refreshCoach` 發的。
+追下去：`refreshTodayReportedList()` 的 catch（`07-coach-dashboard.js`）會把
+`coachLoadErrorHtml(e)` 塞進 `#todayReportedList`，那正是截圖第一個框
+「需要回覆的選手」。它呼叫 `loadTodayReportedStudents` → `fetchAllRecords({strict:true})`
+→ **無限制全歷史**。
+
+全 repo 8 個 `fetchAllRecords` 呼叫點中，**4 個是無限制的日常 UI**：
+
+| 位置 | 函式 | 只需要 | 原本卻抓 |
+|---|---|---|---|
+| `07:2658` | `loadTodayReportedStudents` | 當日＋近期 | 完整歷史 |
+| `07:621` | `renderCoachAttendanceReports` | 當日 | 完整歷史（且 refreshCoach 已把當日資料傳給它了）|
+| `07:751` | `renderWeeklyStars` | 本週 | 完整歷史 |
+| `07:3187` | `loadLastPerfPage` | 單一選手 | 整隊完整歷史 |
+
+### Root Cause
+
+> 日常互動 UI 用「先抓全部再本機 filter」的寫法。資料小的時候看不出來；
+> records 長到 1812 列（11.86MB / **6 頁**）之後，每一次互動都變成多頁大型傳輸，
+> 把「一次可能失敗」放大成「六次都不能失敗」。
+
+單頁成功率 p 時，六頁全成功只有 p⁶。p=0.97 → 六頁 83%、兩頁 94%、一頁 97%。
+**所以「少打幾次」比「每次小一點」對穩定性更關鍵。**
+
+### 另外兩個放大器（2026-09-02 的修復自己種下的）
+
+1. **`_coachDashboardUnavailable` 是永久閂鎖**。Apps Script redeploy 後約一分鐘
+   新舊 instance 並存（本次部署實測到：`ping` 有 `apiVersion`、`getCoachDashboard`
+   卻回「未知的 action」）。只要那個窗口撞到一次，整個 session **從此**退回
+   無限制的 `getAllRecords`。已改為 2 分鐘時效。
+2. **`INFLIGHT_DEDUP_ACTIONS` 沒有 `getCoachDashboard`**，多個 UI 區塊可同時轟炸
+   同一支 API。已補上（含 `getRecordsByDate`／`getTodayRecords`／`getCoachReplies`）。
+
+### 修復
+四個呼叫點全部改 bounded；`renderCoachAttendanceReports` 直接不再打後端；
+新增 `safeReadRequest()` 容錯層（逾時／重試一次／斷路器／last-known-good）；
+後端改為「先定位、再讀內容」。詳見 `PERFORMANCE_BEFORE_AFTER.md`。
+
+### 未解風險
+`js/12-research-data.js:235` 的研究匯出**刻意保留**完整歷史讀取（E 類）。
+資料再長大時它仍會是最脆弱的一支，但它是低頻、教練主動觸發、且失敗不影響日常運作。
 
 ---
 

@@ -6,6 +6,21 @@
 // 又會被 Google 逐一排隊）。opts.force = true 時繞過快取強制重抓；任何一次成功雲端讀取
 // 都會更新快取，故「更新名單／教練後台」強制重抓後，短時間內其他分頁可直接重用。
 const _allRecordsCache = {};          // 讀取範圍 -> { data, ts }；範圍不同不能共用快取
+
+/* last-known-good：後端暫時連不上時，寧可顯示「07:42 最後一次同步」的資料
+   並明確標示非即時，也不要顯示成「0 人回報」讓教練誤判全隊沒填。
+   與上面的 90 秒快取不同：這份不過期，只在成功時被覆蓋。 */
+const _lastGoodRecords = {};         // 讀取範圍 -> { data, ts }
+let _servingStaleSince = 0;          // >0 代表目前畫面是舊資料
+let _staleReason = '';
+function markFresh() { _servingStaleSince = 0; _staleReason = ''; }
+function isServingStale() { return _servingStaleSince > 0; }
+function staleInfo() { return { since: _servingStaleSince, reason: _staleReason }; }
+if (typeof window !== 'undefined') { window.isServingStale = isServingStale; window.staleInfo = staleInfo; }
+function hhmm(ts) {
+  const d = new Date(ts);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
 const ALL_RECORDS_TTL_MS = 90000; // 90 秒
 function invalidateAllRecordsCache() {
   Object.keys(_allRecordsCache).forEach(k => { delete _allRecordsCache[k]; });
@@ -39,9 +54,21 @@ function rehydrateRecordFields(rows, fields) {
   return rows.map(r => Object.assign({}, blank, r));
 }
 
-// 後端若還沒部署 getCoachDashboard 會回「未知的 action」，此時整場改走
+// 後端若還沒部署 getCoachDashboard 會回「未知的 action」，此時暫時改走
 // getAllRecords 分頁路徑 —— 部署順序顛倒也不會開天窗。
-let _coachDashboardUnavailable = false;
+//
+// ⚠️ 這裡必須有時效，不能是永久閂鎖。Apps Script 剛 redeploy 後約有一分鐘
+// 新舊 instance 並存，只要那個窗口撞到一次「未知的 action」，永久閂鎖會讓
+// 整個 session 從此退回無限制的 getAllRecords —— 正是 2026-09-02 手機端
+// 出現 action=getAllRecords 連線失敗的原因之一。
+const COACH_DASHBOARD_RETRY_AFTER_MS = 120000;   // 2 分鐘後重新嘗試新 action
+let _coachDashboardUnavailableUntil = 0;
+function coachDashboardUnavailable() { return Date.now() < _coachDashboardUnavailableUntil; }
+function markCoachDashboardUnavailable() {
+  _coachDashboardUnavailableUntil = Date.now() + COACH_DASHBOARD_RETRY_AFTER_MS;
+}
+function resetCoachDashboardAvailability() { _coachDashboardUnavailableUntil = 0; }
+window.resetCoachDashboardAvailability = resetCoachDashboardAvailability;
 function isUnknownActionResponse(res) {
   return !!(res && res.ok === false && String(res.error || '').indexOf('未知的 action') !== -1);
 }
@@ -53,7 +80,7 @@ async function fetchAllRecordsPaged(request) {
   let rows = [];
   let fields = null;
   for (let page = 0; page < ALL_RECORDS_MAX_PAGES; page++) {
-    const res = await postToWebApp(Object.assign({ paged: true }, request, { offset: offset }));
+    const res = await safeReadRequest(Object.assign({ paged: true }, request, { offset: offset }));
     if (!res || !res.ok || !Array.isArray(res.data)) return res;
     if (!fields && Array.isArray(res.fields)) fields = res.fields;
     rows = rows.concat(res.data);
@@ -84,7 +111,7 @@ async function fetchAllRecords(opts) {
   }
   // opts.dashboard：教練後台專用，只取後台真的會讀的欄位。
   // 走在 fetchAllRecords 內部，才能沿用底下既有的 authRequired / strict / 快取處理。
-  const useDashboard = !!opts.dashboard && !_coachDashboardUnavailable;
+  const useDashboard = !!opts.dashboard && !coachDashboardUnavailable();
   const request = useDashboard
     ? { action: 'getCoachDashboard', date: opts.date, days: opts.days, paged: true }
     : legacyRequest;
@@ -102,17 +129,26 @@ async function fetchAllRecords(opts) {
   try {
     res = await fetchAllRecordsPaged(request);
     if (useDashboard && isUnknownActionResponse(res)) {
-      console.warn('[coach] 後端尚未部署 getCoachDashboard，改用 getAllRecords 分頁路徑');
-      _coachDashboardUnavailable = true;
+      console.warn('[coach] 後端尚未部署 getCoachDashboard，暫時改用 getAllRecords 分頁路徑');
+      markCoachDashboardUnavailable();
       res = await fetchAllRecordsPaged(legacyRequest);
     }
   } catch (e) {
     console.error('getAllRecords 連線失敗:', e);
     if (opts.strict) {
       toast('⚠️ 後台讀不到雲端 records，請檢查網路後重試');
+      // 後端暫時連不上，但手上還有上一次成功的資料 → 顯示舊資料並明確標示，
+      // 不要丟出去讓畫面變成「今天沒人回報」。
+      const good = _lastGoodRecords[cacheKey];
+      if (good && Array.isArray(good.data) && good.data.length) {
+        _servingStaleSince = good.ts;
+        _staleReason = describeThrownError_(e);
+        console.warn('[coach] 後端暫時無法連線，改用 ' + hhmm(good.ts) + ' 的最後一次成功資料');
+        return good.data;
+      }
       // 原本只丟 FETCH_FAILED，真正的原因（連線斷掉？後端回了 HTML 錯誤頁？）
       // 只留在 console，教練在手機上根本看不到，等於沒有診斷。
-      const err = new Error('FETCH_FAILED');
+      const err = new Error(e && e.backendUnavailable ? 'BACKEND_UNAVAILABLE' : 'FETCH_FAILED');
       err.detail = describeThrownError_(e) + '｜action=' + (request && request.action);
       throw err;
     }
@@ -122,6 +158,8 @@ async function fetchAllRecords(opts) {
   if (res && res.ok && Array.isArray(res.data)) {
     const mapped = res.data.map(normalizeCoachRecord);
     _allRecordsCache[cacheKey] = { data: mapped, ts: Date.now() };   // 成功才更新快取
+    _lastGoodRecords[cacheKey] = { data: mapped, ts: Date.now() };
+    markFresh();
     return mapped;
   }
 
@@ -616,9 +654,11 @@ async function renderCoachAttendanceReports(todays) {
   const filterDate = normDate($id('coachDate').value || todayStr());
   let allReports = [];
   try { allReports = await fetchAllAttendanceReports(); } catch (e) { allReports = []; }
-  // 已有當日完整紀錄 todaysAll 可用，這裡讀取失敗就用它，不讓 strict 例外中斷出席報表
-  let allRecords = Array.isArray(todays) ? todays : [];
-  try { allRecords = await fetchAllRecords(); } catch (e) { allRecords = Array.isArray(todays) ? todays : []; }
+  // 這裡只用得到 filterDate 當天的資料，而 refreshCoach 已經把當天紀錄（todaysAll）
+  // 傳進來了 —— 原本卻又打一次無限制的 fetchAllRecords()，等於每次教練重新整理
+  // 都額外拉一份完整歷史（目前 11.86MB / 6 頁）。那份資料 100% 會被下一行的
+  // filterDate 過濾掉，只留當天。直接用傳進來的 todays，少一整支後端請求。
+  const allRecords = Array.isArray(todays) ? todays : [];
   let rows = mergeAttendanceWithKpi(allReports, allRecords, '').filter(r => normDate(r.date) === filterDate);
   if (!rows.length && Array.isArray(todays)) rows = todays.map(attendanceReportFromRecord);
   const roster = getPlayers();
@@ -726,6 +766,8 @@ function computeWeeklyStars(all) {
   return stars;
 }
 
+const WEEKLY_STARS_DAYS = 8;   // 本週一至今最多 7 天，多一天緩衝
+
 async function renderWeeklyStars() {
   const card = $id('weeklyStarCard');
   const box = $id('weeklyStarContent');
@@ -748,7 +790,14 @@ async function renderWeeklyStars() {
   }
   if (!enabled) { card.style.display = 'none'; return; }
 
-  const all = await fetchAllRecords();
+  // computeWeeklyStars 只看 weekStartMondayStr() 之後的資料，
+  // 原本卻抓完整歷史。本週最多 7 天，多抓一天當時區與補填的緩衝。
+  const all = await fetchAllRecords({
+    dashboard: true,
+    date: todayStr(),
+    days: WEEKLY_STARS_DAYS,
+    sinceDate: weekStartMondayStr()
+  });
   const stars = computeWeeklyStars(all);
   if (!stars.length) { card.style.display = 'none'; return; }
 
@@ -1089,6 +1138,7 @@ function coachLoadErrorHint(e) {
   const msg = (e && e.message) ? e.message : '讀取資料失敗';
   if (msg === 'AUTH_REQUIRED') return '教練登入已過期，請重新登入後再讀取資料。';
   if (msg === 'FETCH_FAILED') return '連不到後端（網路或 Apps Script 部署問題），請檢查後按「重新整理資料」再試一次。';
+  if (msg === 'BACKEND_UNAVAILABLE') return '後端連續失敗，已暫停自動重試以免拖垮連線。請稍候或按「重新整理資料」立即重試。';
   return msg;
 }
 function coachLoadErrorHtml(e) {
@@ -1122,6 +1172,26 @@ function renderVersionMismatchBanner() {
   host.parentNode.insertBefore(box, host);
 }
 
+/* 非即時資料的警示。位置與版本橫幅相同，不動既有版面。 */
+function renderStaleDataBanner() {
+  const host = $id('coachOverview');
+  const existing = $id('staleDataBanner');
+  if (!isServingStale()) { if (existing) existing.remove(); return; }
+  const info = staleInfo();
+  const html = '<b>⚠️ 非即時資料</b><br>目前後端暫時無法連線，以下為 '
+    + hhmm(info.since) + ' 最後一次成功同步的資料。'
+    + '<br><code style="font-size:.8rem;opacity:.85">' + escapeHtml(String(info.reason || '')) + '</code>'
+    + '<br>連線恢復後按「🔄 重新整理資料」即可取得最新資料。';
+  if (existing) { existing.innerHTML = html; return; }
+  if (!host || !host.parentNode) return;
+  const box = document.createElement('div');
+  box.id = 'staleDataBanner';
+  box.className = 'hint-box warn';
+  box.style.gridColumn = '1/-1';
+  box.innerHTML = html;
+  host.parentNode.insertBefore(box, host);
+}
+
 function showCoachLoadError(e) {
   const html = coachLoadErrorHtml(e);
   COACH_LOAD_ERROR_BOXES.forEach(id => { const b = $id(id); if (b) b.innerHTML = html; });
@@ -1145,6 +1215,8 @@ if (typeof document !== 'undefined' && !document.__coachReloginBound) {
 
 async function refreshCoach() {
   toast('讀取資料中...');
+  // 這是使用者主動要求重試，解除斷路器與「後端沒有新 action」的暫時判定。
+  if (typeof resetBackendCircuit === 'function') resetBackendCircuit();
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
 
   // 日期一律正規化，且空白時退回今天，避免 0 筆資料。
@@ -1172,6 +1244,7 @@ async function refreshCoach() {
   }
   clearCoachLoadError();
   renderVersionMismatchBanner();
+  renderStaleDataBanner();
   await loadRiskHandles();   // 風險處理紀錄，讓已處理的警示能標示出來
 
   const statusFilter = $id('coachStatusFilter') ? $id('coachStatusFilter').value : 'all';
@@ -2652,10 +2725,25 @@ function lastPerfHasPriority(rec, history) {
     riskWords.test(reflection) || obviousDrop;
 }
 
+// 今日回報名單要看的歷史深度：當天 + 近兩週，足夠判斷「高優先」與連續型警示。
+const TODAY_REPORT_HISTORY_DAYS = 14;
+
 async function loadTodayReportedStudents(opts) {
   const targetDate = getLastPerfSelectedDate();
   // strict：讀取失敗要丟例外，不能靜默退回本機空資料然後顯示成「還沒有選手回報」。
-  const records = await fetchAllRecords(Object.assign({ strict: true }, opts || {}));
+  //
+  // 這份名單只需要 targetDate 當天（下面那行就把其餘全濾掉了），
+  // 外加 buildTodayReportStatus 判斷「高優先」時參考的近期趨勢。
+  // 原本卻是無限制 fetchAllRecords()：目前要分 6 頁抓 11.86MB，
+  // 手機上任何一頁 Failed to fetch 就整個 throw ——
+  // 2026-09-02 現場回報的 action=getAllRecords 連線失敗就是這裡。
+  const records = await fetchAllRecords(Object.assign({
+    strict: true,
+    dashboard: true,
+    date: targetDate,
+    days: TODAY_REPORT_HISTORY_DAYS,
+    sinceDate: shiftDateStr(targetDate, -TODAY_REPORT_HISTORY_DAYS)
+  }, opts || {}));
   const todays = {};
   (records || []).forEach(rec => {
     const name = lastPerfRecordName(rec);
@@ -3172,6 +3260,21 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
   });
 }
 
+// 「上次表現」的趨勢深度。一位選手目前約 44 筆，180 已涵蓋全部；
+// 真的查到更舊的日期時，下面會用 getRecordsByDate 補那一天。
+const LAST_PERF_HISTORY_LIMIT = 180;
+
+// 只取某一天的整隊紀錄。既有後端 action，走 requireRole(['coach'])。
+async function fetchRecordsByDate(date) {
+  const url = getWebAppUrl();
+  if (!url || !date) return [];
+  try {
+    const res = await safeReadRequest({ action: 'getRecordsByDate', date: date });
+    if (res && res.ok && Array.isArray(res.data)) return res.data.map(normalizeCoachRecord);
+  } catch (e) { console.warn('[lastPerf] getRecordsByDate 失敗:', e); }
+  return [];
+}
+
 async function loadLastPerfPage() {
   const name = String($id('lastPerfName').value || '').trim();
   if (!name) { toast('請選擇選手'); return; }
@@ -3184,11 +3287,18 @@ async function loadLastPerfPage() {
   let rec = null;
   let history = [];
   if (role === 'coach' && selectedDate) {
-    const allRecords = await fetchAllRecords();
-    history = (allRecords || [])
-      .filter(r => normalizeNameKey(lastPerfRecordName(r) || recordName(r)) === normalizeNameKey(name))
+    // 這裡只看「一位選手」。原本卻抓完整歷史再本機 filter 掉 40 位隊友的資料。
+    // getRecentRecordsByName 對教練是放行的（authorizedStudentName(data, true)），
+    // 拿到的就是該選手由新到舊的紀錄。
+    history = (await fetchRecentRecords(name, LAST_PERF_HISTORY_LIMIT) || [])
       .sort((a, b) => normDate(b.date || b.timestamp).localeCompare(normDate(a.date || a.timestamp)));
     rec = latestRecordForNameDate(history, name, selectedDate);
+    if (!rec) {
+      // 選到的日期比 history 深度還舊時，只補抓「那一天」（整隊當日一頁，
+      // 仍遠小於完整歷史），確保教練查得到久遠日期，不會顯示成沒填。
+      const dayRows = await fetchRecordsByDate(selectedDate);
+      rec = latestRecordForNameDate(dayRows, name, selectedDate);
+    }
   } else {
     [rec, history] = await Promise.all([
       fetchLastRecord(name),

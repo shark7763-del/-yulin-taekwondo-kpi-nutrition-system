@@ -94,3 +94,69 @@ commit `4e429d4` 標題像是回退單一個小修正，實際 diff 是 **35 fil
 - **並發保護** —— `addRecord` 與 `bulkSetKpiSession` 都有 `LockService`。
 - **事件監聽器** —— 全部是「重建 innerHTML 後重綁」，document 層委派都有 once 守衛，查無累積。
 - **AI 是 optional dependency** —— 失敗一律退回模板，不影響 KPI 主流程，且有測試。
+
+---
+
+# 追加稽核 — 2026-09-03｜資料讀取架構
+
+由四個角色分別稽核（Frontend / Apps Script / Backend Performance / Mobile QA）。
+所有結論皆有實測或程式碼位置佐證。**這一節的 P0 全部已修**，見 `ROOT_CAUSE.md` RC-3。
+
+## 讀取架構的 TOP 5
+
+### 1. 日常 UI「先抓全部再本機 filter」（**P0，已修**）
+
+8 個 `fetchAllRecords` 呼叫點中有 4 個是無限制的日常 UI。
+records 長到 1812 列後，每一次互動都變成 6 頁 / 11.86MB 的傳輸，
+把單次失敗機率乘上頁數 —— 手機端出現 `Failed to fetch`，整個區塊掛掉。
+
+守門測試：`tests/normal-ui-no-full-records.test.js`
+（已驗證會失敗：注入一個無限制呼叫後，測試直接指出檔名與行號）。
+
+### 2. 「後端沒有新 action」被寫成永久閂鎖（**P0，已修**）
+
+Apps Script redeploy 後約一分鐘新舊 instance 並存。本次部署實測到：
+`ping` 已回新版 `apiVersion`，同一時間 `getCoachDashboard` 卻回「未知的 action」。
+永久閂鎖會讓整個 session 從此退回無限制讀取。已改為 2 分鐘時效。
+
+**通則：任何「偵測到後端沒有某能力」的判定都必須帶時效，不可永久。**
+
+### 3. 完全沒有讀取容錯（**P1，已修**）
+
+稽核前全 repo 沒有任何逾時、重試、斷路器、last-known-good。
+任何一次網路抖動 = 整個區塊掛掉，且畫面會呈現得像「今天沒人回報」。
+
+已新增 `safeReadRequest()`：18 秒逾時、失敗重試一次（800–1500ms jitter）、
+連續失敗 2 次開啟 12 秒斷路器、last-known-good 快取（明確標示「⚠️ 非即時資料」與
+最後同步時間）。教練按「重新整理資料」可立即解除斷路器。
+
+**寫入型 action 一律禁止進入這一層**（重試會造成重複寫入）。
+`WRITE_ACTIONS` 共 33 個 action，`safeReadRequest` 收到就直接拋錯。
+要讓寫入可重試，必須先有 `requestId` / idempotency key —— **目前沒有，因此不做**。
+
+### 4. 後端即使指定日期視窗仍先讀全表（**P1，已修**）
+
+`getAllRecordsRead_` 原本先 `getRange(2,1,lastRow-1,width)` 讀 297,168 格才過濾。
+已改為「先讀 date 欄定位 → 合併連續列 → 只讀需要的段」。
+段數 > 12 時退回整表讀取（保險絲，避免重蹈 v79「getRange 次數才是瓶頸」的覆轍）。
+
+實測：近 7 天讀 6%、近 14 天 13%、近 45 天 44% 的格數，getRange 只要 1–4 次。
+
+### 5. 錯誤診斷只留在 console（**P1，已修**）
+
+`throw new Error('FETCH_FAILED')` 把原始例外整個丟掉，教練在手機上看不到原因。
+已改為把安全的結構描述（HTTP 狀態／content-type／長度／是否 HTML／`<title>`／
+是否經過重導／哪一個 action）帶到畫面上。
+
+**同時修掉一個外洩風險**：原本錯誤訊息會把回應前 120 字塞進去，
+那可能是半截的學生健康資料。現在只描述結構，不帶內容。
+
+## 仍未解決
+
+| 項目 | 嚴重度 | 說明 |
+|---|---|---|
+| `sweatLevel` 欄位裝著 readiness JSON | P1 | 1290 列受影響，`readinessJson` 全空。屬 migration，需先備份與 dry-run |
+| 研究匯出仍讀完整歷史 | P2 | 刻意保留（E 類）。低頻、教練主動觸發、失敗不影響日常 |
+| 教練視窗 45 天仍讀 44% 格數 | P2 | 收到 14–21 天可再降，但影響久未回報選手的警示判斷 |
+| 寫入沒有 idempotency key | P2 | 因此寫入一律不重試。網路抖動時教練需自行確認是否送出 |
+| `athleteId` 依名單索引產生 | **P0（舊有）** | 見上方 2026-08-29 稽核第 1 項，**仍未修** |

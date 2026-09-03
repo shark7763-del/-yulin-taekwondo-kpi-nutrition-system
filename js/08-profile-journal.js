@@ -783,8 +783,12 @@ async function loadPersonalJournalBatch() {
   if (btn) { btn.dataset.txt = btn.dataset.txt || btn.textContent; btn.disabled = true; btn.textContent = '讀取中...'; }
   toast('讀取全隊個人訓練日誌中...');
   try {
-    // 一次撈全部紀錄再本機分組，避免每位選手各打一次後端造成卡住
-    const all = await fetchAllRecords();
+    // 一次撈回來再本機分組，避免每位選手各打一次後端造成卡住。
+    // 但範圍要收在使用者選的月份區間內 —— 下面 journalInRange 本來就會把
+    // 區間外的全部丟掉，沒有理由把整段歷史拉過來。
+    // fromMonth 可以是空的（代表不限開始月份），那就不設下界 —— 不要組出 '-01' 這種字串。
+    const journalOpts = /^\d{4}-\d{2}$/.test(fromMonth) ? { sinceDate: fromMonth + '-01' } : {};
+    const all = await fetchAllRecords(journalOpts);
     const grouped = {};
     (all || []).forEach(r => {
       const nm = String(r && r.name || '').trim();

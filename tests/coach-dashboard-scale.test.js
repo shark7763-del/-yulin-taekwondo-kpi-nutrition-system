@@ -17,6 +17,8 @@ class FakeSheet {
   appendRow(row) { this.rows.push(row.slice()); }
   getRange(r, c, nr = 1, nc = 1) {
     const sheet = this;
+    sheet.reads = sheet.reads || [];
+    sheet.reads.push({ r, c, nr, nc });
     return {
       getValues() {
         const out = [];
@@ -67,11 +69,17 @@ const t = (name, ok, extra = '') => results.push({ name, ok, extra });
 const FILLER = '教練備註與心得內容。'.repeat(6);
 const READINESS = JSON.stringify({ selfScore: 25, coachScore: 75, recoveryScore: 3, tags: ['需要關心', '連續黃燈注意'] });
 
-function buildSheet(g, rowCount) {
+/* 正式 records 是近似 append：日期大致遞增，但補填舊日期會 append 到尾端
+   （實測 1812 列有 67 次逆序，3.70%）。測試資料必須長得像它，
+   否則量到的是不存在的最壞情況。interleaved=true 時才刻意造出最壞排列。 */
+function buildSheet(g, rowCount, interleaved) {
   const H = g.HEADERS;
   const idx = {};
   H.forEach((h, i) => { idx[h] = i; });
   const rows = [H];
+  // 名單人數固定（41 人），所以「每天的筆數」不會變，成長的是天數。
+  // 正式資料：1812 列 / 91 天 ≈ 20 筆/天。用同樣密度往外推。
+  const SPAN_DAYS = Math.max(120, Math.ceil(rowCount / 20));
   const day = n => {
     const d = new Date('2026-09-02T00:00:00Z');
     d.setUTCDate(d.getUTCDate() - n);
@@ -82,8 +90,15 @@ function buildSheet(g, rowCount) {
     r[idx.recordId] = 'rec-' + i;
     r[idx.name] = '選手' + (i % 41);
     r[idx.studentName] = '選手' + (i % 41);
-    r[idx.date] = day(i % 120);
-    r[idx.timestamp] = day(i % 120) + 'T08:00:00.000Z';
+    // 近似 append：日期由舊到新遞增；每 30 列插一筆補填的舊資料製造逆序。
+    let dayIdx = interleaved
+      ? (i % SPAN_DAYS)                                                    // 最壞情況：日期循環交錯
+      : (SPAN_DAYS - 1 - Math.floor(i * SPAN_DAYS / rowCount));            // 正常情況：由舊到新
+    // 補填舊日期：實際上多半只差幾天（教練隔天幫選手補），偶爾才有久遠的補登。
+    if (!interleaved && i % 37 === 7) dayIdx = Math.min(SPAN_DAYS - 1, dayIdx + 3);
+    if (!interleaved && i % 601 === 11) dayIdx = Math.min(SPAN_DAYS - 1, dayIdx + 50);
+    r[idx.date] = day(dayIdx);
+    r[idx.timestamp] = day(dayIdx) + 'T08:00:00.000Z';
     r[idx.sleepHours] = 6 + (i % 4);
     r[idx.rpe] = 5 + (i % 5);
     r[idx.painScore] = i % 9;
@@ -127,14 +142,20 @@ function drain(g, request) {
 
 const SAFE_LIMIT = 2 * 1024 * 1024;   // 單頁 2MB 安全上限（正式失敗的量級是 15.66MB）
 
-[2000, 5000].forEach(rowCount => {
+/* 量測後端實際從 Sheet 讀了多少格 —— 這才是「不能跟 rows x 164 線性成長」的指標。
+   FakeSheet.getRange 會把每次讀取記下來。 */
+function cellsRead(sheet) {
+  return sheet.reads.reduce((n, r) => n + r.nr * r.nc, 0);
+}
+
+[2000, 5000, 10000].forEach(rowCount => {
   const ss = new FakeSpreadsheet();
   const g = load(ss);
-  ss.add('records', buildSheet(g, rowCount));
+  ss.add('records', buildSheet(g, rowCount, false));
   const tag = rowCount + ' 列';
 
   const request = {
-    sinceDate: '2026-05-05',
+    sinceDate: '2026-07-19',   // 教練後台的 45 天視窗（資料橫跨 120 天）
     keepFields: g.COACH_DASHBOARD_FIELDS,
     omitEmpty: true,
     paged: true
@@ -177,6 +198,19 @@ const SAFE_LIMIT = 2 * 1024 * 1024;   // 單頁 2MB 安全上限（正式失敗�
   t(tag + '：同人同日的多筆紀錄有完整帶回（由前端 dedupe，不在後端悄悄砍掉）',
     dupGroups > 0, dupGroups + ' 組同人同日');
 
+  // 讀取量：不得跟 rows x 164 線性成長
+  const sheetObj = ss.sheets['records'];
+  sheetObj.reads = [];
+  g.getAllRecordsRead_(g.recordsReadOptions_(Object.assign({}, request, { offset: 0 })));
+  const read = cellsRead(sheetObj);
+  const naive = (rowCount + 12) * 164;
+  t(tag + '：教練後台的讀取格數遠低於整表掃描',
+    read < naive * 0.6, read.toLocaleString() + ' / ' + naive.toLocaleString() +
+    ' 格 (' + Math.round(100 * read / naive) + '%)');
+  const bulkReads = sheetObj.reads.filter(r => r.nr > 1);   // 不算表頭那種單列讀取
+  t(tag + '：取內容的 getRange 次數維持在個位數（不重蹈 v79 的覆轍）',
+    bulkReads.length <= 9, bulkReads.length + ' 次（含 1 次日期索引）');
+
   // 整張表不設視窗、不設白名單時仍然分得動（個人檔案／研究資料匯出走這條）
   const fullPages = drain(g, { omitEmpty: true, paged: true });
   const fullIds = [].concat.apply([], fullPages.map(p => p.data)).map(r => r.recordId);
@@ -188,10 +222,34 @@ const SAFE_LIMIT = 2 * 1024 * 1024;   // 單頁 2MB 安全上限（正式失敗�
     Math.max.apply(null, fullPages.map(p => JSON.stringify(p).length)) + ' bytes');
 });
 
+/* ---- 最壞排列：日期完全交錯時，保險絲要接手，且資料不能少 ---- */
+[5000].forEach(rowCount => {
+  const ssW = new FakeSpreadsheet();
+  const gW = load(ssW);
+  ssW.add('records', buildSheet(gW, rowCount, true));
+  const sheetW = ssW.sheets['records'];
+  const req = { sinceDate: '2026-07-19', keepFields: gW.COACH_DASHBOARD_FIELDS, omitEmpty: true, paged: true };
+
+  sheetW.reads = [];
+  const pagesW = drain(gW, req);
+  const idsW = [].concat.apply([], pagesW.map(p => p.data)).map(r => r.recordId);
+  const wideW = sheetW.reads.filter(r => r.nr > 1 && r.nc > 5);   // 要在下面的比對讀取之前算完
+
+  // 與「一次讀完再過濾」的結果逐筆比對，證明保險絲沒有改變資料
+  const naiveOpts = gW.recordsReadOptions_({ sinceDate: '2026-07-19', keepFields: gW.COACH_DASHBOARD_FIELDS, omitEmpty: true });
+  const naiveIds = gW.getAllRecordsRead_(naiveOpts).data.map(r => r.recordId);
+
+  t('最壞排列（日期完全交錯）：資料與整表掃描逐筆一致，一筆不多一筆不少',
+    JSON.stringify(idsW) === JSON.stringify(naiveIds),
+    idsW.length + ' vs ' + naiveIds.length);
+  t('最壞排列：保險絲接手，全寬讀取次數不隨段數爆炸（每頁至多一次）',
+    wideW.length <= pagesW.length, wideW.length + ' 次全寬讀取 / ' + pagesW.length + ' 頁');
+});
+
 /* ---- getCoachDashboard 的權限與參數 ---- */
 const ss = new FakeSpreadsheet();
 const g = load(ss);
-ss.add('records', buildSheet(g, 200));
+ss.add('records', buildSheet(g, 200, false));
 const denied = g.getCoachDashboard({ date: '2026-09-02', days: 45 });
 t('getCoachDashboard 沒有教練 session 一律擋下', denied && denied.ok === false, JSON.stringify(denied).slice(0, 70));
 t('days 有上下限保護（不會被要求整段歷史）',

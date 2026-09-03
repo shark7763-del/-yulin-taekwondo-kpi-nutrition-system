@@ -89,7 +89,8 @@ const asCoach = () => {
       total: window.__requests.length,
       overview: overview,
       bannerText: banner ? banner.textContent : '',
-      versionBanner: (document.getElementById('versionMismatchBanner') || {}).textContent || ''
+      versionBanner: (document.getElementById('versionMismatchBanner') || {}).textContent || '',
+      staleBanner: (document.getElementById('staleDataBanner') || {}).textContent || ''
     };
   }, scenario);
 
@@ -163,7 +164,21 @@ const asCoach = () => {
   });
   t('版本恢復一致後提示會消失', back === '', back.slice(0, 40));
 
-  /* ---- 6b. 後端回 HTML 錯誤頁 / 連線中斷時，畫面要說得出原因 ---- */
+  /* ---- 6b. 有 last-known-good 時：顯示舊資料 + 非即時警示，不可變成「0 人回報」---- */
+  const stale = await run('offline');
+  t('後端斷線但有上次成功資料時，顯示的是舊資料而非空白',
+    /ov-num/.test(stale.overview) && stale.bannerText === '', stale.bannerText.slice(0, 60));
+  t('舊資料會明確標示「非即時資料」與最後同步時間',
+    stale.staleBanner.indexOf('非即時資料') !== -1 && /\d\d:\d\d/.test(stale.staleBanner),
+    stale.staleBanner.slice(0, 90));
+  const recovered = await run('ok');
+  t('連線恢復後「非即時資料」提示會消失',
+    recovered.staleBanner === '', recovered.staleBanner.slice(0, 60));
+
+  /* ---- 6c. 沒有 last-known-good 時（剛開頁就失敗）：要說得出失敗原因 ---- */
+  await page.reload();
+  await page.waitForFunction(() => typeof refreshCoach === 'function');
+  await page.evaluate(asCoach);
   const html500 = await run('htmlError');
   t('後端回 HTML 錯誤頁時，橫幅寫得出 HTTP 狀態與頁面標題',
     html500.bannerText.indexOf('HTTP 500') !== -1 && html500.bannerText.indexOf('Error 500') !== -1,
@@ -171,6 +186,9 @@ const asCoach = () => {
   t('HTML 錯誤頁的診斷不外洩回應內容（只描述結構）',
     html500.bannerText.indexOf('oops') === -1, html500.bannerText.slice(0, 80));
 
+  await page.reload();
+  await page.waitForFunction(() => typeof refreshCoach === 'function');
+  await page.evaluate(asCoach);
   const offline = await run('offline');
   t('連線中斷時說的是「連不上 script.google.com」，不是丟原始例外',
     offline.bannerText.indexOf('連不上 script.google.com') !== -1, offline.bannerText.slice(0, 110));

@@ -149,7 +149,13 @@ t('快取依讀取範圍分開存（完整歷史不會被教練視窗的結果�
   front.includes("'dash:'") && front.includes("'since:'") && front.includes("'full'"), '');
 t('教練後台走 getCoachDashboard，且後端沒有時會退回 getAllRecords',
   front.includes("action: 'getCoachDashboard'") && front.includes('isUnknownActionResponse')
-    && front.includes('_coachDashboardUnavailable = true'), '');
+    && front.includes('markCoachDashboardUnavailable()'), '');
+// 這個判定必須有時效。Apps Script redeploy 後約一分鐘新舊 instance 並存，
+// 永久閂鎖會讓整個 session 從此退回無限制的 getAllRecords。
+t('「後端沒有新 action」的判定是暫時的，不是永久閂鎖',
+  /COACH_DASHBOARD_RETRY_AFTER_MS\s*=\s*\d+/.test(front)
+    && front.includes('Date.now() < _coachDashboardUnavailableUntil')
+    && !/_coachDashboardUnavailable\s*=\s*true/.test(front), '');
 t('省略的欄位會依 fields 補回空字串（下游物件形狀不變）',
   front.includes('function rehydrateRecordFields') && front.includes('Object.assign({}, blank, r)'), '');
 t('教練視窗跟著教練選的日期往前推，不是寫死今天',
