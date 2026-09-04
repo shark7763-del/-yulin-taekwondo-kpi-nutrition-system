@@ -131,11 +131,17 @@ const overviewOk = () => {
       await loadTodayReportedStudents({});
     }
     const acts = window.__requests.map(r => r.action);
-    return { total: acts.length, dash: acts.filter(a => a === 'getCoachDashboard').length,
+    return { total: acts.length,
+             summary: acts.filter(a => a === 'getDailyAthleteSummary').length,
+             dash: acts.filter(a => a === 'getCoachDashboard').length,
              full: acts.filter(a => a === 'getAllRecords').length };
   });
-  t('「上次表現→今日已回報名單」開 50 次，一次都沒有抓完整歷史',
-    r3.full === 0 && r3.dash > 0, JSON.stringify(r3));
+  // 2026-09-04 起首頁改走 getDailyAthleteSummary（Summary First），
+  // 不再讀 records —— 連 14 天 bounded 的 getCoachDashboard 都不該出現。
+  t('「上次表現→今日已回報名單」開 50 次，一次都沒有抓 records',
+    r3.full === 0 && r3.dash === 0, JSON.stringify(r3));
+  t('   而且走的是摘要 API',
+    r3.summary > 0, JSON.stringify(r3));
 
   /* ---- 4. 快速切換各分頁後再回來 ---- */
   const r4 = await page.evaluate(async () => {

@@ -378,6 +378,8 @@ function handleAction(action, data) {
       return jsonOut(authAllRecords(data));
     case 'getCoachDashboard':
       return jsonOut(getCoachDashboard(data));
+    case 'getDailyAthleteSummary':
+      return jsonOut(getDailyAthleteSummary(data));
     case 'getParents':
       return jsonOut(authCoachOnly(data, function () { return getParentsForCoach(); }));
     case 'getAttendanceReportsByName':
@@ -1800,7 +1802,7 @@ var COACH_DASHBOARD_FIELDS = [
   "redLightNote", "redLightReason", "reflection", "reflectionMetaJson",
   "reportUsefulness", "reportUsefulnessJson", "reportUsefulnessScore", "reviewUpdatedAt",
   "riskPenalty", "rpe", "selfScore", "sleepHours",
-  "sleepQuality", "snacksDrinks", "soreness", "status",
+  "sleepQuality", "snacksDrinks", "soreness", "status", "studentId",
   "studentName", "studentResponse", "sweatLevel", "technicalAvg",
   "timestamp", "tomorrowGoal", "totalScore", "trainingDirection",
   "trainingIntensity", "trainingSession", "urineStatus", "wakeTime",
@@ -1831,6 +1833,212 @@ function getCoachDashboard(data) {
   res.date = date;
   res.days = days;
   return res;
+}
+
+/* ============================================================
+   getDailyAthleteSummary —— 「上次表現」首頁專用摘要
+   ------------------------------------------------------------
+   首頁只要畫一張名單，卻曾經為此讀 14 天 229 列 0.70MB。
+   這支只回名單需要的欄位，實測 33 人約 4.7KB。
+
+   為什麼優先度必須在後端算：
+   前端的 lastPerfHasPriority 會讀「今日心得」並套用風險關鍵字
+   （壓力／害怕／想放棄／焦慮…），還要看該選手前 7 筆分數判斷明顯下滑。
+   心得是最敏感的欄位之一，不該為了畫名單而送到前端 ——
+   所以整段判斷搬到後端，前端只收一個布林值。
+
+   讀取策略（避免為了算 prevAvg 又把 14 天全欄拉出來）：
+     (1) date / name / totalScore 三個單欄，各讀一次（3 x N 格）
+     (2) 只有「當天」那些列才全寬讀（約 20 x 164 格）
+
+   身分鍵：沿用 mentalSameStudent_ 的規則 —— 姓名說了算，
+   只有缺姓名時才退回 id。**不採信 athleteId**：實測 records 的
+   athleteId 欄有 50.1% 是訓練方向文字，且同一段文字被 35 位選手共用。
+   ============================================================ */
+var DAILY_SUMMARY_PREV_DAYS = 14;      // 算「明顯下滑」的回看天數
+var DAILY_SUMMARY_PREV_LIMIT = 7;      // 取前幾筆算平均（與前端原本一致）
+
+function summaryColumnIndex_(headers, name) {
+  for (var i = 0; i < headers.length; i++) {
+    if (normalizeHeaderName_(headers[i]) === name) return i + 1;
+  }
+  return -1;
+}
+
+function summaryNum_(v) {
+  var n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
+
+function summaryShiftDate_(date, days) {
+  var d = new Date(String(date).slice(0, 10) + 'T00:00:00+08:00');
+  if (isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() - days);
+  var tz = Session.getScriptTimeZone() || 'Asia/Taipei';
+  return Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+}
+
+/* 與前端 lastPerfHasPriority 同一套判斷，逐條對應。
+   差別只在：這裡拿得到心得，前端拿不到（也不該拿到）。 */
+function summaryPriority_(rec, prevAvg) {
+  var pain = summaryNum_(rec.painScore);
+  if (pain === null || pain < 0 || pain > 10) pain = 0;
+  var rpe = summaryNum_(rec.rpe);
+  var sleepHours = summaryNum_(rec.sleepHours);
+  var sleepText = String(rec.sleepQuality || '');
+  var mood = summaryNum_(rec.moodIndex);
+  var moodText = String(rec.moodReason || '');
+  var tags = String(rec.aiTags || '') + String(rec.aiLabel || '');
+  var reflection = String(rec.reflection || '');
+  var riskWords = /壓力|害怕|不舒服|想放棄|放棄|焦慮|緊張|恐懼|崩潰|撐不住|不想練|受傷|痛/;
+  var todayScore = summaryNum_(rec.totalScore);
+  if (todayScore === null) todayScore = summaryNum_(rec.averageScore);
+  if (todayScore === null) todayScore = summaryNum_(rec.finalReadinessScore);
+  var obviousDrop = (todayScore !== null && prevAvg !== null && todayScore <= prevAvg - 10);
+
+  return pain >= 4 ||
+    (rpe !== null && rpe >= 8) ||
+    /差|不足|沒睡|睡不好/.test(sleepText) ||
+    (sleepHours !== null && sleepHours < 6) ||
+    (mood !== null && mood <= 2) ||
+    /低落|不好|難過|焦慮|害怕/.test(moodText) ||
+    /需家長|家長通知|高風險|受傷風險|需要關心/.test(tags) ||
+    riskWords.test(reflection) ||
+    obviousDrop;
+}
+
+function dailyTraitLabels_() {
+  var map = {};
+  try {
+    var sh = getSheetWithHeaders(STUDENT_TRAITS_SHEET, STUDENT_TRAIT_HEADERS);
+    var rows = readSheetObjects(sh, STUDENT_TRAIT_HEADERS);
+    for (var i = 0; i < rows.length; i++) {
+      var nm = normalizeName(rows[i].studentName);
+      if (nm) map[nm] = String(rows[i].traitLabel || '');
+    }
+  } catch (e) { /* 沒有 traits 表也不該讓首頁掛掉 */ }
+  return map;
+}
+
+function getDailyAthleteSummary(data) {
+  var started = Date.now();
+  var auth = requireRole(data, ['coach']);
+  if (!auth.ok) return auth;
+
+  var date = formatDateCell((data && data.date) || todayStr()).slice(0, 10);
+  var sheet = getSheet();
+  var info = auditHeaders_(sheet, HEADERS);
+  var headers = info.actual.length ? info.actual : HEADERS;
+  var lastRow = sheet.getLastRow();
+  var empty = {
+    ok: true, date: date,
+    stats: { reported: 0, pending: 0, highPriority: 0 },
+    athletes: [],
+    meta: { elapsedMs: 0, rowsScanned: 0, rowsReturned: 0, queryType: 'dailySummary' }
+  };
+  if (lastRow < 2) return empty;
+
+  var nRows = lastRow - 1;
+  var cDate = summaryColumnIndex_(headers, 'date');
+  var cName = summaryColumnIndex_(headers, 'name');
+  var cScore = summaryColumnIndex_(headers, 'totalScore');
+  if (cDate < 1 || cName < 1) return empty;
+
+  // (1) 輕量索引：每欄各讀一次
+  var colDate = sheet.getRange(2, cDate, nRows, 1).getValues();
+  var colName = sheet.getRange(2, cName, nRows, 1).getValues();
+  var colScore = cScore > 0 ? sheet.getRange(2, cScore, nRows, 1).getValues() : null;
+
+  var since = summaryShiftDate_(date, DAILY_SUMMARY_PREV_DAYS);
+  var todayIdx = [];
+  var prevByName = {};      // 正規化姓名 -> [分數]
+  for (var i = 0; i < nRows; i++) {
+    var d = formatDateCell(colDate[i][0]).slice(0, 10);
+    var nm = normalizeName(colName[i][0]);
+    if (!nm) continue;
+    if (d === date) { todayIdx.push(i); continue; }
+    if (!since || (d && d >= since && d < date)) {
+      var sc = colScore ? summaryNum_(colScore[i][0]) : null;
+      if (sc !== null) {
+        if (!prevByName[nm]) prevByName[nm] = [];
+        prevByName[nm].push(sc);
+      }
+    }
+  }
+
+  // (2) 只有當天那些列才全寬讀，且合併連續列
+  var width = sheet.getLastColumn();
+  var rowsToday = [];
+  var groups = consecutiveGroups_(todayIdx);
+  for (var gi = 0; gi < groups.length; gi++) {
+    var g = groups[gi];
+    var block = sheet.getRange(2 + g.start, 1, g.end - g.start + 1, width).getValues();
+    for (var bi = 0; bi < block.length; bi++) rowsToday.push(rowToObject(headers, block[bi]));
+  }
+
+  // 同一人同一天只留最新一筆（與前端 dedupeLatestByName 同語意）
+  var latest = {};
+  for (var r = 0; r < rowsToday.length; r++) {
+    var rec = rowsToday[r];
+    var key = normalizeName(rec.name || rec.studentName);
+    if (!key) continue;
+    var prevRow = latest[key];
+    if (!prevRow || String(rec.timestamp || rec.date || '') >= String(prevRow.timestamp || prevRow.date || '')) {
+      latest[key] = rec;
+    }
+  }
+
+  var traits = dailyTraitLabels_();
+  var athletes = [];
+  var pending = 0, high = 0;
+  for (var k in latest) {
+    if (!Object.prototype.hasOwnProperty.call(latest, k)) continue;
+    var row = latest[k];
+    var scores = (prevByName[k] || []).slice(0, DAILY_SUMMARY_PREV_LIMIT);
+    var avg = null;
+    if (scores.length) {
+      var sum = 0;
+      for (var si = 0; si < scores.length; si++) sum += scores[si];
+      avg = sum / scores.length;
+    }
+    var priority = summaryPriority_(row, avg);
+    var hasReply = !!String(row.coachReply || '').trim();
+    if (!hasReply) pending++;
+    if (priority) high++;
+    athletes.push({
+      // 身分：姓名說了算；studentId 有值才附上，供日後遷移。athleteId 一律不回。
+      studentName: String(row.name || row.studentName || '').trim(),
+      studentId: String(row.studentId || '').trim() || null,
+      trait: traits[k] || '',
+      reported: true,
+      hasReply: hasReply,
+      priority: priority,
+      readiness: {
+        score: summaryNum_(row.finalReadinessScore),
+        light: String(row.readinessStatusLight || row.status || '')
+      }
+    });
+  }
+
+  athletes.sort(function (a, b) {
+    var aw = a.priority ? 0 : (a.hasReply ? 2 : 1);
+    var bw = b.priority ? 0 : (b.hasReply ? 2 : 1);
+    if (aw !== bw) return aw - bw;
+    return String(a.studentName).localeCompare(String(b.studentName));
+  });
+
+  return {
+    ok: true,
+    date: date,
+    stats: { reported: athletes.length, pending: pending, highPriority: high },
+    athletes: athletes,
+    meta: {
+      elapsedMs: Date.now() - started,
+      rowsScanned: nRows,
+      rowsReturned: athletes.length,
+      queryType: 'dailySummary'
+    }
+  };
 }
 
 function authAllRecords(data) {

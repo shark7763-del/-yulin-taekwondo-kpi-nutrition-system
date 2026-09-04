@@ -416,7 +416,8 @@ const INFLIGHT_DEDUP_ACTIONS = [
   'getAllAppData', 'getAccountAdminData', 'getAiConfig', 'getLineStatus',
   'getLastRecordByName', 'getRecentRecordsByName', 'getSubmitContext',
   // 教練後台的三個區塊會同時要資料，沒列進來就會同時轟炸同一支 GAS
-  'getCoachDashboard', 'getRecordsByDate', 'getTodayRecords', 'getCoachReplies'
+  'getCoachDashboard', 'getRecordsByDate', 'getTodayRecords', 'getCoachReplies',
+  'getDailyAthleteSummary', 'getAllStudentTraits', 'getStudentTrait'
 ];
 const _inflight = {};
 

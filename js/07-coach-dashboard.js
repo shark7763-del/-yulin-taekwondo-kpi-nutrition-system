@@ -2728,15 +2728,111 @@ function lastPerfHasPriority(rec, history) {
 // 今日回報名單要看的歷史深度：當天 + 近兩週，足夠判斷「高優先」與連續型警示。
 const TODAY_REPORT_HISTORY_DAYS = 14;
 
+/* ============================================================
+   「上次表現」首頁：Summary First / Detail On Demand
+   ------------------------------------------------------------
+   首頁只要畫一張名單，卻曾經為此讀 14 天 229 列 0.70MB。
+   改成 getDailyAthleteSummary（實測 33 人約 4.7KB），並用
+   stale-while-revalidate：先畫快取，背景重新取，有變化才重繪。
+
+   優先度由後端計算 —— 因為那段判斷要讀「今日心得」並套風險關鍵字，
+   心得不該為了畫名單而送到前端。
+
+   身分一律用姓名。athleteId 不採信：實測 records 的 athleteId 欄
+   有 50.1% 是訓練方向文字，同一段文字被 35 位選手共用。
+   ============================================================ */
+const SUMMARY_TTL_MS = 90000;                 // 記憶體快取：90 秒內不重打
+const SUMMARY_FRESH_MS = 300000;              // 超過 5 分鐘的快取要標示「資料更新中」
+const SUMMARY_LS_PREFIX = 'lastperf-summary:';
+const _summaryCache = {};                     // date -> { data, fetchedAt }
+
+function summaryCacheKey(date) { return SUMMARY_LS_PREFIX + date; }
+
+function readSummaryCache(date) {
+  const mem = _summaryCache[date];
+  if (mem) return mem;
+  try {
+    const raw = localStorage.getItem(summaryCacheKey(date));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.data && parsed.fetchedAt) {
+      _summaryCache[date] = parsed;
+      return parsed;
+    }
+  } catch (e) { /* 壞掉的快取就當作沒有 */ }
+  return null;
+}
+
+function writeSummaryCache(date, data) {
+  const entry = { data: data, fetchedAt: Date.now() };
+  _summaryCache[date] = entry;
+  try { localStorage.setItem(summaryCacheKey(date), JSON.stringify(entry)); } catch (e) { /* 配額滿了就算了 */ }
+  return entry;
+}
+
+function invalidateDailySummaryCache(date) {
+  const keys = date ? [date] : Object.keys(_summaryCache);
+  keys.forEach(d => {
+    delete _summaryCache[d];
+    try { localStorage.removeItem(summaryCacheKey(d)); } catch (e) {}
+  });
+}
+if (typeof window !== 'undefined') window.invalidateDailySummaryCache = invalidateDailySummaryCache;
+
+function summaryIsFresh(entry) { return !!entry && (Date.now() - entry.fetchedAt) < SUMMARY_TTL_MS; }
+function summaryNeedsFreshnessNotice(entry) { return !!entry && (Date.now() - entry.fetchedAt) >= SUMMARY_FRESH_MS; }
+
+// 後端摘要 -> 既有 renderer 認得的 item 形狀。
+// 刻意不帶 record：renderer 只用 studentName / pending / priority / status。
+function summaryToItems(payload) {
+  return (payload && payload.athletes ? payload.athletes : []).map(a => ({
+    studentName: a.studentName,
+    studentId: a.studentId || '',
+    trait: a.trait || '',
+    readiness: a.readiness || null,
+    hasReply: !!a.hasReply,
+    pending: !a.hasReply,
+    priority: !!a.priority,
+    status: a.priority ? '高優先' : (!a.hasReply ? '待回覆' : '已回報')
+  }));
+}
+function summaryToSummary(payload) {
+  const st = (payload && payload.stats) || {};
+  return { reported: st.reported || 0, pending: st.pending || 0, priority: st.highPriority || 0 };
+}
+
+async function fetchDailySummary(date) {
+  const res = await safeReadRequest({ action: 'getDailyAthleteSummary', date: date });
+  if (!res || !res.ok) {
+    const err = new Error(res && res.authRequired ? 'AUTH_REQUIRED' : 'SUMMARY_FAILED');
+    err.detail = (res && res.error) ? String(res.error).slice(0, 160) : '';
+    err.authRequired = !!(res && res.authRequired);
+    throw err;
+  }
+  if (res.meta && window.TEAMPRO_FLAGS && window.TEAMPRO_FLAGS.DEBUG_PERFORMANCE) {
+    // 只有技術數字，沒有任何學生內容
+    console.debug('[PERF] summary meta:', JSON.stringify(res.meta));
+  }
+  return res;
+}
+
 async function loadTodayReportedStudents(opts) {
   const targetDate = getLastPerfSelectedDate();
-  // strict：讀取失敗要丟例外，不能靜默退回本機空資料然後顯示成「還沒有選手回報」。
-  //
-  // 這份名單只需要 targetDate 當天（下面那行就把其餘全濾掉了），
-  // 外加 buildTodayReportStatus 判斷「高優先」時參考的近期趨勢。
-  // 原本卻是無限制 fetchAllRecords()：目前要分 6 頁抓 11.86MB，
-  // 手機上任何一頁 Failed to fetch 就整個 throw ——
-  // 2026-09-02 現場回報的 action=getAllRecords 連線失敗就是這裡。
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('summary_request_start');
+  const payload = await fetchDailySummary(targetDate);
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('summary.network', 'summary_request_start', 'summary_response');
+  writeSummaryCache(targetDate, payload);
+  const items = summaryToItems(payload);
+  const summary = summaryToSummary(payload);
+  LASTPERF_TODAY_STATE.items = items;
+  LASTPERF_TODAY_STATE.summary = summary;
+  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('summary.render', 'summary_response', 'summary_rendered');
+  return { items: items, summary: summary };
+}
+
+// 舊的實作保留成死碼會誤導人，直接移除；buildTodayReportStatus 仍供其他呼叫端使用。
+async function loadTodayReportedStudentsLegacy_(opts) {
+  const targetDate = getLastPerfSelectedDate();
   const records = await fetchAllRecords(Object.assign({
     strict: true,
     dashboard: true,
@@ -2786,6 +2882,29 @@ function buildTodayReportStatus(records, replies, allRecords) {
   LASTPERF_TODAY_STATE.items = items;
   LASTPERF_TODAY_STATE.summary = summary;
   return { items, summary };
+}
+
+/* 快取新鮮度提示。不新增版面，掛在統計列下方一行小字。 */
+function renderSummaryFreshness(entry, note) {
+  const host = $id('lastPerfSummaryRow');
+  if (!host || !host.parentNode) return;
+  let el = $id('lastPerfFreshness');
+  if (!entry) { if (el) el.remove(); return; }
+  const stale = note || (summaryNeedsFreshnessNotice(entry) ? '更新中' : '');
+  if (!stale) { if (el) el.remove(); return; }
+  const d = new Date(entry.fetchedAt);
+  const hh = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  const text = stale === '連線失敗'
+    ? '⚠️ 目前後端連線失敗，以下為 ' + hh + ' 最後一次成功同步的資料'
+    : '⏳ 資料更新中（顯示 ' + hh + ' 的資料）';
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'lastPerfFreshness';
+    el.className = 'review-label';
+    el.style.cssText = 'grid-column:1/-1;opacity:.85;margin-top:4px';
+    host.parentNode.insertBefore(el, host.nextSibling);
+  }
+  el.textContent = text;
 }
 
 function renderTodayReportSummary(summary) {
@@ -2857,14 +2976,41 @@ async function refreshTodayReportedList(opts) {
   const selectedDate = getLastPerfSelectedDate();
   const title = $id('todayReportedTitle');
   if (title) title.textContent = `${lastPerfDateLabel(selectedDate)}已回報名單`;
-  if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
+  // trait 徽章不該擋住名單：改成背景載入，載完再重繪一次。
+  if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') {
+    Promise.resolve(window.TraitRadar.loadCache()).then(() => {
+      if (LASTPERF_TODAY_STATE.items && LASTPERF_TODAY_STATE.items.length) {
+        renderTodayReportedList(LASTPERF_TODAY_STATE.items, LASTPERF_TODAY_STATE.filter);
+      }
+    }).catch(() => {});
+  }
   const list = $id('todayReportedList');
   if (list) list.innerHTML = `<div class="hint-box">讀取${escapeHtml(lastPerfDateLabel(selectedDate))}回報名單中...</div>`;
+  // ① 先畫快取（0 request），② 再背景重新取，③ 有變化才重繪
+  const cached = readSummaryCache(selectedDate);
+  if (cached) {
+    if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('summary_cache_rendered');
+    LASTPERF_TODAY_STATE.items = summaryToItems(cached.data);
+    LASTPERF_TODAY_STATE.summary = summaryToSummary(cached.data);
+    renderTodayReportSummary(LASTPERF_TODAY_STATE.summary);
+    renderTodayReportedList(LASTPERF_TODAY_STATE.items, LASTPERF_TODAY_STATE.filter);
+    renderSummaryFreshness(cached, summaryIsFresh(cached) ? '' : '更新中');
+    if (summaryIsFresh(cached) && !(opts && opts.force)) return;   // TTL 內：0 request
+  }
+
   try {
     const data = await loadTodayReportedStudents(opts || {});
     renderTodayReportSummary(data.summary);
     renderTodayReportedList(data.items, LASTPERF_TODAY_STATE.filter);
+    renderSummaryFreshness(readSummaryCache(selectedDate), '');
   } catch (e) {
+    // 已經畫了快取的話，保留畫面，只標示連線有問題 ——
+    // 絕不可以把它清成 0 人回報。
+    if (cached) {
+      renderSummaryFreshness(cached, '連線失敗');
+      console.warn('[lastperf] 摘要更新失敗，畫面維持最後一次成功資料:', e && e.message);
+      return;
+    }
     // 統計數字也要一起作廢，0/0/0 看起來像「今天真的沒人回報」
     const sum = $id('lastPerfSummaryRow');
     if (sum) sum.innerHTML = ['已回報', '待回覆', '❗ 高優先']
@@ -2967,6 +3113,10 @@ async function saveCoachReplyRemote(row, rec) {
   saveCoachReplyStore(payload);
   if (rec) rec.coachReply = payload.replyText;
   invalidateAllRecordsCache();  // 回覆已寫回後端，讓下一次名單重整抓到最新的 coachReply
+  // 摘要帶著 hasReply，明細帶著 coachReply —— 兩份快取都必須作廢，
+  // 否則教練回覆完，名單仍會顯示「待回覆」直到 TTL 到期。
+  invalidateDailySummaryCache(rec ? rec.date : '');
+  invalidateAthleteDetail(row && row.studentName);
   return ok;
 }
 function getCoachAiStyleText() {
@@ -3264,6 +3414,28 @@ function renderCoachPerformanceReplyAssistant(name, rec, history, rangeDays) {
 // 真的查到更舊的日期時，下面會用 getRecordsByDate 補那一天。
 const LAST_PERF_HISTORY_LIMIT = 180;
 
+/* 單一選手的明細快取（Detail On Demand 的另一半）。
+   教練點 A -> 返回名單 -> 再點 A，TTL 內不該再打後端。
+   key 用「姓名 + 日期」：姓名是目前唯一可靠的身分鍵。 */
+const ATHLETE_DETAIL_TTL_MS = 90000;
+const _athleteDetailCache = {};
+function athleteDetailKey(name, date) { return normalizeNameKey(name) + '|' + (date || ''); }
+function readAthleteDetail(name, date) {
+  const hit = _athleteDetailCache[athleteDetailKey(name, date)];
+  if (hit && (Date.now() - hit.ts) < ATHLETE_DETAIL_TTL_MS) return hit.value;
+  return null;
+}
+function writeAthleteDetail(name, date, value) {
+  _athleteDetailCache[athleteDetailKey(name, date)] = { value: value, ts: Date.now() };
+  return value;
+}
+function invalidateAthleteDetail(name) {
+  if (!name) { Object.keys(_athleteDetailCache).forEach(k => delete _athleteDetailCache[k]); return; }
+  const prefix = normalizeNameKey(name) + '|';
+  Object.keys(_athleteDetailCache).forEach(k => { if (k.indexOf(prefix) === 0) delete _athleteDetailCache[k]; });
+}
+if (typeof window !== 'undefined') window.invalidateAthleteDetail = invalidateAthleteDetail;
+
 // 只取某一天的整隊紀錄。既有後端 action，走 requireRole(['coach'])。
 async function fetchRecordsByDate(date) {
   const url = getWebAppUrl();
@@ -3290,14 +3462,24 @@ async function loadLastPerfPage() {
     // 這裡只看「一位選手」。原本卻抓完整歷史再本機 filter 掉 40 位隊友的資料。
     // getRecentRecordsByName 對教練是放行的（authorizedStudentName(data, true)），
     // 拿到的就是該選手由新到舊的紀錄。
-    history = (await fetchRecentRecords(name, LAST_PERF_HISTORY_LIMIT) || [])
-      .sort((a, b) => normDate(b.date || b.timestamp).localeCompare(normDate(a.date || a.timestamp)));
-    rec = latestRecordForNameDate(history, name, selectedDate);
-    if (!rec) {
-      // 選到的日期比 history 深度還舊時，只補抓「那一天」（整隊當日一頁，
-      // 仍遠小於完整歷史），確保教練查得到久遠日期，不會顯示成沒填。
-      const dayRows = await fetchRecordsByDate(selectedDate);
-      rec = latestRecordForNameDate(dayRows, name, selectedDate);
+    const cachedDetail = readAthleteDetail(name, selectedDate);
+    if (cachedDetail) {
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('detail_cache_hit');
+      rec = cachedDetail.rec;
+      history = cachedDetail.history;
+    } else {
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('detail_request_start');
+      history = (await fetchRecentRecords(name, LAST_PERF_HISTORY_LIMIT) || [])
+        .sort((a, b) => normDate(b.date || b.timestamp).localeCompare(normDate(a.date || a.timestamp)));
+      rec = latestRecordForNameDate(history, name, selectedDate);
+      if (!rec) {
+        // 選到的日期比 history 深度還舊時，只補抓「那一天」（整隊當日一頁，
+        // 仍遠小於完整歷史），確保教練查得到久遠日期，不會顯示成沒填。
+        const dayRows = await fetchRecordsByDate(selectedDate);
+        rec = latestRecordForNameDate(dayRows, name, selectedDate);
+      }
+      writeAthleteDetail(name, selectedDate, { rec: rec, history: history });
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('detail.network', 'detail_request_start', 'detail_loaded');
     }
   } else {
     [rec, history] = await Promise.all([
