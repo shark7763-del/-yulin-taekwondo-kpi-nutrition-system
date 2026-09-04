@@ -22,7 +22,7 @@
 | 2026-09-02 | 83 | `fix/records-response-size` | getAllRecords 加上 sinceDate／omitFields／omitEmpty／paged 四個可選參數。起因：整張表回應已達 15.66MB，POST→echo 那一跳取不回來、被降級成 GET，教練後台收到 doGet 的「此動作不接受 GET 請求」而整頁空白。不帶參數時行為與 v82 完全相同 |
 | 2026-09-02 | 84 | `fix/coach-dashboard-stability` | 新增 `getCoachDashboard`（只回教練後台需要的 87 欄）與 `keepFields`；回應掛上 `apiVersion` 供前後端握手。既有 action 行為未變，可安全退回 v83 |
 | 2026-09-03 | 85 | `fix/bounded-reads` | `getAllRecordsRead_` 改為「先讀 date 欄定位 → 合併連續列 → 只讀需要的段」，段數 > 12 時退回整表讀取（保險絲）。既有行為不變：不帶 sinceDate 時仍走原本的整表讀取 |
-| 2026-09-04 | **待部署（86）** | `feat/summary-first` | 新增 `getDailyAthleteSummary`（「上次表現」首頁專用摘要，只回名單需要的欄位，優先度在後端計算所以心得不外送）。既有 action 一律未動 |
+| 2026-09-04 | 86 | `feat/summary-first` | 新增 `getDailyAthleteSummary`（「上次表現」首頁專用摘要，只回名單需要的欄位，優先度在後端計算所以心得不外送）。既有 action 一律未動 |
 
 ## 部署順序（不可顛倒）
 
@@ -41,3 +41,5 @@
 > ⚠️ v85 是純內部優化（讀取策略），contract 未變，**沒有外部指紋可分辨 v84/v85**。
 > ⚠️ 驗活當下實測到 Apps Script 偶發 13–43 秒延遲會讓 POST 被降級成 GET，
 >    隔幾秒重試即恢復正常。遇到「此動作不接受 GET 請求」時先重試再判定失敗。
+> 2026-09-04 v86 驗活：`getDailyAthleteSummary` 由「未知的 action」變成 `authRequired`；`apiVersion` 與前端 `APP_VERSION` 一致。
+> 驗活過程再次遇到單次 8.9 秒的延遲（第一次探測），拉開間隔重試即正常 —— 見 ROOT_CAUSE.md RC-1 補充。
