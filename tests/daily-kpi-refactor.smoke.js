@@ -392,9 +392,18 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
     // 這支開頭有 `if (role !== 'coach') return`，測試瀏覽器沒有角色會直接返回
     const savedRole = localStorage.getItem('yulin_role');
     window.setRole('coach', '測試教練', { authToken: 'test-token' });
-    let strictSeen = null;
-    window.fetchAllRecords = async opts => { strictSeen = !!(opts && opts.strict); throw new Error('AUTH_REQUIRED'); };
+    // 2026-09-04 起首頁改走 getDailyAthleteSummary，不再讀 records。
+    // 這裡攔的是摘要那一支，並確認失敗時不會被畫成「還沒有選手回報」。
+    let summaryAsked = null;
+    const origSafeRead = window.safeReadRequest;
+    window.safeReadRequest = async body => {
+      summaryAsked = body && body.action;
+      throw new Error('AUTH_REQUIRED');
+    };
+    if (typeof window.invalidateDailySummaryCache === 'function') window.invalidateDailySummaryCache();
     await window.refreshTodayReportedList();
+    window.safeReadRequest = origSafeRead;
+    const strictSeen = summaryAsked;
     if (savedRole) localStorage.setItem('yulin_role', savedRole); else localStorage.removeItem('yulin_role');
     return {
       strictSeen,
@@ -403,8 +412,8 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
       hasRelogin: !!list.querySelector('.coach-relogin')
     };
   });
-  t('the reported-list panel asks for records in strict mode',
-    reported.missing || reported.strictSeen === true, JSON.stringify(reported));
+  t('the reported-list panel asks the summary API (not records)',
+    reported.missing || reported.strictSeen === 'getDailyAthleteSummary', JSON.stringify(reported));
   t('a failed load no longer reads as 還沒有選手回報',
     reported.missing || (!reported.listText.includes('還沒有選手回報')
       && reported.listText.includes('資料沒讀進來')), (reported.listText || '').slice(0, 80));
