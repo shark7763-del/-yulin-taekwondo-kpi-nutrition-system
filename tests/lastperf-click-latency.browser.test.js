@@ -201,7 +201,9 @@ const CLICK = async ({ name, date }) => {
       const pre = !!window.TraitRadar.recordFor('舊快取選手');
       window.__fail.getAllStudentTraits = true;
       window.__log = [];
-      await window.TraitRadar.loadCache();               // 教練身分第一次載入 → 失敗
+      // 教練身分第一次載入 → 失敗。實際上「今日名單」背景載入與點選手常同時發生，
+      // 所以同時發兩個 loadCache（共用同一個 in-flight 請求），確認不會互相清掉快取。
+      await Promise.all([window.TraitRadar.loadCache(), window.TraitRadar.loadCache()]);
       const failedReqs = window.__log.filter(e => e.action === 'getAllStudentTraits');
       const memKept = !!window.TraitRadar.recordFor('舊快取選手');
       let lsKept = false;
