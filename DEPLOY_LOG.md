@@ -23,6 +23,8 @@
 | 2026-09-02 | 84 | `fix/coach-dashboard-stability` | 新增 `getCoachDashboard`（只回教練後台需要的 87 欄）與 `keepFields`；回應掛上 `apiVersion` 供前後端握手。既有 action 行為未變，可安全退回 v83 |
 | 2026-09-03 | 85 | `fix/bounded-reads` | `getAllRecordsRead_` 改為「先讀 date 欄定位 → 合併連續列 → 只讀需要的段」，段數 > 12 時退回整表讀取（保險絲）。既有行為不變：不帶 sinceDate 時仍走原本的整表讀取 |
 | 2026-09-04 | 86 | `feat/summary-first` | 新增 `getDailyAthleteSummary`（「上次表現」首頁專用摘要，只回名單需要的欄位，優先度在後端計算所以心得不外送）。既有 action 一律未動 |
+| 2026-10-03 | 87 | — | **作廢**：clasp 推送時誤把 scratchpad 的比對暫存檔（3 個 .js）一起推上，從未 redeploy，正式網址沒有指向過它 |
+| 2026-10-03 | 88 | `fix/identity-read-fuse` | `recordsForIdentityOptimized_` 改為整表只讀一次：原本單一選手的列散落各天，逐段補讀變成一筆一次 getRange（1800 列模擬 47 次 → 2 次）。回傳內容逐筆不變 |
 
 ## 部署順序（不可顛倒）
 
@@ -43,3 +45,5 @@
 >    隔幾秒重試即恢復正常。遇到「此動作不接受 GET 請求」時先重試再判定失敗。
 > 2026-09-04 v86 驗活：`getDailyAthleteSummary` 由「未知的 action」變成 `authRequired`；`apiVersion` 與前端 `APP_VERSION` 一致。
 > 驗活過程再次遇到單次 8.9 秒的延遲（第一次探測），拉開間隔重試即正常 —— 見 ROOT_CAUSE.md RC-1 補充。
+> 2026-10-03 v88 驗活：`?action=ping` 回 pong（冷啟動首次 12.2 秒，第二次 2.6 秒）。部署前 `clasp pull` 比對線上 HEAD 與 repo main 完全一致。
+> ⚠️ clasp 3.3 坑：`clasp push` 不會刪除遠端多出的檔案（本機刪檔後回報 already up to date）；推送目錄只能放 `程式碼.js` 與 `appsscript.json`，推完要另開目錄 `clasp pull` 確認檔案清單。
