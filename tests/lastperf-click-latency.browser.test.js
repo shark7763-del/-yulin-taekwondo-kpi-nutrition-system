@@ -196,29 +196,44 @@ const CLICK = async ({ name, date }) => {
 
   /* ---------- 3. 特質讀取失敗：保留既有快取、下一次重試 ---------- */
   {
-    const { page, context, errors } = await openPage(browser, { seedTraitCache: true, traitCacheVersion: TRAIT_CACHE_VERSION });
+    // 2026-10 特質快取隱私修正後，未登入開頁不再把本機全隊快取讀進來，
+    // 所以「既有快取」改由教練登入後成功載入一次建立（3a）；「首次載入失敗→下次重試」另跑一頁（3b）。
+    const { page, context, errors } = await openPage(browser);
     const r = await page.evaluate(async () => {
-      const pre = !!window.TraitRadar.recordFor('舊快取選手');
+      // 3a 既有快取 + 之後失敗 → 保留
+      await window.TraitRadar.loadCache(true);
+      const pre = !!window.TraitRadar.recordFor('選手1');
       window.__fail.getAllStudentTraits = true;
       window.__log = [];
-      // 教練身分第一次載入 → 失敗。實際上「今日名單」背景載入與點選手常同時發生，
-      // 所以同時發兩個 loadCache（共用同一個 in-flight 請求），確認不會互相清掉快取。
-      await Promise.all([window.TraitRadar.loadCache(), window.TraitRadar.loadCache()]);
+      // 「今日名單」背景載入與點選手常同時發生：同時發兩個（共用同一個 in-flight 請求），確認不會互相清掉快取。
+      await Promise.all([window.TraitRadar.loadCache(true), window.TraitRadar.loadCache(true)]);
       const failedReqs = window.__log.filter(e => e.action === 'getAllStudentTraits');
-      const memKept = !!window.TraitRadar.recordFor('舊快取選手');
+      const memKept = !!window.TraitRadar.recordFor('選手1');
       let lsKept = false;
-      try { lsKept = !!JSON.parse(localStorage.getItem('yulin_trait_cache') || '{}')['舊快取選手']; } catch (e) {}
+      try { lsKept = !!JSON.parse(localStorage.getItem('yulin_trait_cache') || '{}')['選手1']; } catch (e) {}
+      return { pre, failedCount: failedReqs.length, failedFlag: failedReqs.every(e => e.failed), memKept, lsKept };
+    });
+    const ctx3b = await openPage(browser);
+    const r3b = await ctx3b.page.evaluate(async () => {
+      // 3b 教練登入後第一次載入就失敗 → 下一次（非強制）呼叫會重試
+      window.__fail.getAllStudentTraits = true;
+      window.__log = [];
+      await window.TraitRadar.loadCache();
+      const firstFailed = window.__log.filter(e => e.action === 'getAllStudentTraits' && e.failed).length;
       window.__fail.getAllStudentTraits = false;
       window.__log = [];
-      await window.TraitRadar.loadCache();               // 非強制的下一次呼叫：應該重試
+      await window.TraitRadar.loadCache();
       const retryReqs = window.__log.filter(e => e.action === 'getAllStudentTraits').length;
       const fresh = !!window.TraitRadar.recordFor('選手1');
       let lsFresh = false;
       try { lsFresh = !!JSON.parse(localStorage.getItem('yulin_trait_cache') || '{}')['選手1']; } catch (e) {}
-      return { pre, failedCount: failedReqs.length, failedFlag: failedReqs.every(e => e.failed), memKept, lsKept, retryReqs, fresh, lsFresh };
+      return { firstFailed, retryReqs, fresh, lsFresh };
     });
-    t('3 前置：boot 已從本機讀入既有特質快取（TRAIT_CACHE_VERSION 一致）', r.pre === true, JSON.stringify(r));
-    t('3 前置：失敗那次確實發出請求且被模擬為失敗', r.failedCount >= 1 && r.failedFlag === true, JSON.stringify(r));
+    Object.assign(r, r3b);
+    allErrors.push(...ctx3b.errors);
+    await ctx3b.context.close();
+    t('3a 前置：成功載入一次後已有特質快取', r.pre === true, JSON.stringify(r));
+    t('3 前置：失敗那次確實發出請求且被模擬為失敗', r.failedCount >= 1 && r.failedFlag === true && r.firstFailed >= 1, JSON.stringify(r));
     t('3 失敗後記憶體中的既有特質快取仍在', r.memKept === true, JSON.stringify(r));
     t('3 失敗後 localStorage 的既有特質快取沒被覆寫成空的', r.lsKept === true, JSON.stringify(r));
     t('3 下一次（非強制）呼叫會重試 getAllStudentTraits', r.retryReqs === 1, JSON.stringify(r));
@@ -226,6 +241,7 @@ const CLICK = async ({ name, date }) => {
 
     // 「成功但真的沒資料」照舊：清成空的並標記已載入（不會一直重打）
     const empty = await page.evaluate(async () => {
+      window.__fail.getAllStudentTraits = false;   // 3a 結束時仍在模擬失敗
       window.__traits = [];
       window.__log = [];
       await window.TraitRadar.loadCache(true);

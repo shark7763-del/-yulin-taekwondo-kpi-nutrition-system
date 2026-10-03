@@ -2960,7 +2960,8 @@ function selectStudentFromQuickList(studentName) {
   if (input) input.value = name;
   renderTodayReportedList(LASTPERF_TODAY_STATE.items, LASTPERF_TODAY_STATE.filter);
   if (typeof loadLastPerfPage === 'function') {
-    loadLastPerfPage().then(() => {
+    loadLastPerfPage().then(done => {
+      if (done === false) return;   // 被後來的點選取代，不要捲動
       const card = $id('lastPerfResultCard');
       if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }).catch(() => {});
@@ -3447,9 +3448,13 @@ async function fetchRecordsByDate(date) {
   return [];
 }
 
+// 連點保護：教練點 A 後馬上點 B，A 較晚回來時不可蓋掉 B 的畫面。
+let _lastPerfLoadSeq = 0;
+
 async function loadLastPerfPage() {
   const name = String($id('lastPerfName').value || '').trim();
   if (!name) { toast('請選擇選手'); return; }
+  const seq = ++_lastPerfLoadSeq;
   toast('讀取中...');
   // 特質資料與紀錄並行抓：先發出，等到要渲染前才 await。
   // 原本先等特質（整隊一份）回來才去抓紀錄，兩段延遲直接相加。
@@ -3495,6 +3500,7 @@ async function loadLastPerfPage() {
   }
   // 以下所有渲染（回顧、趨勢、特質卡、回覆助理）都可能讀特質資料，先確保它已就緒。
   await traitReady;
+  if (seq !== _lastPerfLoadSeq) return false;   // 已經有更新的查詢，這次結果丟掉
   const card = $id('lastPerfResultCard');
   const box = $id('lastPerfResult');
   const trendCard = $id('trendCard');
@@ -3525,6 +3531,7 @@ async function loadLastPerfPage() {
   const inlineTrend = $id('lastPerfTrendInline');
   if (inlineTrend) renderTrendSection(inlineTrend, history || []);
   await renderStudentCoachReplyCard(name, rec, box);
+  if (seq !== _lastPerfLoadSeq) return false;
   if (window.renderStudentTraitCard) window.renderStudentTraitCard(name, box, { replace: false });
   renderCoachPerformanceReplyAssistant(name, rec, history || [rec], 7);
 }
