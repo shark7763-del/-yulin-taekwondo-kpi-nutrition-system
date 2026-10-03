@@ -700,6 +700,51 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
   t('[KNOWN P0] 名單為空的裝置會落入姓名雜湊分支（格式與索引分支不同）',
     /^S\d{4}$/.test(ids.emptyRoster) && ids.emptyRoster !== 'S001', ids.emptyRoster);
 
+  // 17b. 修正後（TeamPro 2.0 P0-2）：送出的紀錄 athleteId 改用帳號的 studentId，
+  //      不再走上面那個依名單索引的函式 —— 刪除／重排名單都不會改變。
+  const recIds = await page.evaluate(() => {
+    const UA = '11111111-1111-4111-8111-111111111111';
+    const prevRole = localStorage.getItem('yulin_role');
+    const prevPlayers = localStorage.getItem('yulin_players');
+    localStorage.setItem('yulin_role', JSON.stringify({ role: 'student', name: '測試選手', studentId: UA, authToken: 't' }));
+    const build = list => {
+      localStorage.setItem('yulin_players', JSON.stringify(list));
+      if (typeof window.loadPlayersToSelects === 'function') window.loadPlayersToSelects();
+      const sel = document.getElementById('name');
+      if (sel.tagName === 'SELECT' && !Array.from(sel.options).some(o => o.value === '測試選手')) {
+        const o = document.createElement('option'); o.value = o.textContent = '測試選手'; sel.appendChild(o);
+      }
+      sel.value = '測試選手';
+      if (sel.value !== '測試選手') return { setupFailed: list.join(',') };
+      return window.buildRecord().athleteId;
+    };
+    const out = {
+      base: build(['隊友一號', '測試選手', '隊友二號']),
+      afterDelete: build(['測試選手', '隊友二號']),
+      afterReorder: build(['隊友二號', '隊友一號', '測試選手'])
+    };
+    localStorage.setItem('yulin_role', JSON.stringify({ role: 'student', name: '測試選手', authToken: 't' }));
+    out.noStudentId = build(['測試選手']);
+    if (prevRole === null) localStorage.removeItem('yulin_role'); else localStorage.setItem('yulin_role', prevRole);
+    if (prevPlayers === null) localStorage.removeItem('yulin_players'); else localStorage.setItem('yulin_players', prevPlayers);
+    return out;
+  });
+  t('P0-2 送出紀錄的 athleteId = 帳號 studentId',
+    recIds.base === '11111111-1111-4111-8111-111111111111', JSON.stringify(recIds));
+  t('P0-2 刪除／重排名單後 athleteId 不變',
+    recIds.afterDelete === recIds.base && recIds.afterReorder === recIds.base, JSON.stringify(recIds));
+  t('P0-2 沒有 studentId 時留空，不再產生 S00n',
+    recIds.noStudentId === '', JSON.stringify(recIds));
+
+  const research = await page.evaluate(() => {
+    if (typeof window.cleanRecord !== 'function' || typeof window.researchRoster !== 'function') return { missing: true };
+    const rec = { date: '2026-08-01', name: '測試選手', athleteId: '加強旋踢的速度與收腳', group: '對打' };
+    const cmap = {}; window.researchRoster([rec]).forEach(r => { cmap[r.name] = r; });
+    return { exported: window.cleanRecord(rec, cmap).athleteId, unknown: window.cleanRecord(Object.assign({}, rec, { name: '名單外' }), {}).athleteId };
+  });
+  t('P0-2 研究匯出不帶出紀錄裡錯位的 athleteId 文字',
+    !research.missing && research.exported === '' && research.unknown === '', JSON.stringify(research));
+
   // 18. 草稿：先前零測試。兩套實作（10-init.js 基礎版 + 14-kpi-refactor.js 覆寫）互相包裹，
   //     且有一條「只還原今天的草稿」規則，過期草稿必須被丟棄。
   const draft = await page.evaluate(() => {

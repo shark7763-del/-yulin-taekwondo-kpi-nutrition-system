@@ -193,7 +193,9 @@ function buildRecord() {
     mode: 'standard',
     date: $id('date').value || todayStr(),
     name: $id('name').value,
-    athleteId: getAthleteIdForName($id('name').value),
+    // 永久選手 ID 一律用帳號的 studentId（建立帳號時產生，改名／換組／名單重排都不變）。
+    // 原本依名單陣列索引產生（S001…），刪除或重排名單就會撞號。沒有登入身分時留空。
+    athleteId: String((getRole() || {}).studentId || ''),
     studentName: $id('name').value,
     schoolLevel: $id('schoolLevel') ? $id('schoolLevel').value : '',
     grade: $id('grade') ? $id('grade').value : '',
