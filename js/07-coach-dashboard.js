@@ -3482,7 +3482,9 @@ async function loadLastPerfPage() {
         const dayRows = await fetchRecordsByDate(selectedDate);
         rec = latestRecordForNameDate(dayRows, name, selectedDate);
       }
-      writeAthleteDetail(name, selectedDate, { rec: rec, history: history });
+      // 只快取查到紀錄的結果。fetchRecentRecords 失敗時會靜默退回本機資料（教練裝置上通常是空的），
+      // 若連「查無」也快取，一次失敗就會讓這位選手卡在查無 90 秒。
+      if (rec) writeAthleteDetail(name, selectedDate, { rec: rec, history: history });
       if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('detail.network', 'detail_request_start', 'detail_loaded');
     }
   } else {
