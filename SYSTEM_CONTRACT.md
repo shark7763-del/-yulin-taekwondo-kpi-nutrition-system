@@ -13,11 +13,13 @@
 | 欄位 | 來源 | 穩定性 |
 |---|---|---|
 | `studentId` | 後端 `student_accounts` 產生 | **穩定**，權威 |
-| `athleteId` | 前端 `getAthleteIdForName()` 依名單**陣列索引**產生 | **不穩定** |
+| `athleteId` | 2026-10-03 起：新紀錄寫入登入身分的 `studentId`（沒有則留空）。**歷史資料**是舊的名單索引值（S001…）或錯位文字 | 新值穩定；**歷史值一律不可採信** |
 | `name` / `studentName` | 使用者輸入 | 可被改名 |
 
 `athleteId` 的產生方式**不得在未提出 migration 計畫並取得同意前更動**。
-現況缺陷已記錄在 `DATA_CONTRACT.md`，未經核准不得逕行修正。
+2026-10-03 已經使用者核准改用 `studentId`（TeamPro 2.0 Phase 1，見 `TEAMPRO_2_CHANGELOG.md`），**未改寫任何歷史資料**。
+
+⚠️ records 的 `studentId` 欄在 2026-08-27 以前有欄位錯位（8/30 匯出實測 695 列是數字）。後端讀取一律經過 `trustedStudentId_()`，不像帳號 ID 的值視為空值、退回姓名比對。
 
 ## 2. KPI schema — **COMPATIBLE_CHANGE_ONLY**
 

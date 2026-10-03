@@ -52,7 +52,12 @@ function researchRoster(records) {
   const names = [];
   getPlayers().forEach(n => { if (n && names.indexOf(n) === -1) names.push(n); });
   (records || []).forEach(r => { const n = athleteNameOf(r); if (n && names.indexOf(n) === -1) names.push(n); });
-  return names.map((name, i) => ({ name, athleteCode: 'A' + String(i + 1).padStart(2, '0'), athleteId: getAthleteIdForName(name) }));
+  // athleteId 用帳號的 studentId（永久 ID）；帳號資料沒載入時留空，不再依名單索引產生。
+  const idByName = {};
+  ((typeof ACCOUNT_ADMIN_DATA !== 'undefined' && ACCOUNT_ADMIN_DATA.students) || []).forEach(s => {
+    if (s && s.studentName && s.studentId) idByName[String(s.studentName).trim()] = String(s.studentId);
+  });
+  return names.map((name, i) => ({ name, athleteCode: 'A' + String(i + 1).padStart(2, '0'), athleteId: idByName[name] || '' }));
 }
 
 function codeMapFromRoster(roster) {
@@ -84,12 +89,13 @@ function cleanGroupType(v) {
 
 function cleanRecord(rec, cmap) {
   const name = athleteNameOf(rec);
-  const meta = cmap[name] || { athleteCode: '', athleteId: rec.athleteId || '' };
+  // 不採信紀錄裡的 athleteId 欄：歷史資料欄位錯位，實測多數是選手寫的訓練文字，不能進研究資料。
+  const meta = cmap[name] || { athleteCode: '', athleteId: '' };
   const painArea = rec.painArea || rec.injuryArea || '';
   return {
     date: normDate(rec.date),
     athleteCode: meta.athleteCode,
-    athleteId: rec.athleteId || meta.athleteId,
+    athleteId: meta.athleteId,
     schoolLevel: rec.schoolLevel || '',
     grade: rec.grade || '',
     classCode: rec.classCode || '',

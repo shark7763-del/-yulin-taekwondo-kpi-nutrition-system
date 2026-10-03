@@ -1412,10 +1412,20 @@ function authorizedStudentName(data, allowCoach) {
   return { ok: false, error: '登入已失效，請重新登入。', authRequired: true };
 }
 
+/* records 的 studentId 欄在 2026-08-27 以前有欄位錯位（8/30 匯出實測：695 列是數字），
+   直接拿來比對會讓選手／家長看不到約 38% 的歷史紀錄（不會看到別人的，只會少看到自己的）。
+   只採信「長得像帳號 ID」的值：字串、英數字與 - _、不是純數字；其餘視為空值，退回姓名比對。 */
+function trustedStudentId_(v) {
+  if (typeof v !== 'string') return '';   // 錯位進來的多半是數字或日期（getValues 回 number / Date）
+  var s = v.trim();
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/.test(s) && !/^\d+$/.test(s) ? s : '';
+}
+
 function recordsForIdentity(identity) {
   var all = getAllRecords();
   return all.filter(function (r) {
-    if (identity.studentId && r.studentId) return String(r.studentId) === String(identity.studentId);
+    var rid = trustedStudentId_(r.studentId);
+    if (identity.studentId && rid) return rid === String(identity.studentId);
     return normalizeName(r.name) === normalizeName(identity.name);
   });
 }
@@ -1472,7 +1482,7 @@ function recordsForIdentityOptimized_(identity, limit) {
   var identityName = normalizeName(identity.name);
   for (var i = 0; i < indexRows.length; i++) {
     var row = indexRows[i];
-    var sid = studentIdOff >= 0 ? row[studentIdOff] : '';
+    var sid = studentIdOff >= 0 ? trustedStudentId_(row[studentIdOff]) : '';
     var nm = row[nameOff];
     var match = identity.studentId && sid
       ? String(sid) === String(identity.studentId)
@@ -2003,7 +2013,7 @@ function getDailyAthleteSummary(data) {
     athletes.push({
       // 身分：姓名說了算；studentId 有值才附上，供日後遷移。athleteId 一律不回。
       studentName: String(row.name || row.studentName || '').trim(),
-      studentId: String(row.studentId || '').trim() || null,
+      studentId: trustedStudentId_(row.studentId) || null,
       trait: traits[k] || '',
       reported: true,
       hasReply: hasReply,
@@ -2454,7 +2464,8 @@ function updateRecordAuthorized(data) {
   var fields = data.fields || {};
   if (session.role === 'coach') return updateRecord(data.recordId, fields);
   var record = findRecordById(data.recordId);
-  if (!record || (record.studentId ? record.studentId !== session.studentId : normalizeName(record.name) !== normalizeName(session.studentName))) return { ok: false, error: '你沒有權限修改這筆資料。', forbidden: true };
+  var recordSid = record ? trustedStudentId_(record.studentId) : '';
+  if (!record || (recordSid ? recordSid !== String(session.studentId) : normalizeName(record.name) !== normalizeName(session.studentName))) return { ok: false, error: '你沒有權限修改這筆資料。', forbidden: true };
   var allowed = session.role === 'parent' ? ['parentNote'] : ['studentResponse'];
   var safeFields = {};
   allowed.forEach(function (key) { if (Object.prototype.hasOwnProperty.call(fields, key)) safeFields[key] = fields[key]; });
