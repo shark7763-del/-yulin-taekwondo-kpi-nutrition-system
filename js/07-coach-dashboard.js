@@ -115,8 +115,11 @@ async function fetchAllRecords(opts) {
   const request = useDashboard
     ? { action: 'getCoachDashboard', date: opts.date, days: opts.days, paged: true }
     : legacyRequest;
+  // Phase 4：slimHistory —— 焦點日期以外的歷史列只帶歷史計算用得到的欄位（約 2.2MB/2 頁 → 0.6MB/1 頁）。
+  // 只有 refreshCoach 會開；快取鍵分開，別的呼叫端永遠拿不到瘦身過的資料。
+  if (useDashboard && opts.slimHistory) request.slimHistory = true;
   const cacheKey = useDashboard
-    ? ('dash:' + opts.date + ':' + opts.days)
+    ? ('dash:' + opts.date + ':' + opts.days + (opts.slimHistory ? ':slim' : ''))
     : (opts.sinceDate ? ('since:' + opts.sinceDate) : 'full');
 
   // 命中未過期的快取就直接回傳，不再打後端（開分頁最大的加速來源）。
@@ -1213,16 +1216,31 @@ if (typeof document !== 'undefined' && !document.__coachReloginBound) {
   });
 }
 
+// Phase 4（J-2）：教練連續切日期時，較晚回來的舊查詢不可蓋掉新日期的畫面。
+let _refreshCoachSeq = 0;
+
 async function refreshCoach() {
+  const seq = ++_refreshCoachSeq;
+  const superseded = () => seq !== _refreshCoachSeq;
   toast('讀取資料中...');
   // 這是使用者主動要求重試，解除斷路器與「後端沒有新 action」的暫時判定。
   if (typeof resetBackendCircuit === 'function') resetBackendCircuit();
-  if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') await window.TraitRadar.loadCache();
 
   // 日期一律正規化，且空白時退回今天，避免 0 筆資料。
   // 這行原本在讀取之後，現在必須先算出來 —— 讀取視窗要跟著教練選的日期往前推，
   // 否則教練回頭查兩個月前那天會落在視窗外，變成空畫面。
   const filterDate = normDate($id('coachDate').value || todayStr());
+
+  // Phase 4（P1-b）：特質、風險處理紀錄、教練簡評與 records 同時發出，
+  // 原本是依序 await，四段延遲相加。三支都自己吞錯誤，提早發出不改變失敗行為；
+  // 特質讀取失敗只會少徽章，不可讓整個後台中斷（與「上次表現」同一套做法）。
+  const traitReady = (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function')
+    ? Promise.resolve().then(() => window.TraitRadar.loadCache()).catch(() => {})
+    : Promise.resolve();
+  const riskReady = loadRiskHandles();
+  const scoresReady = fetchCoachScores(filterDate);
+  riskReady.catch(() => {});
+  scoresReady.catch(() => {});
 
   // 雲端讀取失敗／session 過期 → 顯示提示並中止，不再誤判「全隊未回報」
   let all;
@@ -1231,24 +1249,28 @@ async function refreshCoach() {
       strict: true,
       force: true,
       dashboard: true,
+      slimHistory: true,
       date: filterDate,
       days: COACH_WINDOW_DAYS,
       sinceDate: shiftDateStr(filterDate, -COACH_WINDOW_DAYS)   // 退回 getAllRecords 時用得到
     });
   } catch (e) {
+    if (superseded()) return;
     // toast 幾秒後就消失，之前只 return 會讓整個後台停在空白畫面，
     // 看起來跟「今天沒人回報」一模一樣。改成把錯誤留在畫面上。
     showCoachLoadError(e);
     toast('⚠️ ' + (e && e.message ? e.message : '讀取資料失敗，請重新登入'));
     return;
   }
+  await traitReady;
+  await riskReady;           // 風險處理紀錄，讓已處理的警示能標示出來
+  const coachScores = await scoresReady;
+  if (superseded()) return;  // 教練已經換了日期，這一輪的結果作廢
   clearCoachLoadError();
   renderVersionMismatchBanner();
   renderStaleDataBanner();
-  await loadRiskHandles();   // 風險處理紀錄，讓已處理的警示能標示出來
 
   const statusFilter = $id('coachStatusFilter') ? $id('coachStatusFilter').value : 'all';
-  const coachScores = await fetchCoachScores(filterDate);
 
   // ── 當日完整紀錄 todaysAll（不受狀態篩選影響）──
   // 填寫狀況／今日總覽／出席報表都用這份，才不會被紅黃綠燈篩選洗成 0。

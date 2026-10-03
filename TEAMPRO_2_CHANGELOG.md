@@ -49,3 +49,25 @@ TeamPro 2.0 效能瘦身＋穩定化重構的修改紀錄。稽核見 `TEAMPRO_2
 - 代價：直接在試算表手動改 records 的組別，最多 2 分鐘後才反映到 KPI 開放對象。
 - 測試：新增 `tests/narrow-reads.test.js`（50 項）；修改前程式在讀取量／快取檢查失敗 9 項，等價性檢查兩邊都過（符合預期）。全部 21 支 601 項通過。
 - 部署：GAS @91（2026-10-04，使用者手動部署；clasp pull 比對與 repo 逐字相同，ping 3/3）。前端無變更。
+
+## Phase 4 — 教練戰情室瘦身＋並行（2026-10-04）
+
+| commit | 內容 | 檔案 |
+|---|---|---|
+| `0bc644e` | **P1-a** `getCoachDashboard` 加 `slimHistory`：焦點日期 ±1 天（與日期讀不出的列）回完整 87 欄，其餘歷史列只回 24 個歷史欄位（`COACH_HISTORY_FIELDS`）。前端只有 `refreshCoach` 開啟，快取鍵分開 | `apps-script/Code.gs`、`js/07-coach-dashboard.js` |
+| `0001c55` | **P1-b** `refreshCoach` 的特質／風險處理／教練簡評／records 四支並行；**J-2** `_refreshCoachSeq` 連續切日期時舊查詢作廢；特質讀取失敗不再中斷整個後台 | `js/07-coach-dashboard.js`、`index.html`、`service-worker.js` |
+
+**沒有照稽核原案新增 `getCoachTodayDashboard`、把 45 天警示搬到後端**：那等於重寫 7 個戰情室函式（準備度、身體燈號、連續警示、晤談名單…），風險高。改成「歷史列只少欄位、不少列」，前端邏輯一行不動。
+
+| 8/30 真實資料（本機驗證，資料未離開本機） | Before | After |
+|---|---:|---:|
+| 2026-08-30 | 2 頁 / 2,260 KB | **1 頁 / 546 KB** |
+| 2026-08-28（27 人當天回報） | 2 頁 / 2,413 KB | **1 頁 / 755 KB** |
+| 2026-08-25 | 2 頁 / 2,479 KB | 1 頁 / 673 KB |
+| 2026-08-12 | 2 頁 / 3,186 KB | 1 頁 / 825 KB |
+
+四個日期戰情室 16 個區塊的 HTML **逐字相同**。目標 < 500 KB 未完全達成；剩下的大宗是 `rawScoresJson`（晤談名單「同細項連 3 筆低」要用）。
+
+- 測試：`coach-slim-history.browser.test.js`（33 項：真 Code.gs 產生兩版回應 → 真 index.html 比對畫面；敏感度測試拿掉 9 個歷史欄位各自都抓得到）、`coach-refresh-race.browser.test.js`（10 項，修改前失敗 4 項）。全部 23 支 677 項通過。
+- 相容性：舊後端忽略 `slimHistory` → 回完整資料，前端照常；新後端不帶參數 → 行為不變。部署順序不影響正確性。
+- `moodIndex` 拿掉時測不出差異（昨天在 ±1 天焦點內是完整列，2 天連續判斷碰不到瘦身列），仍保守保留。
