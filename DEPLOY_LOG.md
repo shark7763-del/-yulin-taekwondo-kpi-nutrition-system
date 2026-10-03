@@ -48,3 +48,4 @@
 > 驗活過程再次遇到單次 8.9 秒的延遲（第一次探測），拉開間隔重試即正常 —— 見 ROOT_CAUSE.md RC-1 補充。
 > 2026-10-03 v88 驗活：`?action=ping` 回 pong（冷啟動首次 12.2 秒，第二次 2.6 秒）。部署前 `clasp pull` 比對線上 HEAD 與 repo main 完全一致。
 > ⚠️ clasp 3.3 坑：`clasp push` 不會刪除遠端多出的檔案（本機刪檔後回報 already up to date）；推送目錄只能放 `程式碼.js` 與 `appsscript.json`，推完要另開目錄 `clasp pull` 確認檔案清單。
+> 2026-10-04 v91（使用者手動部署）：TeamPro 2.0 Phase 3 窄欄讀取（`cbf06cb`）。`clasp pull` 線上程式與 repo 逐字相同、遠端只有 2 個檔；`?action=ping` 3/3 pong。v90 內容＝Phase 1。
