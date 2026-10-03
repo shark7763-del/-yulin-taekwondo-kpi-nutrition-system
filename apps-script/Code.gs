@@ -1460,14 +1460,14 @@ function recordsForIdentityOptimized_(identity, limit) {
   var timestampIdx = info.canonicalMap.timestamp || 0;
   if (nameIdx < 1 || dateIdx < 1 || timestampIdx < 1) return recordsForIdentity(identity).sort(byTimestampDesc).slice(0, limit || 7);
 
-  var lo = Math.min(nameIdx, dateIdx, timestampIdx, studentIdIdx || nameIdx);
-  var hi = Math.max(nameIdx, dateIdx, timestampIdx, studentIdIdx || nameIdx);
-  var indexRows = sheet.getRange(2, lo, lastRow - 1, hi - lo + 1).getValues();
+  /* 整表只讀一次：studentId 在第 138 欄，原本的「索引讀取」已涵蓋約 84% 的表；
+     之後再逐段補讀整列，因單一選手的列散落各天，會變成一筆一次 getRange（v79 的教訓）。 */
+  var indexRows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
   perfMark_(perf, 'index_read_end');
-  var nameOff = nameIdx - lo;
-  var studentIdOff = studentIdIdx ? studentIdIdx - lo : -1;
-  var dateOff = dateIdx - lo;
-  var timestampOff = timestampIdx - lo;
+  var nameOff = nameIdx - 1;
+  var studentIdOff = studentIdIdx ? studentIdIdx - 1 : -1;
+  var dateOff = dateIdx - 1;
+  var timestampOff = timestampIdx - 1;
   var metas = [];
   var identityName = normalizeName(identity.name);
   for (var i = 0; i < indexRows.length; i++) {
@@ -1491,18 +1491,13 @@ function recordsForIdentityOptimized_(identity, limit) {
     return String(b.date).localeCompare(String(a.date));
   });
   var wanted = metas.slice(0, Math.max(1, Number(limit || 7)));
-  var wantedMap = {};
-  wanted.forEach(function (m) { wantedMap[m.rowNum] = true; });
-  var objectsByRow = {};
-  consecutiveGroups_(wanted.map(function (m) { return m.rowNum; })).forEach(function (g) {
-    var vals = sheet.getRange(g.start, 1, g.end - g.start + 1, width).getValues();
-    for (var j = 0; j < vals.length; j++) {
-      objectsByRow[g.start + j] = rowToObject(info.actual.length ? info.actual : HEADERS, vals[j]);
-    }
+  // rowNum 是 1-based 工作表列號（i + 2），indexRows 從第 2 列開始
+  var out = wanted.map(function (m) {
+    return rowToObject(info.actual.length ? info.actual : HEADERS, indexRows[m.rowNum - 2]);
   });
   perfMark_(perf, 'full_rows_read_end');
   perfEnd_(perf, 'complete');
-  return wanted.map(function (m) { return objectsByRow[m.rowNum]; }).filter(Boolean);
+  return out;
 }
 
 function getRecentRecordsOptimized_(identity, limit) {

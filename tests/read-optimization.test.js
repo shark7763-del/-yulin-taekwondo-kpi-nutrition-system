@@ -97,8 +97,10 @@ t('recent 30 optimized equals legacy order', JSON.stringify(opt30) === JSON.stri
 t('studentId matching wins when present', opt7[0] === 'e' && opt7.includes('c'), opt7.join(','));
 t('legacy blank studentId falls back to normalized name', opt7.includes('legacy-name'), opt7.join(','));
 t('getLastRecordOptimized returns newest timestamp row', last && last.recordId === 'e', last && last.recordId);
-t('optimized read does not read full sheet width for all rows first', sheet.reads.some(r => r.r === 2 && r.nc < H.length), JSON.stringify(sheet.reads));
-t('non-contiguous selected rows are grouped, not one full-table read', !sheet.reads.some(r => r.r === 2 && r.nc === H.length && r.nr === sheet.getLastRow() - 1), JSON.stringify(sheet.reads));
+// 單一選手的列散落各處，逐段補讀會變成一筆一次 getRange；改為每次呼叫只整表讀一次（3 次呼叫 = 3 次資料讀取）
+const dataReads = sheet.reads.filter(r => r.r >= 2);
+t('each optimized call reads data rows with exactly one getRange', dataReads.length === 3, JSON.stringify(sheet.reads));
+t('that single read is the full table (rows 2..last, all columns)', dataReads.every(r => r.r === 2 && r.c === 1 && r.nc === H.length && r.nr === sheet.getLastRow() - 1), JSON.stringify(sheet.reads));
 
 const failed = results.filter(r => !r.ok);
 results.forEach(r => console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.extra ? '  ' + r.extra : ''}`));
