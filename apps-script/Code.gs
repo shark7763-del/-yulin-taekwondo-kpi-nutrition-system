@@ -2472,9 +2472,16 @@ function updateRecordAuthorized(data) {
   return updateRecord(data.recordId, safeFields);
 }
 
+// Phase 3（I-2）：只讀 recordId 一欄定位，再讀那一列；結果與舊版「getAllRecords 後找第一筆」相同。
 function findRecordById(recordId) {
-  var rows = getAllRecords();
-  for (var i = 0; i < rows.length; i++) if (String(rows[i].recordId) === String(recordId)) return rows[i];
+  var probe = readRecordKeyColumns_(['recordId']);
+  for (var i = 0; i < probe.rows.length; i++) {
+    if (String(probe.rows[i].recordId) === String(recordId)) {
+      var width = probe.sheet.getLastColumn();
+      var row = probe.sheet.getRange(i + 2, 1, 1, width).getValues()[0];
+      return rowToObject(probe.headers, row);
+    }
+  }
   return null;
 }
 
@@ -2511,6 +2518,7 @@ function addRecord(payload) {
     perfMark_(perf, 'lock_release');
   }
   if (saved && saved.ok) {
+    clearLatestGroupCache_();   // 組別可能換了（Phase 3 快取）
     perfMark_(perf, 'line_push_start');
     var pushPerf = perfStart_('addRecord.line_push');
     try { saved.line = pushRecordToLine(payload); }
@@ -2590,6 +2598,55 @@ function addRecordLocked_(payload, perf) {
   return { ok: true, updated: false, mainWriteSucceeded: true, message: '已新增紀錄', name: payload.name, date: payload.date };
 }
 
+/* TeamPro 2.0 Phase 3：窄欄讀取。
+   records 有 1800+ 列 × 164 欄，只為了幾個欄位就整表讀進來（約 30 萬格）太浪費。
+   recordKeyColumns_ 逐字模仿 rowToObject 的取值規則（同一個 key 取「第一個」
+   原始表頭或正規化表頭等於它的欄），所以就算是 8/27 前欄位錯位的舊列，
+   取到的值也跟 getAllRecords() 完全一樣 —— 只是少讀其他欄。 */
+function recordKeyColumns_(headers, keys) {
+  var cols = {};
+  keys.forEach(function (k) { cols[k] = -1; });
+  for (var i = 0; i < headers.length; i++) {
+    var raw = normalizeHeaderName_(headers[i]);
+    if (!raw) continue;
+    var canonical = canonicalHeaderName_(raw);
+    keys.forEach(function (k) {
+      if (cols[k] === -1 && (raw === k || canonical === k)) cols[k] = i;
+    });
+  }
+  return cols;
+}
+
+// 只讀指定 key 所在的欄（一次 getRange 讀最左到最右的區間），回傳 [{key: value}]。
+// 表頭沒有的 key 值為 undefined，與 rowToObject 相同。
+function readRecordKeyColumns_(keys) {
+  var sheet = getSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { rows: [], sheet: sheet, headers: HEADERS };
+  var info = auditHeaders_(sheet, HEADERS);
+  var headers = info.actual.length ? info.actual : HEADERS;
+  var cols = recordKeyColumns_(headers, keys);
+  var lo = -1, hi = -1;
+  keys.forEach(function (k) {
+    var c = cols[k];
+    if (c === -1) return;
+    if (lo === -1 || c < lo) lo = c;
+    if (hi === -1 || c > hi) hi = c;
+  });
+  var out = [];
+  if (lo === -1) {
+    for (var e = 0; e < lastRow - 1; e++) out.push({});
+    return { rows: out, sheet: sheet, headers: headers };
+  }
+  var values = sheet.getRange(2, lo + 1, lastRow - 1, hi - lo + 1).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var obj = {};
+    keys.forEach(function (k) { obj[k] = cols[k] === -1 ? undefined : values[i][cols[k] - lo]; });
+    out.push(obj);
+  }
+  return { rows: out, sheet: sheet, headers: headers };
+}
+
 // 讀取全部紀錄為物件陣列
 function getAllRecords() {
   var sheet = getSheet();
@@ -2650,6 +2707,7 @@ function updateRecord(recordId, fields) {
     var c = info.canonicalMap[canonicalHeaderName_(key)] || info.map[normalizeHeaderName_(key)] || HEADERS.indexOf(key) + 1;
     if (c > 0) sheet.getRange(rowNum, c).setValue(fields[key]);
   });
+  clearLatestGroupCache_();
   return { ok: true, recordId: recordId };
 }
 
@@ -3603,10 +3661,27 @@ function findKpiSession(sessionId) {
 
 // 每位學生「最近一筆有效訓練紀錄」的組別（給 KPI 開放對象比對用）。
 // student_accounts 沒有組別欄，組別來自每日回報的 group。
+// Phase 3（I-1）：選手每次開頁都會走到這裡（getStudentKpiSession）。
+// 原本整表 getAllRecords，現在只讀 4 欄＋短期快取；寫入紀錄或 KPI 設定時清掉。
+var LATEST_GROUP_CACHE_KEY = 'teampro_latest_group_v1';
+var LATEST_GROUP_CACHE_SECONDS = 120;
 function latestGroupByName() {
-  var map = {};
+  try {
+    var hit = readKpiCache_(LATEST_GROUP_CACHE_KEY);
+    if (hit && typeof hit === 'object' && !Array.isArray(hit)) return hit;
+  } catch (e) { /* 快取壞了就重算 */ }
   var all;
-  try { all = getAllRecords(); } catch (e) { all = []; }
+  try { all = readRecordKeyColumns_(['name', 'group', 'timestamp', 'date']).rows; }
+  catch (e) { return latestGroupFromRows_([]); }   // 讀取失敗不寫快取，避免空結果卡 2 分鐘
+  var out = latestGroupFromRows_(all);
+  writeKpiCache_(LATEST_GROUP_CACHE_KEY, out, LATEST_GROUP_CACHE_SECONDS);
+  return out;
+}
+function clearLatestGroupCache_() {
+  try { kpiCache_().remove(LATEST_GROUP_CACHE_KEY); } catch (e) {}
+}
+function latestGroupFromRows_(all) {
+  var map = {};
   // getAllRecords 已是新→舊或含 timestamp；逐筆取較新的覆蓋
   all.forEach(function (r) {
     var name = String(r.name || '').trim();
@@ -3773,6 +3848,7 @@ function clearKpiCaches_() {
   try { kpiCache_().remove(KPI_STUDENT_CACHE_KEY); } catch (e) {}
   try { kpiCache_().remove(KPI_SESSION_CACHE_KEY); } catch (e) {}
   try { kpiCache_().remove(KPI_MANAGE_CACHE_KEY); } catch (e) {}
+  clearLatestGroupCache_();
 }
 function clearKpiRequestCache_(requestId) {
   if (!requestId) return;
@@ -5007,12 +5083,27 @@ function getAllAppData(prefix) {
 }
 
 // 依日期取得所有紀錄
+// Phase 3（I-3）：先只讀 date 欄找出當天的列，再分段讀那幾段；順序與舊版相同。
+// 段數太多（資料不是依時間排列）就退回整表讀取，最壞情況與舊版一樣。
 function getRecordsByDate(date) {
   if (!date) return [];
-  var all = getAllRecords();
-  return all.filter(function (r) {
-    return formatDateCell(r.date) === String(date);
+  var probe = readRecordKeyColumns_(['date']);
+  var wanted = [];
+  for (var i = 0; i < probe.rows.length; i++) {
+    if (formatDateCell(probe.rows[i].date) === String(date)) wanted.push(i);
+  }
+  if (!wanted.length) return [];
+  var groups = consecutiveGroups_(wanted);
+  if (groups.length > RECORDS_MAX_RANGE_READS) {
+    return getAllRecords().filter(function (r) { return formatDateCell(r.date) === String(date); });
+  }
+  var width = probe.sheet.getLastColumn();
+  var out = [];
+  groups.forEach(function (g) {
+    var block = probe.sheet.getRange(2 + g.start, 1, g.end - g.start + 1, width).getValues();
+    for (var b = 0; b < block.length; b++) out.push(rowToObject(probe.headers, block[b]));
   });
+  return out;
 }
 
 // 排序比較器：timestamp 新到舊
