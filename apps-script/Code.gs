@@ -1746,10 +1746,13 @@ function getAllRecordsRead_(opts) {
   for (var j = opts.offset; j < kept.length; j++) {
     var obj = rowToObject(headers, kept[j]);
     if (opts.hasOmit || opts.omitEmpty || opts.keep) {
+      // Phase 4：歷史列（不在焦點日期附近）只留歷史計算用得到的欄位
+      var keepMap = opts.keep;
+      if (opts.historyKeep && !recordNearFocusDate_(obj, opts.focusLo, opts.focusHi)) keepMap = opts.historyKeep;
       var trimmed = {};
       for (var key in obj) {
         if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
-        if (opts.keep && !opts.keep[key]) continue;
+        if (keepMap && !keepMap[key]) continue;
         if (opts.omit[key]) continue;
         if (opts.omitEmpty && (obj[key] === '' || obj[key] === null || obj[key] === undefined)) continue;
         trimmed[key] = obj[key];
@@ -1822,6 +1825,43 @@ function coachDashboardSince_(date, days) {
   return Utilities.formatDate(base, tz, 'yyyy-MM-dd');
 }
 
+/* TeamPro 2.0 Phase 4：slimHistory。
+   45 天視窗實測約 2.2MB、要分 2 頁，但幾乎全是「歷史列」，而歷史列只被
+   準備度連續判斷、身體燈號、連續警示、晤談名單讀取少數欄位
+   （applyReadiness / specBodyLight / computeAlerts / renderInterviewList）。
+   帶 slimHistory 時：焦點日期 ±1 天的列照舊回完整 87 欄；其餘列只回下面這些欄。
+   日期讀不出來的列一律當焦點列（寧可多給）。不帶參數時行為完全不變。
+   欄位清單若漏了，tests/coach-slim-history.browser.test.js 的畫面比對會失敗。 */
+var COACH_HISTORY_FIELDS = [
+  'recordId', 'name', 'studentName', 'studentId', 'date', 'timestamp',
+  'status', 'readinessStatusLight', 'finalReadinessScore',
+  'sleepHours', 'sleepQuality', 'moodIndex', 'emotionIndex', 'rpe', 'painScore', 'injuryArea',
+  'bodyStatus', 'urineStatus', 'waterIntake', 'lateNightSnack',
+  'emotionAvg', 'technicalAvg', 'weightKg', 'rawScoresJson'
+];
+
+function recordNearFocusDate_(obj, lo, hi) {
+  var readable = false;
+  var vals = [obj.date, obj.timestamp];
+  for (var i = 0; i < vals.length; i++) {
+    var v = vals[i];
+    if (v === '' || v === null || v === undefined) continue;
+    var d = String(formatDateCell(v) || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+    readable = true;
+    if (d >= lo && d <= hi) return true;
+  }
+  return !readable;
+}
+
+// 純日曆加減（UTC 計算，不經時區格式化）；date 不合法就原樣回傳，視窗退化成當天。
+function focusShiftDate_(date, n) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
+  if (!m) return String(date || '');
+  var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n));
+  return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+}
+
 function getCoachDashboard(data) {
   var auth = requireRole(data, ['coach']);
   if (!auth.ok) return auth;
@@ -1834,9 +1874,16 @@ function getCoachDashboard(data) {
     paged: true,
     offset: data.offset
   });
+  if (data.slimHistory === true) {
+    opts.historyKeep = {};
+    COACH_HISTORY_FIELDS.forEach(function (f) { opts.historyKeep[f] = true; });
+    opts.focusLo = focusShiftDate_(date, -1);
+    opts.focusHi = focusShiftDate_(date, 1);
+  }
   var res = getAllRecordsRead_(opts);
   res.date = date;
   res.days = days;
+  if (data.slimHistory === true) res.slimHistory = true;
   return res;
 }
 

@@ -115,8 +115,11 @@ async function fetchAllRecords(opts) {
   const request = useDashboard
     ? { action: 'getCoachDashboard', date: opts.date, days: opts.days, paged: true }
     : legacyRequest;
+  // Phase 4：slimHistory —— 焦點日期以外的歷史列只帶歷史計算用得到的欄位（約 2.2MB/2 頁 → 0.6MB/1 頁）。
+  // 只有 refreshCoach 會開；快取鍵分開，別的呼叫端永遠拿不到瘦身過的資料。
+  if (useDashboard && opts.slimHistory) request.slimHistory = true;
   const cacheKey = useDashboard
-    ? ('dash:' + opts.date + ':' + opts.days)
+    ? ('dash:' + opts.date + ':' + opts.days + (opts.slimHistory ? ':slim' : ''))
     : (opts.sinceDate ? ('since:' + opts.sinceDate) : 'full');
 
   // 命中未過期的快取就直接回傳，不再打後端（開分頁最大的加速來源）。
@@ -1231,6 +1234,7 @@ async function refreshCoach() {
       strict: true,
       force: true,
       dashboard: true,
+      slimHistory: true,
       date: filterDate,
       days: COACH_WINDOW_DAYS,
       sinceDate: shiftDateStr(filterDate, -COACH_WINDOW_DAYS)   // 退回 getAllRecords 時用得到
