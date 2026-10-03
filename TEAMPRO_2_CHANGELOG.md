@@ -37,3 +37,15 @@ TeamPro 2.0 效能瘦身＋穩定化重構的修改紀錄。稽核見 `TEAMPRO_2
 - 家長開頁的 getRecentRecordsByName 仍有 2 次，是 limit 90（家長儀表板）與 180（上次表現）兩個不同請求，不是重複。
 - 測試：新增 `tests/read-ttl-cache.browser.test.js`（18 項，含 negative control：修改前失敗 6 項）；全部 20 支 551 項通過。
 - 只改前端，**不需重新部署 GAS**。
+
+## Phase 3 — records 窄欄讀取（2026-10-04）
+
+| commit | 內容 | 檔案 |
+|---|---|---|
+| `cbf06cb` | I-1 `latestGroupByName` 只讀 name/group/timestamp/date 四欄＋CacheService 120 秒；I-2 `findRecordById` 只讀 recordId 欄＋該列；I-3 `getRecordsByDate` 先讀 date 欄再分段讀當天 | `apps-script/Code.gs` |
+
+- `recordKeyColumns_` 逐字模仿 `rowToObject` 的取欄規則，所以 8/27 前欄位錯位的舊列、中文別名表頭，結果都與整表讀取相同（測試逐字比對）。
+- 群組快取在 `addRecord` 成功、`updateRecord`、`clearKpiCaches_`（所有 KPI 設定／帳號／名單寫入）時清除；讀取失敗不寫快取。
+- 代價：直接在試算表手動改 records 的組別，最多 2 分鐘後才反映到 KPI 開放對象。
+- 測試：新增 `tests/narrow-reads.test.js`（50 項）；修改前程式在讀取量／快取檢查失敗 9 項，等價性檢查兩邊都過（符合預期）。全部 21 支 601 項通過。
+- 部署：**尚未部署**（待使用者授權 clasp 部署到 GAS；正式部署目前 @90，內容與 Phase 1 相同）。前端無變更。
