@@ -384,10 +384,27 @@
           const key = traitMatchKey(k);
           if (key) state.map[key] = normalizeTraitRecord(raw[k], nameKey(k));
         });
+        const total = Object.keys(state.map).length;
+        state.map = keepOwnTraitOnly(state.map);
+        // 讀到的是別人（教練）留下的全隊快取：立刻覆寫成只剩自己，不留在這台裝置上
+        if (Object.keys(state.map).length !== total) {
+          try { localStorage.setItem('yulin_trait_cache', JSON.stringify(state.map)); } catch (e) {}
+        }
         state.loaded = true;
         state.cacheRole = role() && role().role ? role().role : '';
       }
     } catch (e) {}
+  }
+
+  // 只有教練可以持有全隊特質表。同一台裝置先登入教練、再換家長／選手時，
+  // localStorage 裡會留著全隊快取 —— 非教練（含未登入）只保留自己那一筆。
+  function keepOwnTraitOnly(map) {
+    const r = role();
+    if (r && r.role === 'coach') return map;
+    const own = traitMatchKey(r && r.name);
+    const out = {};
+    if (own && map[own]) out[own] = map[own];
+    return out;
   }
 
   function ensureTraitCacheVersion() {
