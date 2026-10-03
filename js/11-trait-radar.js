@@ -226,6 +226,9 @@
 
   const state = {
     loaded: false,
+    // 本次開啟頁面後，整份特質表是否已從後端成功載入過。
+    // 與 loaded 不同：boot 時 loadLocalCache() 讀本機快取也會把 loaded 設成 true。
+    allTraitsLoaded: false,
     cacheRole: '',
     map: {},
     selectedCoach: '',
@@ -345,6 +348,7 @@
     if (state.loaded && !force && state.cacheRole === roleKey) return state.map;
     try {
       state.map = {};
+      state.allTraitsLoaded = false;
       if (r && r.role === 'student') {
         const name = studentName();
         if (name) {
@@ -579,6 +583,7 @@
     state.map = merged;
     try { localStorage.setItem('yulin_trait_cache', JSON.stringify(state.map)); } catch (e) {}
     state.loaded = true;
+    state.allTraitsLoaded = true;
     state.cacheRole = role() && role().role ? role().role : state.cacheRole;
     return Object.values(merged);
   }
@@ -705,8 +710,13 @@
     if (!rec || !rec.studentName) {
       const roleName = role() && role().role;
       if (roleName === 'coach') {
-        await loadAllStudentTraits();
-        rec = currentRecord(name);
+        // 整份特質表本次已從後端成功載入過，查不到就代表這位選手真的還沒做測驗；
+        // 不要每點一位未測驗的選手就重抓整份表。
+        // 不用 state.loaded 判斷：它在 boot 讀本機快取時就會是 true，會讓舊快取永遠不更新。
+        if (!state.allTraitsLoaded) {
+          await loadAllStudentTraits();
+          rec = currentRecord(name);
+        }
       } else {
         rec = await loadStudentTrait(name);
       }

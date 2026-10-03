@@ -36,6 +36,10 @@ const INIT = (opts) => {
       updatedAt: '2026-08-01T00:00:00.000Z'
     } }));
   }
+  if (opts && opts.seedCoachRole) {
+    // 模擬教練「已登入狀態下重新開啟頁面」：boot 時就是教練身分
+    localStorage.setItem('yulin_role', JSON.stringify({ role: 'coach', name: '教練', authToken: 'test-token' }));
+  }
   const origFetch = window.fetch;
   window.fetch = async (url, opt) => {
     if (String(url).indexOf('script.google.com') === -1) return origFetch(url, opt);
@@ -161,6 +165,31 @@ const CLICK = async ({ name, date }) => {
       JSON.stringify(r.afterFirst.map(e => e.action)));
     t('2 第二次點選：getAllStudentTraits 請求數不增加', cnt(r.afterSecond, 'getAllStudentTraits') === 0,
       JSON.stringify(r.afterSecond.map(e => e.action)));
+    allErrors.push(...errors);
+    await context.close();
+  }
+
+  /* ---------- 2b. 教練已登入狀態重開頁面：本機舊快取不可讓特質表永遠不更新 ----------
+     boot 讀本機快取時 state.loaded 就是 true、loadCache 也不會打後端；
+     這時第一次查不到的選手仍要抓一次整份表（之後才不重抓），否則新完成測驗的選手會一直顯示未測驗。 */
+  {
+    const { page, context, errors } = await openPage(browser, { seedTraitCache: true, traitCacheVersion: TRAIT_CACHE_VERSION, seedCoachRole: true });
+    const r = await page.evaluate(async ({ CLICK_SRC, tested, untested, d1, d2 }) => {
+      const click = eval('(' + CLICK_SRC + ')');
+      const pre = !!window.TraitRadar.recordFor('舊快取選手') && !window.TraitRadar.recordFor(tested);
+      window.__log = [];
+      const a = await click({ name: tested, date: d1 });
+      const first = window.__log.filter(e => e.action === 'getAllStudentTraits').length;
+      window.__log = [];
+      const b = await click({ name: untested, date: d1 });
+      const c = await click({ name: untested, date: d2 });
+      const later = window.__log.filter(e => e.action === 'getAllStudentTraits').length;
+      return { pre, first, later, aHtml: a.html || '', setup: (a.setupFailed || '') + (b.setupFailed || '') + (c.setupFailed || '') };
+    }, { CLICK_SRC: CLICK.toString(), tested: TESTED, untested: UNTESTED, d1: DAY, d2: DAY2 });
+    t('2b 前置：重開頁面時只有本機舊快取（沒有 選手1）且欄位設定成功', r.pre === true && !r.setup, JSON.stringify(r).slice(0, 160));
+    t('2b 舊快取裡沒有的選手：第一次仍會抓一次整份特質表', r.first === 1, String(r.first));
+    t('2b 抓到後顯示新完成測驗選手的特質卡', r.aHtml.indexOf('火箭測試型') !== -1, '');
+    t('2b 之後未測驗選手連點兩次：不再重抓', r.later === 0, String(r.later));
     allErrors.push(...errors);
     await context.close();
   }
