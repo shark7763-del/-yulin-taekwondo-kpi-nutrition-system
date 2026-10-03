@@ -25,6 +25,7 @@
 | 2026-09-04 | 86 | `feat/summary-first` | 新增 `getDailyAthleteSummary`（「上次表現」首頁專用摘要，只回名單需要的欄位，優先度在後端計算所以心得不外送）。既有 action 一律未動 |
 | 2026-10-03 | 87 | — | **作廢**：clasp 推送時誤把 scratchpad 的比對暫存檔（3 個 .js）一起推上，從未 redeploy，正式網址沒有指向過它 |
 | 2026-10-03 | 88 | `fix/identity-read-fuse` | `recordsForIdentityOptimized_` 改為整表只讀一次：原本單一選手的列散落各天，逐段補讀變成一筆一次 getRange（1800 列模擬 47 次 → 2 次）。回傳內容逐筆不變 |
+| 2026-10-03 | 89 | `fix/p0-studentid-validation` | TeamPro 2.0 Phase 1 P0-1：records.studentId 經 `trustedStudentId_()` 驗證才採信，錯位舊資料退回姓名比對（修正選手／家長約 38% 歷史看不到）。部署前 clasp pull 確認線上 == v88 |
 
 ## 部署順序（不可顛倒）
 
