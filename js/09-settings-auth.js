@@ -417,9 +417,56 @@ const INFLIGHT_DEDUP_ACTIONS = [
   'getLastRecordByName', 'getRecentRecordsByName', 'getSubmitContext',
   // 教練後台的三個區塊會同時要資料，沒列進來就會同時轟炸同一支 GAS
   'getCoachDashboard', 'getRecordsByDate', 'getTodayRecords', 'getCoachReplies',
-  'getDailyAthleteSummary', 'getAllStudentTraits', 'getStudentTrait'
+  'getDailyAthleteSummary', 'getAllStudentTraits', 'getStudentTrait',
+  // TeamPro 2.0 Phase 2：以下四支原本沒有去重，實測家長開頁各打兩次
+  'getAttendanceReportsByName', 'getMentalParticipantPlan', 'getStudentKpiSession', 'getStarConfig'
 ];
 const _inflight = {};
+
+/* TeamPro 2.0 Phase 2：短 TTL 讀取快取（H-1～H-4）。
+
+   in-flight 去重只合併「同時飛行中」的請求；請求一結束，切分頁再進來又會重打。
+   實測：家長每進一次分頁 +3、選手每切一次分頁 +1 getStudentKpiSession、
+   教練進 coach 分頁把開頁剛抓過的三支再抓一次。
+
+   規則（任何一條不成立就不快取）：
+   - 只有下列白名單 action，而且回應 ok === true 才存
+   - key 含登入身分（角色＋姓名＋token）＋完整 body，換人登入不會讀到別人的
+   - 任何寫入型 action 發出時與完成時都整個清空；寫入期間已發出的舊讀取
+     回來時世代號不同，不准存
+   - setRole / clearRole、教練按「重新整理資料」（resetBackendCircuit）也清空
+   - 只存在記憶體，重新整理頁面就沒了；回傳的是複本，呼叫端改不到快取 */
+const READ_TTL_MS = 60000;
+const TTL_CACHE_ACTIONS = [
+  'getKpiManageData', 'getMentalCoachDashboard', 'getKpiSessions',            // H-1 教練
+  'getAttendanceReportsByName', 'getMentalParticipantPlan',                    // H-2 家長
+  'getStudentKpiSession',                                                       // H-3 選手
+  'getStarConfig'                                                               // H-4
+];
+// 只對特定角色快取的 action。getRecentRecordsByName 教練用來盯「誰剛交」，
+// 快取 60 秒會讓剛送出的選手在教練畫面上仍顯示查無，所以只給家長用。
+const TTL_CACHE_ROLE_ONLY = { getRecentRecordsByName: ['parent'] };
+function isTtlCacheable_(action) {
+  if (TTL_CACHE_ACTIONS.indexOf(action) !== -1) return true;
+  const roles = TTL_CACHE_ROLE_ONLY[action];
+  if (!roles) return false;
+  const r = (typeof getRole === 'function' && getRole()) || {};
+  return roles.indexOf(r.role) !== -1;
+}
+const _readTtlCache = {};
+let _readTtlGen = 0;
+function clearReadTtlCache() {
+  _readTtlGen++;
+  Object.keys(_readTtlCache).forEach(k => { delete _readTtlCache[k]; });
+}
+function readTtlKey_(body) {
+  const r = (typeof getRole === 'function' && getRole()) || {};
+  return [r.role || '', r.name || '', r.authToken || ''].join('|') + '|' + JSON.stringify(body);
+}
+if (typeof window !== 'undefined') {
+  window.clearReadTtlCache = clearReadTtlCache;
+  window.getReadTtlCacheSize = () => Object.keys(_readTtlCache).length;
+}
 
 const AUTH_REQUIRED_CRITICAL_ACTIONS = [
   'studentLogin', 'parentLogin', 'parentVerify', 'parentConsent', 'coachLogin',
@@ -480,6 +527,7 @@ function circuitNote(ok) {
 function resetBackendCircuit() {
   _circuitFailures = 0;
   _circuitOpenUntil = 0;
+  clearReadTtlCache();
   if (typeof resetCoachDashboardAvailability === 'function') resetCoachDashboardAvailability();
 }
 if (typeof window !== 'undefined') {
@@ -541,6 +589,28 @@ if (typeof window !== 'undefined') window.safeReadRequest = safeReadRequest;
 
 async function postToWebApp(body) {
   const action = String((body && body.action) || '');
+  if (isWriteAction(action)) {
+    clearReadTtlCache();
+    const done = () => clearReadTtlCache();
+    const pending = postToWebAppRaw(body);
+    pending.then(done, done);
+    return pending;
+  }
+  if (isTtlCacheable_(action)) {
+    const ttlKey = readTtlKey_(body);
+    const hit = _readTtlCache[ttlKey];
+    if (hit && (Date.now() - hit.ts) < READ_TTL_MS) return JSON.parse(hit.json);
+    const gen = _readTtlGen;
+    const res = await postToWebAppDedup_(action, body);
+    if (res && res.ok === true && gen === _readTtlGen) {
+      try { _readTtlCache[ttlKey] = { ts: Date.now(), json: JSON.stringify(res) }; } catch (e) { /* 不可序列化就不快取 */ }
+    }
+    return res;
+  }
+  return postToWebAppDedup_(action, body);
+}
+
+function postToWebAppDedup_(action, body) {
   if (INFLIGHT_DEDUP_ACTIONS.indexOf(action) !== -1) {
     const key = JSON.stringify(body);           // 參數不同就是不同請求（例如 appdata 的 prefix）
     if (_inflight[key]) return _inflight[key];
@@ -763,8 +833,12 @@ function setRole(role, name, auth) {
     parentId: auth.parentId || '',
     authToken: auth.authToken || auth.token || ''
   }));
+  if (typeof clearReadTtlCache === 'function') clearReadTtlCache();
 }
-function clearRole() { localStorage.removeItem(ROLE_KEY); }
+function clearRole() {
+  localStorage.removeItem(ROLE_KEY);
+  if (typeof clearReadTtlCache === 'function') clearReadTtlCache();
+}
 
 // 各角色可看的分頁與預設分頁
 const ROLE_TABS = {
