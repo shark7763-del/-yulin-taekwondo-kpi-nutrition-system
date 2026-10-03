@@ -226,6 +226,9 @@
 
   const state = {
     loaded: false,
+    // 本次開啟頁面後，整份特質表是否已從後端成功載入過。
+    // 與 loaded 不同：boot 時 loadLocalCache() 讀本機快取也會把 loaded 設成 true。
+    allTraitsLoaded: false,
     cacheRole: '',
     map: {},
     selectedCoach: '',
@@ -344,7 +347,12 @@
     const roleKey = r && r.role ? r.role : '';
     if (state.loaded && !force && state.cacheRole === roleKey) return state.map;
     try {
-      state.map = {};
+      // 教練身分不先清空：loadAllStudentTraits 成功時會整份取代 state.map，
+      // 失敗時才能保留既有快取（同時有兩個 loadCache 在等同一個請求時也不會互相清掉）。
+      if (!(r && r.role === 'coach')) {
+        state.map = {};
+        state.allTraitsLoaded = false;
+      }
       if (r && r.role === 'student') {
         const name = studentName();
         if (name) {
@@ -352,7 +360,9 @@
           if (raw) state.map[name] = normalizeTraitRecord(raw, name);
         }
       } else if (r && r.role === 'coach') {
-        await loadAllStudentTraits();
+        const all = await loadAllStudentTraits();
+        // 請求失敗：保留原本的快取，不寫 localStorage、不標記已載入，讓下次重試
+        if (all === null) return state.map;
       }
       if (!Object.keys(state.map || {}).length && r && r.role !== 'coach') {
         loadLocalCache();
@@ -563,6 +573,10 @@
 
   async function loadAllStudentTraits() {
     const res = await traitApi('getAllStudentTraits', {});
+    // traitApi 在請求失敗（斷線、逾時、ok:false、未設定網址）時回傳 null。
+    // 這時不可把既有快取覆寫成空的、也不可標記已載入，否則一次失敗會讓全隊特質消失且不再重試。
+    // 回傳 null 讓呼叫端分辨「請求失敗」與「成功但真的沒資料」（後者回傳 []，照舊清空）。
+    if (!res) return null;
     const source =
       Array.isArray(res && res.traits) ? res.traits :
       Array.isArray(res && res.data) ? res.data :
@@ -579,6 +593,7 @@
     state.map = merged;
     try { localStorage.setItem('yulin_trait_cache', JSON.stringify(state.map)); } catch (e) {}
     state.loaded = true;
+    state.allTraitsLoaded = true;
     state.cacheRole = role() && role().role ? role().role : state.cacheRole;
     return Object.values(merged);
   }
@@ -705,8 +720,13 @@
     if (!rec || !rec.studentName) {
       const roleName = role() && role().role;
       if (roleName === 'coach') {
-        await loadAllStudentTraits();
-        rec = currentRecord(name);
+        // 整份特質表本次已從後端成功載入過，查不到就代表這位選手真的還沒做測驗；
+        // 不要每點一位未測驗的選手就重抓整份表。
+        // 不用 state.loaded 判斷：它在 boot 讀本機快取時就會是 true，會讓舊快取永遠不更新。
+        if (!state.allTraitsLoaded) {
+          await loadAllStudentTraits();
+          rec = currentRecord(name);
+        }
       } else {
         rec = await loadStudentTrait(name);
       }

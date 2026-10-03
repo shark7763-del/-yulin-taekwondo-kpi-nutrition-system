@@ -3451,8 +3451,12 @@ async function loadLastPerfPage() {
   const name = String($id('lastPerfName').value || '').trim();
   if (!name) { toast('請選擇選手'); return; }
   toast('讀取中...');
+  // 特質資料與紀錄並行抓：先發出，等到要渲染前才 await。
+  // 原本先等特質（整隊一份）回來才去抓紀錄，兩段延遲直接相加。
+  // loadCache 失敗只會讓特質徽章／卡缺資料，不可讓整個「上次表現」讀取失敗。
+  let traitReady = Promise.resolve();
   if (window.TraitRadar && typeof window.TraitRadar.loadCache === 'function') {
-    await window.TraitRadar.loadCache();
+    traitReady = Promise.resolve(window.TraitRadar.loadCache()).catch(() => {});
   }
   const role = (getRole() || {}).role;
   const selectedDate = role === 'coach' ? getLastPerfSelectedDate() : '';
@@ -3478,7 +3482,9 @@ async function loadLastPerfPage() {
         const dayRows = await fetchRecordsByDate(selectedDate);
         rec = latestRecordForNameDate(dayRows, name, selectedDate);
       }
-      writeAthleteDetail(name, selectedDate, { rec: rec, history: history });
+      // 只快取查到紀錄的結果。fetchRecentRecords 失敗時會靜默退回本機資料（教練裝置上通常是空的），
+      // 若連「查無」也快取，一次失敗就會讓這位選手卡在查無 90 秒。
+      if (rec) writeAthleteDetail(name, selectedDate, { rec: rec, history: history });
       if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('detail.network', 'detail_request_start', 'detail_loaded');
     }
   } else {
@@ -3487,6 +3493,8 @@ async function loadLastPerfPage() {
       fetchRecentRecords(name, 180)
     ]);
   }
+  // 以下所有渲染（回顧、趨勢、特質卡、回覆助理）都可能讀特質資料，先確保它已就緒。
+  await traitReady;
   const card = $id('lastPerfResultCard');
   const box = $id('lastPerfResult');
   const trendCard = $id('trendCard');
