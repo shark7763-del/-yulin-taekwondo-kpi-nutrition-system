@@ -49,3 +49,4 @@
 > 2026-10-03 v88 驗活：`?action=ping` 回 pong（冷啟動首次 12.2 秒，第二次 2.6 秒）。部署前 `clasp pull` 比對線上 HEAD 與 repo main 完全一致。
 > ⚠️ clasp 3.3 坑：`clasp push` 不會刪除遠端多出的檔案（本機刪檔後回報 already up to date）；推送目錄只能放 `程式碼.js` 與 `appsscript.json`，推完要另開目錄 `clasp pull` 確認檔案清單。
 > 2026-10-04 v91（使用者手動部署）：TeamPro 2.0 Phase 3 窄欄讀取（`cbf06cb`）。`clasp pull` 線上程式與 repo 逐字相同、遠端只有 2 個檔；`?action=ping` 3/3 pong。v90 內容＝Phase 1。
+> 2026-10-04 v92（使用者手動部署）：TeamPro 2.0 Phase 4 教練戰情室 slimHistory（`0bc644e`）。`clasp pull` 線上程式與 repo 逐字相同、遠端只有 2 個檔；`?action=ping` 3/3 pong。之後才推前端（`0001c55`）。

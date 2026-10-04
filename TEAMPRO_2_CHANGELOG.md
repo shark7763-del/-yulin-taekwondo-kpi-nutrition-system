@@ -70,4 +70,5 @@ TeamPro 2.0 效能瘦身＋穩定化重構的修改紀錄。稽核見 `TEAMPRO_2
 
 - 測試：`coach-slim-history.browser.test.js`（33 項：真 Code.gs 產生兩版回應 → 真 index.html 比對畫面；敏感度測試拿掉 9 個歷史欄位各自都抓得到）、`coach-refresh-race.browser.test.js`（10 項，修改前失敗 4 項）。全部 23 支 644 項通過。
 - 相容性：舊後端忽略 `slimHistory` → 回完整資料，前端照常；新後端不帶參數 → 行為不變。部署順序不影響正確性。
+- 部署：GAS @92（2026-10-04，使用者手動部署；clasp pull 比對逐字相同，ping 3/3）→ 前端 GitHub Pages（SW v63）。
 - `moodIndex` 拿掉時測不出差異（昨天在 ±1 天焦點內是完整列，2 天連續判斷碰不到瘦身列），仍保守保留。
