@@ -2852,31 +2852,6 @@ async function loadTodayReportedStudents(opts) {
   return { items: items, summary: summary };
 }
 
-// 舊的實作保留成死碼會誤導人，直接移除；buildTodayReportStatus 仍供其他呼叫端使用。
-async function loadTodayReportedStudentsLegacy_(opts) {
-  const targetDate = getLastPerfSelectedDate();
-  const records = await fetchAllRecords(Object.assign({
-    strict: true,
-    dashboard: true,
-    date: targetDate,
-    days: TODAY_REPORT_HISTORY_DAYS,
-    sinceDate: shiftDateStr(targetDate, -TODAY_REPORT_HISTORY_DAYS)
-  }, opts || {}));
-  const todays = {};
-  (records || []).forEach(rec => {
-    const name = lastPerfRecordName(rec);
-    if (!name || normDate(rec.date || rec.timestamp || rec.createdAt) !== targetDate) return;
-    const prev = todays[name];
-    const t = String(rec.timestamp || rec.createdAt || rec.updatedAt || '');
-    if (!prev || t >= String(prev.timestamp || prev.createdAt || prev.updatedAt || '')) todays[name] = rec;
-  });
-  // 「待回覆／已回報」標籤改用已抓回的 record（其 coachReply 欄位）＋本機回覆暫存判斷，
-  // 不再為每位今日回報選手各發一個 getCoachReplies 請求（原本的 N+1，是開分頁最大的延遲來源）。
-  // lastPerfHasCoachReply 會優先看 rec.coachReply，教練透過本系統回覆時已寫回該欄位，狀態仍準確。
-  const replies = getCoachReplyStore();
-  return buildTodayReportStatus(Object.values(todays), replies, records || []);
-}
-
 function buildTodayReportStatus(records, replies, allRecords) {
   const items = (records || []).map(rec => {
     const name = lastPerfRecordName(rec);

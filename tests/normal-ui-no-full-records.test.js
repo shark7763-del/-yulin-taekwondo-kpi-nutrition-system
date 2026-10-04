@@ -76,15 +76,27 @@ t('研究匯出仍然保有完整歷史讀取（E 類沒有被誤縮）',
   allowedSeen.length === ALLOWED_FULL_HISTORY.length,
   allowedSeen.length + ' / ' + ALLOWED_FULL_HISTORY.length);
 
+// 原本門檻是 5，其中一個是 loadTodayReportedStudentsLegacy_ —— 沒有任何呼叫者的死碼，
+// Phase 9 刪除後剩 4 個真正在用的 bounded 呼叫點。
 t('bounded 呼叫點數量合理（有真的改到，不是把呼叫刪光）',
-  bounded.length >= 5, bounded.length + ' 個 bounded 呼叫點');
+  bounded.length >= 4, bounded.length + ' 個 bounded 呼叫點');
 
 /* 個別釘住這次修掉的四個點，避免有人「順手改回去」 */
 const coach = fs.readFileSync(path.join(B, 'js', '07-coach-dashboard.js'), 'utf8');
 
-t('loadTodayReportedStudents 走 bounded（今日回報名單）',
-  /loadTodayReportedStudents[\s\S]{0,1200}?dashboard:\s*true/.test(coach)
-    && coach.includes('TODAY_REPORT_HISTORY_DAYS'), '');
+// 原本的 regex 從檔案任意位置往後找 1200 字，實際比中的是死碼 loadTodayReportedStudentsLegacy_，
+// 等於在保護一段永遠不會執行的程式（Phase 9 刪除後才暴露）。改成只看真正那支函式的本體。
+const fnBody = (src, name) => {
+  const i = src.indexOf('async function ' + name + '(');
+  if (i === -1) return '';
+  const rest = src.slice(i + 1);
+  const m = rest.search(/\n(async )?function /);
+  return m === -1 ? src.slice(i) : src.slice(i, i + 1 + m);
+};
+const todayBody = fnBody(coach, 'loadTodayReportedStudents');
+t('loadTodayReportedStudents 走後端摘要（今日回報名單），不讀 records',
+  todayBody.length > 0 && /fetchDailySummary\(/.test(todayBody) && !/fetchAllRecords\(/.test(todayBody)
+    && /getDailyAthleteSummary/.test(fnBody(coach, 'fetchDailySummary')), todayBody.slice(0, 120));
 
 t('renderWeeklyStars 只讀本週',
   /renderWeeklyStars[\s\S]{0,1500}?WEEKLY_STARS_DAYS/.test(coach)
