@@ -1286,15 +1286,54 @@
     return '育林國中技擊隊_每月訪視報表_' + m + '_' + (TYPE_LABEL[MR.reportType] || '');
   }
 
+  /* TeamPro 2.0 Phase 6（C-2）：html2pdf（906KB，gzip 242KB）原本是同步 <script>，
+     所有人每次開頁都要下載、而且會擋住畫面渲染，但只有匯出 PDF 時才用得到。
+     改成第一次按匯出時才載入；同一頁只載一次，失敗可重試，逾時回 false 讓呼叫端退回列印。
+     js/08 的日誌 PDF 也用同一份（它要的是 bundle 附帶的 html2canvas / jsPDF）。 */
+  var PDF_LIB_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js';
+  var PDF_LIB_TIMEOUT_MS = 20000;
+  var _pdfLibPromise = null;
+  function ensurePdfLib() {
+    if (typeof window.html2pdf !== 'undefined') return Promise.resolve(true);
+    if (_pdfLibPromise) return _pdfLibPromise;
+    _pdfLibPromise = new Promise(function (resolve) {
+      var s = document.createElement('script');
+      var settled = false;
+      var timer = setTimeout(function () { done(false); }, PDF_LIB_TIMEOUT_MS);
+      function done(ok) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        var ready = ok && typeof window.html2pdf !== 'undefined';
+        if (!ready) {
+          _pdfLibPromise = null;                       // 下次按可以再試
+          if (s.parentNode) s.parentNode.removeChild(s);
+        }
+        resolve(ready);
+      }
+      s.src = PDF_LIB_URL;
+      s.async = true;
+      s.onload = function () { done(true); };
+      s.onerror = function () { done(false); };
+      document.head.appendChild(s);
+    });
+    return _pdfLibPromise;
+  }
+  window.ensurePdfLib = ensurePdfLib;
+
   async function downloadMonthlyReportPdf() {
     var data = MR.lastReportData;
     if (!data || data.empty) { if (typeof toast === 'function') toast('請先產生報表'); return; }
     var box = el('monthlyReportPreview');
     if (!box) return;
     if (typeof window.html2pdf === 'undefined') {
-      if (typeof toast === 'function') toast('PDF 元件載入中，請改用「列印報表」存成 PDF');
-      printMonthlyReport();
-      return;
+      if (typeof toast === 'function') toast('下載 PDF 元件中...');
+      var ready = await ensurePdfLib();
+      if (!ready) {
+        if (typeof toast === 'function') toast('PDF 元件載入失敗，改用「列印報表」存成 PDF');
+        printMonthlyReport();
+        return;
+      }
     }
     if (typeof toast === 'function') toast('產生 PDF 中，請稍候...');
     var opt = {

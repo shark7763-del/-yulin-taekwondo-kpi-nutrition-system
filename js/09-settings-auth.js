@@ -328,8 +328,8 @@ function setupLineHandlers() {
   // 讀取目前狀態
   $id('btnRefreshLine').addEventListener('click', loadLineStatus);
 
-  // 啟動時若已設定 URL，自動帶出目前 LINE 狀態。LINE 設定是教練權限，避免選手登入時背景 API 觸發登出。
-  if (getWebAppUrl() && isCoachRoleActive()) loadLineStatus();
+  // Phase 6（C-1）：原本開頁就自動讀 LINE 狀態，但這個畫面只在「系統設定」分頁，
+  // 已由 loadSettingsTabOnce（進入設定頁時）負責，這裡不再於開頁時多打一次。
 }
 
 function isCoachRoleActive() {
@@ -1231,12 +1231,17 @@ function applyRole() {
 
   if (r.role === 'coach') {
     loadRosterFromServer();
-    refreshCoach();
     // getAiConfig / getLineStatus / getAccountAdminData 的畫面只存在於「系統設定」分頁，
     // 教練預設落在「教練後台」，常常整場都沒打開設定頁。
     // 這三個改到 switchTab('settings') 時才載（沿用 lastperf / trait 既有的 lazy 模式）。
     _settingsTabLoaded = false;
-    if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList();
+    // Phase 6（C-1）：「上次表現」名單的預先載入改在戰情室讀完之後才發。
+    // Apps Script 會把同一使用者的請求排隊，開頁就同時發會拖慢教練正在看的戰情室；
+    // 切到上次表現分頁時本來就會再確認（且有本機快取先畫）。
+    Promise.resolve()
+      .then(() => refreshCoach())
+      .catch(() => {})
+      .then(() => { if (typeof refreshTodayReportedList === 'function') refreshTodayReportedList(); });
   }
   if (window.TraitRadar && typeof window.TraitRadar.onRoleApplied === 'function') {
     Promise.resolve(window.TraitRadar.onRoleApplied(r)).catch(() => {});
