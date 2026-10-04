@@ -272,22 +272,27 @@
   }
   async function saveTalk() {
     const comp = state.data.competition;
+    // Phase 5：各情境彼此獨立、各自一列，改成同時送出（原本逐筆 await，最多 N 次延遲相加）。
+    // 每筆失敗仍各自落回本機，行為與原本相同。
+    const saves = [];
     for (const type of TALK_TYPES) {
       const neg = document.querySelector(`.mp-talk-neg[data-talk="${cssEsc(type)}"]`)?.value || '';
       const pos = document.querySelector(`.mp-talk-pos[data-talk="${cssEsc(type)}"]`)?.value || '';
-      if (neg || pos) await saveRemoteOrLocal('saveMentalSelfTalk', { competitionId: comp && comp.competitionId || '', studentName: state.name, situationType: type, negativeThought: neg, replacementPhrase: pos, active: true }, 'selfTalk', 'selfTalkId', false);
+      if (neg || pos) saves.push(saveRemoteOrLocal('saveMentalSelfTalk', { competitionId: comp && comp.competitionId || '', studentName: state.name, situationType: type, negativeThought: neg, replacementPhrase: pos, active: true }, 'selfTalk', 'selfTalkId', false));
     }
+    await Promise.all(saves);
     toast('自我對話已儲存'); loadAndDraw(state.name);
   }
   async function saveGoals() {
     const comp = state.data.competition, cid = comp && comp.competitionId || '';
     const rows = [{ goalType: 'result', goalText: val('mpGoalResult') }, { goalType: 'performance', goalText: val('mpGoalPerformance') }]
       .concat(val('mpGoalProcess').split('\n').map(x => x.trim()).filter(Boolean).map(x => ({ goalType: 'process', goalText: x, targetCount: 7, completedCount: 0 })));
-    for (const row of rows.filter(x => x.goalText)) await saveRemoteOrLocal('saveMentalGoal', Object.assign({ competitionId: cid, studentName: state.name, status: 'active' }, row), 'goals', 'goalId', false);
+    await Promise.all(rows.filter(x => x.goalText).map(row => saveRemoteOrLocal('saveMentalGoal', Object.assign({ competitionId: cid, studentName: state.name, status: 'active' }, row), 'goals', 'goalId', false)));
     toast('目標已儲存'); loadAndDraw(state.name);
   }
   async function savePlans() {
     const comp = state.data.competition, cid = comp && comp.competitionId || '';
+    const saves = [];
     for (const scenario of SCENARIOS) {
       const payload = {
         competitionId: cid, studentName: state.name, scenario,
@@ -296,8 +301,9 @@
         copingAction: q(`.mp-plan-cope[data-scenario="${cssEsc(scenario)}"]`), tacticalAction: q(`.mp-plan-tactic[data-scenario="${cssEsc(scenario)}"]`),
         status: q(`.mp-plan-status[data-scenario="${cssEsc(scenario)}"]`), coachComment: val('mpCoachPublicAdvice')
       };
-      if (payload.expectedThought || payload.selfTalkPhrase || payload.copingAction || payload.status !== '尚未建立') await saveRemoteOrLocal('saveMentalScenarioPlan', payload, 'scenarioPlans', 'planId', false);
+      if (payload.expectedThought || payload.selfTalkPhrase || payload.copingAction || payload.status !== '尚未建立') saves.push(saveRemoteOrLocal('saveMentalScenarioPlan', payload, 'scenarioPlans', 'planId', false));
     }
+    await Promise.all(saves);
     toast('心理計畫已儲存'); loadAndDraw(state.name);
   }
   async function saveReflection() {
