@@ -6,11 +6,23 @@
 
 ---
 
-## 1. ⚠️ 選手身分：已知 P0 缺陷（尚未修正，需核准）
+## 1. 選手身分：athleteId 的 P0 缺陷（2026-10 已修正，舊資料仍不可信）
 
-### 現況
+### 修正狀態（TeamPro 2.0）
 
-`getAthleteIdForName()`（`js/02-core-utils.js:15`）：
+- **Phase 1（2026-10-03）**：新紀錄的 `athleteId` 改寫帳號的 `studentId`（UUID），不再依名單索引產生；
+  研究匯出改用 `student_accounts` 對照表產生受試者代碼。
+- **Phase 9（2026-10-05）**：`getAthleteIdForName()` 已刪除（見 `TEAMPRO_REMOVED_CODE.md`），
+  `tests/daily-kpi-refactor.smoke.js` §17 確保它不會被加回來。
+- **未改寫任何歷史資料**。records 裡 2026-10-03 以前的 `athleteId`（`S00n`、`S` 加 4 位數、
+  以及 8/27 前欄位錯位進來的文字）**仍然不可信**，讀取端一律以 `studentId`（經 `trustedStudentId_` 驗證）
+  或姓名比對，不得以 `athleteId` 串接。
+
+以下保留當時的分析，用來解讀舊資料。
+
+### 當時的現況（已移除的程式）
+
+`getAthleteIdForName()`（原 `js/02-core-utils.js:15`）：
 
 ```js
 const players = getPlayers();               // 讀 localStorage['yulin_players']
@@ -64,7 +76,7 @@ getAthleteIdForName('王小明')  → 'S2122'（雜湊分支，4 位數）
 後端有約 15 處寫成 `payload.athleteId || payload.studentId`，
 **把兩者當成可互換 —— 但它們不是同一個值域。**
 
-### 尚未執行的修正（需核准）
+### 當時提出的修正方向（1、2 已於 TeamPro 2.0 Phase 1 以前端寫入 studentId 的方式完成；3 經使用者決定不做，沿用 studentId）
 
 任何修正都**不得改寫既有資料**。可行方向（依風險由低到高）：
 

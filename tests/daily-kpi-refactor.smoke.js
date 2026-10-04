@@ -666,39 +666,13 @@ const URL = 'file:///' + path.join(__dirname, '..', 'index.html').split(path.sep
       && /上限/.test(aiCases.AI_CAPPED.reason),
     [aiCases.AI_DISABLED.reason, aiCases.AI_NO_KEY.reason, aiCases.AI_CAPPED.reason].join(' | '));
 
-  // 17. athleteId 穩定性 —— 這是 DATA_CONTRACT.md §1 記錄的已知 P0。
-  //     下面是「特徵測試」：它斷言的是**目前實際行為**（含缺陷），
-  //     目的是讓這個缺陷無法被靜默修改或遺忘。
-  //     修好之後，標記 [KNOWN P0] 的那幾條會失敗，屆時必須連同 DATA_CONTRACT.md 一起更新。
-  const ids = await page.evaluate(() => {
-    const idsFor = list => {
-      localStorage.setItem('yulin_players', JSON.stringify(list));
-      return list.map(n => n + '=' + window.getAthleteIdForName(n));
-    };
-    const out = {};
-    out.base = idsFor(['甲', '乙', '丙', '丁']);
-    out.afterDelete = idsFor(['甲', '丙', '丁']);          // 刪掉「乙」
-    out.afterAppend = idsFor(['甲', '丙', '丁', '戊']);     // 最後新增
-    out.afterReorder = idsFor(['丁', '甲', '丙']);          // 重排
-    localStorage.removeItem('yulin_players');
-    out.emptyRoster = window.getAthleteIdForName('甲');     // 全新裝置
-    localStorage.setItem('yulin_players', JSON.stringify(['測試選手', '隊友一號', '隊友二號']));
-    return out;
-  });
-  t('在名單最後新增選手，不影響既有 athleteId（安全操作）',
-    ids.afterAppend.slice(0, 3).join(',') === ids.afterDelete.join(','),
-    JSON.stringify({ afterDelete: ids.afterDelete, afterAppend: ids.afterAppend }));
-  t('[KNOWN P0] 刪除選手會讓其後所有人的 athleteId 位移',
-    ids.base[2] === '丙=S003' && ids.afterDelete[1] === '丙=S002',
-    JSON.stringify({ base: ids.base, afterDelete: ids.afterDelete }));
-  t('[KNOWN P0] 位移後的新 ID 會撞到別人歷史紀錄的 ID',
-    ids.base[2].endsWith('S003') && ids.afterDelete[2].endsWith('S003')
-      && ids.base[2].split('=')[0] !== ids.afterDelete[2].split('=')[0],
-    `刪除前 ${ids.base[2]}／刪除後 ${ids.afterDelete[2]}`);
-  t('[KNOWN P0] 重排名單會改變既有 athleteId',
-    ids.afterReorder[0] === '丁=S001', JSON.stringify(ids.afterReorder));
-  t('[KNOWN P0] 名單為空的裝置會落入姓名雜湊分支（格式與索引分支不同）',
-    /^S\d{4}$/.test(ids.emptyRoster) && ids.emptyRoster !== 'S001', ids.emptyRoster);
+  // 17. athleteId 穩定性（DATA_CONTRACT.md §1 的 P0）。
+  //     原本這裡是「特徵測試」，釘住 getAthleteIdForName() 依名單陣列索引產生 ID 的缺陷。
+  //     TeamPro 2.0 Phase 1 起新紀錄改寫 studentId（見 17b），Phase 9 已刪除該函式，
+  //     這裡改成確保它不會被加回來（加回來就代表又有人依名單索引產生身分）。
+  const legacyIdFn = await page.evaluate(() => typeof window.getAthleteIdForName);
+  t('[P0 已修] 依名單索引產生 athleteId 的 getAthleteIdForName 已移除，不得加回',
+    legacyIdFn === 'undefined', legacyIdFn);
 
   // 17b. 修正後（TeamPro 2.0 P0-2）：送出的紀錄 athleteId 改用帳號的 studentId，
   //      不再走上面那個依名單索引的函式 —— 刪除／重排名單都不會改變。

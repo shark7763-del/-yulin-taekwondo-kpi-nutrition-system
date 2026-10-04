@@ -98,3 +98,15 @@ TeamPro 2.0 效能瘦身＋穩定化重構的修改紀錄。稽核見 `TEAMPRO_2
 
 - 測試：`pdf-lazy-load.browser.test.js`（8 項，CDN 以 page.route 攔截不依賴網路）、`boot-requests.browser.test.js`（8 項，修改前失敗 2 項）。全部 26 支 669 項通過。
 - 純前端，不需部署 GAS。
+
+## Phase 9 — 死碼刪除（2026-10-05）
+
+| commit | 內容 | 檔案 |
+|---|---|---|
+| `e3386fb` | 刪除 `getAthleteIdForName`（P0 根源，Phase 1 後已無呼叫者）、`loadTodayReportedStudentsLegacy_`（0 呼叫者）；原文與理由記錄在 `TEAMPRO_REMOVED_CODE.md` | `js/02-core-utils.js`、`js/07-coach-dashboard.js` |
+
+- **順手抓到一支假通過的測試**：`normal-ui-no-full-records.test.js` 的「loadTodayReportedStudents 走 bounded」用 regex 從檔案中往後找，實際比中的是死碼 `loadTodayReportedStudentsLegacy_`。刪掉死碼後它才失敗 —— 也就是它一直在保護一段永遠不會執行的程式。已改成只檢查真正那支函式的本體（走 `getDailyAthleteSummary`、不讀 records）。
+- smoke §17 原本是 5 條「釘住 P0 缺陷」的特徵測試，改為 1 條「`getAthleteIdForName` 不得加回」。測試總數因此 669 → 665。
+- `DATA_CONTRACT.md` §1 標記 P0 已修正，但註明**舊資料的 athleteId 仍不可信**。
+- 刻意沒刪：舊 30 拉桿 UI（`currentGroup`、`recalcKpiSummary`、`onSliderChange`、`.kpi-slider`），與 `js/14` 的覆寫綁在一起，留給 Phase 8。
+- 純前端。全部 26 支 665 項通過。
