@@ -993,6 +993,11 @@ async function downloadPDF(records) {
     alert('目前沒有可匯出的報告資料');
     return;
   }
+  // Phase 6：PDF 元件改成按需載入（monthly-report.js 的 ensurePdfLib）
+  if (typeof window.html2canvas !== 'function' && typeof window.ensurePdfLib === 'function') {
+    if (typeof toast === 'function') toast('下載 PDF 元件中...');
+    await window.ensurePdfLib();
+  }
   const h2c = window.html2canvas;
   const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (typeof h2c !== 'function' || typeof jsPDFCtor !== 'function') {
