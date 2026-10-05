@@ -110,3 +110,22 @@ TeamPro 2.0 效能瘦身＋穩定化重構的修改紀錄。稽核見 `TEAMPRO_2
 - `DATA_CONTRACT.md` §1 標記 P0 已修正，但註明**舊資料的 athleteId 仍不可信**。
 - 刻意沒刪：舊 30 拉桿 UI（`currentGroup`、`recalcKpiSummary`、`onSliderChange`、`.kpi-slider`），與 `js/14` 的覆寫綁在一起，留給 Phase 8。
 - 純前端。全部 26 支 665 項通過。
+
+## Phase 10 — 效能監測（2026-10-05）
+
+| commit | 內容 | 檔案 |
+|---|---|---|
+| `ff64a1b` | `TEAMPRO_PERF` 加開關、每請求獨立計時、快取／合併標記、彙整表 | `js/01-config-data.js`、`js/09-settings-auth.js` |
+
+**怎麼用**（教練或開發者在電腦／手機瀏覽器上）：
+
+1. 網址後面加 `?debug=perf` 開一次頁，之後這台裝置會一直開著
+2. 正常操作（開戰情室、切分頁、送出…）
+3. 開瀏覽器主控台（F12 → Console），會看到 `[TeamPro perf] api getCoachDashboard 2310ms 546KB` 這類紀錄
+4. 主控台輸入 `teamproPerfSummary()` → 依總耗時排序的表：次數、實際連線、快取命中、合併重複、失敗、平均／最慢毫秒、下載 KB
+5. 用完網址加 `?debug=off` 關閉
+
+- 只記 action 名稱、毫秒、回應大小，**絕不記錄任何紀錄內容**。
+- 關閉時零成本（每個函式第一行就 return）。
+- 修掉舊工具的一個量測錯誤：原本用 action 名稱當計時標記，戰情室並行的同名請求會互相覆蓋，量出來的毫秒數不可信。
+- 測試：`perf-monitor.browser.test.js`（13 項）。全部 27 支 678 項通過。純前端。

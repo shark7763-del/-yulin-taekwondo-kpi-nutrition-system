@@ -599,7 +599,10 @@ async function postToWebApp(body) {
   if (isTtlCacheable_(action)) {
     const ttlKey = readTtlKey_(body);
     const hit = _readTtlCache[ttlKey];
-    if (hit && (Date.now() - hit.ts) < READ_TTL_MS) return JSON.parse(hit.json);
+    if (hit && (Date.now() - hit.ts) < READ_TTL_MS) {
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.record({ type: 'api', label: action, ms: 0, via: 'ttl-cache' });
+      return JSON.parse(hit.json);
+    }
     const gen = _readTtlGen;
     const res = await postToWebAppDedup_(action, body);
     if (res && res.ok === true && gen === _readTtlGen) {
@@ -613,7 +616,10 @@ async function postToWebApp(body) {
 function postToWebAppDedup_(action, body) {
   if (INFLIGHT_DEDUP_ACTIONS.indexOf(action) !== -1) {
     const key = JSON.stringify(body);           // 參數不同就是不同請求（例如 appdata 的 prefix）
-    if (_inflight[key]) return _inflight[key];
+    if (_inflight[key]) {
+      if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.record({ type: 'api', label: action, ms: 0, via: 'deduped' });
+      return _inflight[key];
+    }
     const pending = postToWebAppRaw(body);
     _inflight[key] = pending;
     pending.then(() => { delete _inflight[key]; }, () => { delete _inflight[key]; });
@@ -643,7 +649,6 @@ async function postToWebAppRaw(body) {
   // 後端就走 `body.action || 'ping'` 回一個 pong，呼叫端拿到看似成功卻沒資料的回應。
   // 帶著 query 的話，退化後 doGet 仍認得動作，會回明確錯誤而不是 pong。
   const action = String(requestBody.action || '');
-  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('api_' + action + '_start');
   const parsed = await postToWebAppFetchJson_(url, requestBody, action, true);
   if (isGetOnlyDiagnostic_(parsed)) {
     console.warn('[api] POST was downgraded to GET after redirect; retrying without query action:', action);
@@ -656,12 +661,24 @@ async function postToWebAppRaw(body) {
 async function postToWebAppFetchJson_(url, requestBody, action, includeActionQuery) {
   const sep = url.indexOf('?') === -1 ? '?' : '&';
   const postUrl = (includeActionQuery && action) ? `${url}${sep}action=${encodeURIComponent(action)}` : url;
-  const res = await fetch(postUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(requestBody)
-  });
+  // Phase 10：每個請求各自計時（原本用 action 名稱當 mark，並行的同名請求會互相覆蓋）
+  const perfOn = !!(window.TEAMPRO_PERF && window.TEAMPRO_PERF.enabled());
+  const perfStart = perfOn ? performance.now() : 0;
+  let res;
+  try {
+    res = await fetch(postUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(requestBody)
+    });
+  } catch (e) {
+    if (perfOn) window.TEAMPRO_PERF.record({ type: 'api', label: action, ms: Math.round(performance.now() - perfStart), via: 'network', ok: false });
+    throw e;
+  }
   const text = await res.text();
+  if (perfOn) window.TEAMPRO_PERF.record({ type: 'api', label: action, ms: Math.round(performance.now() - perfStart),
+    bytes: (typeof TextEncoder === 'function') ? new TextEncoder().encode(text).length : text.length,   // 中文 1 字 3 bytes
+    via: 'network', ok: res.ok });
   try { return JSON.parse(text); }
   catch (e) {
     // 原本直接把回應前 120 字塞進錯誤訊息，那可能是半截的紀錄內容（學生健康資料）。
@@ -721,7 +738,6 @@ function handleWebAppParsedResponse_(parsed, action, clientMeta) {
   }
   // 後端回報 session 過期／未授權時，主動提示重新登入，
   // 避免呼叫端（如 fetchAllRecords）靜默落回本機空資料，害教練後台誤顯示「全體未回報」。
-  if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.measure('api.' + action, 'api_' + action + '_start', 'api_' + action + '_end');
   if (parsed && parsed.ok === false && parsed.authRequired) {
     if (window.TEAMPRO_PERF) window.TEAMPRO_PERF.mark('authRequired_received');
     if (isCriticalAuthAction(action, clientMeta)) notifySessionExpired(action);

@@ -47,22 +47,89 @@ const TEAMPRO_FLAGS = {
 };
 if (typeof window !== 'undefined') window.TEAMPRO_FLAGS = TEAMPRO_FLAGS;
 
+/* TeamPro 2.0 Phase 10：效能監測開關。
+   網址加 ?debug=perf 開啟（記在這台裝置，之後不用再加），?debug=off 關閉。
+   關閉時所有 TEAMPRO_PERF 函式第一行就 return，正式使用沒有成本。
+   ⚠️ 只記錄 action 名稱、耗時、回應大小，**絕不記錄任何紀錄內容**（選手健康資料）。 */
+const TEAMPRO_DEBUG_KEY = 'teampro_debug_perf';
+(function initPerfSwitch() {
+  if (typeof window === 'undefined') return;
+  let q = '';
+  try { q = new URLSearchParams(window.location.search).get('debug') || ''; } catch (e) {}
+  try {
+    if (q === 'perf') localStorage.setItem(TEAMPRO_DEBUG_KEY, '1');
+    else if (q === 'off') localStorage.removeItem(TEAMPRO_DEBUG_KEY);
+    if (localStorage.getItem(TEAMPRO_DEBUG_KEY) === '1') TEAMPRO_FLAGS.DEBUG_PERFORMANCE = true;
+  } catch (e) {
+    if (q === 'perf') TEAMPRO_FLAGS.DEBUG_PERFORMANCE = true;   // 無痕模式：只對這次開頁有效
+  }
+})();
+
+const TEAMPRO_PERF_PREFIX = '[TeamPro perf]';
+const TEAMPRO_PERF_MAX_ENTRIES = 300;
 const TEAMPRO_PERF = {
   marks: {},
+  entries: [],     // { type: 'api'|'measure', label, ms, bytes, via, ok, at }
+  enabled() { return !!TEAMPRO_FLAGS.DEBUG_PERFORMANCE; },
+  record(entry) {
+    if (!TEAMPRO_FLAGS.DEBUG_PERFORMANCE) return;
+    entry.at = Math.round(performance.now());
+    this.entries.push(entry);
+    if (this.entries.length > TEAMPRO_PERF_MAX_ENTRIES) this.entries.shift();
+    const parts = [entry.type === 'api' ? 'api ' + entry.label : entry.label];
+    if (typeof entry.ms === 'number') parts.push(entry.ms + 'ms');
+    if (typeof entry.bytes === 'number') parts.push(Math.round(entry.bytes / 1024) + 'KB');
+    if (entry.via && entry.via !== 'network') parts.push('(' + entry.via + ')');
+    if (entry.ok === false) parts.push('FAILED');
+    console.debug(TEAMPRO_PERF_PREFIX, parts.join(' '));
+  },
   mark(label) {
     if (!TEAMPRO_FLAGS.DEBUG_PERFORMANCE) return;
     this.marks[label] = performance.now();
-    console.debug('[perf]', label);
   },
   measure(label, startLabel, endLabel) {
     if (!TEAMPRO_FLAGS.DEBUG_PERFORMANCE) return;
     const end = performance.now();
     if (endLabel) this.marks[endLabel] = end;
     const start = this.marks[startLabel];
-    if (typeof start === 'number') console.debug('[perf]', label + ': ' + Math.round(end - start) + 'ms');
-  }
+    if (typeof start === 'number') this.record({ type: 'measure', label, ms: Math.round(end - start) });
+  },
+  // 依 action 彙整：次數、網路次數、快取命中、平均／最大耗時、總下載量
+  summary() {
+    const by = {};
+    this.entries.filter(e => e.type === 'api').forEach(e => {
+      const s = by[e.label] = by[e.label] || { calls: 0, network: 0, cached: 0, deduped: 0, failed: 0, totalMs: 0, maxMs: 0, totalKB: 0 };
+      s.calls++;
+      if (e.via === 'ttl-cache') s.cached++;
+      else if (e.via === 'deduped') s.deduped++;
+      else {
+        s.network++;
+        s.totalMs += e.ms || 0;
+        s.maxMs = Math.max(s.maxMs, e.ms || 0);
+        s.totalKB += Math.round((e.bytes || 0) / 1024);
+      }
+      if (e.ok === false) s.failed++;
+    });
+    const rows = {};
+    Object.keys(by).sort((a, b) => by[b].totalMs - by[a].totalMs).forEach(k => {
+      const s = by[k];
+      rows[k] = { 次數: s.calls, 實際連線: s.network, 快取命中: s.cached, 合併重複: s.deduped, 失敗: s.failed,
+        平均ms: s.network ? Math.round(s.totalMs / s.network) : 0, 最慢ms: s.maxMs, 下載KB: s.totalKB };
+    });
+    return rows;
+  },
+  clear() { this.entries = []; this.marks = {}; }
 };
-if (typeof window !== 'undefined') window.TEAMPRO_PERF = TEAMPRO_PERF;
+if (typeof window !== 'undefined') {
+  window.TEAMPRO_PERF = TEAMPRO_PERF;
+  // 在瀏覽器主控台輸入 teamproPerfSummary() 看彙整表
+  window.teamproPerfSummary = () => {
+    if (!TEAMPRO_FLAGS.DEBUG_PERFORMANCE) { console.info(TEAMPRO_PERF_PREFIX, '尚未開啟：網址加上 ?debug=perf 再重新整理'); return null; }
+    const rows = TEAMPRO_PERF.summary();
+    if (console.table) console.table(rows); else console.info(TEAMPRO_PERF_PREFIX, rows);
+    return rows;
+  };
+}
 
 /* ============================================================
    1. 常數設定
